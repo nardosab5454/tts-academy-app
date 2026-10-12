@@ -1,0 +1,346 @@
+package com.example.ui.screens
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.data.local.model.CourseEntity
+import com.example.data.local.model.NoteEntity
+import com.example.ui.components.DetailTopBar
+import com.example.ui.theme.AcademicGold
+
+@Composable
+fun NotesScreen(
+  notes: List<NoteEntity>,
+  courses: List<CourseEntity>,
+  onNoteClick: (NoteEntity) -> Unit,
+  modifier: Modifier = Modifier
+) {
+  var searchQuery by remember { mutableStateOf("") }
+  var selectedCourseId by remember { mutableStateOf<String?>("All") }
+
+  val courseMap = remember(courses) { courses.associateBy { it.id } }
+
+  val filteredNotes = notes.filter { note ->
+    (selectedCourseId == "All" || note.courseId == selectedCourseId) &&
+      (searchQuery.isBlank() ||
+        note.title.contains(searchQuery, ignoreCase = true) ||
+        note.summary.contains(searchQuery, ignoreCase = true) ||
+        note.contentMarkdown.contains(searchQuery, ignoreCase = true))
+  }
+
+  Column(
+    modifier = modifier
+      .fillMaxSize()
+      .testTag("notes_screen")
+  ) {
+    // Search Bar
+    OutlinedTextField(
+      value = searchQuery,
+      onValueChange = { searchQuery = it },
+      placeholder = { Text("Search notes, definitions, formulas...") },
+      leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+      singleLine = true,
+      shape = RoundedCornerShape(12.dp),
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 8.dp)
+        .testTag("notes_search_input")
+    )
+
+    // Course Filter Chips
+    LazyRow(
+      contentPadding = PaddingValues(horizontal = 16.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      modifier = Modifier.padding(bottom = 8.dp)
+    ) {
+      item {
+        FilterChip(
+          selected = selectedCourseId == "All",
+          onClick = { selectedCourseId = "All" },
+          label = { Text("All Courses") }
+        )
+      }
+      items(courses) { course ->
+        FilterChip(
+          selected = selectedCourseId == course.id,
+          onClick = { selectedCourseId = course.id },
+          label = { Text(course.code) }
+        )
+      }
+    }
+
+    if (filteredNotes.isEmpty()) {
+      EmptyStateView("No revision notes matching your search.")
+    } else {
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+      ) {
+        items(filteredNotes) { note ->
+          val course = courseMap[note.courseId]
+          NoteCardItem(
+            note = note,
+            courseCode = course?.code ?: "COURSE",
+            onClick = { onNoteClick(note) }
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun NoteCardItem(
+  note: NoteEntity,
+  courseCode: String,
+  onClick: () -> Unit
+) {
+  Card(
+    shape = RoundedCornerShape(16.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    elevation = CardDefaults.cardElevation(2.dp),
+    modifier = Modifier
+      .fillMaxWidth()
+      .clickable(onClick = onClick)
+  ) {
+    Column(modifier = Modifier.padding(16.dp)) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Surface(
+          color = MaterialTheme.colorScheme.primaryContainer,
+          shape = RoundedCornerShape(4.dp)
+        ) {
+          Text(
+            text = courseCode,
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+          )
+        }
+        Text(
+          text = "${note.readTimeMinutes} min read",
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+      }
+
+      Spacer(modifier = Modifier.height(10.dp))
+
+      Text(
+        text = note.title,
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+        color = MaterialTheme.colorScheme.onSurface
+      )
+
+      Text(
+        text = note.summary,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis
+      )
+
+      if (note.keyFormulas.isNotBlank()) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Surface(
+          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+          shape = RoundedCornerShape(6.dp)
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(Icons.Default.Functions, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+              text = note.keyFormulas,
+              style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.height(10.dp))
+      HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+      Spacer(modifier = Modifier.height(8.dp))
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Text(
+          text = "Read Revision Note",
+          style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+          color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Icon(
+          imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.size(16.dp)
+        )
+      }
+    }
+  }
+}
+
+@Composable
+fun NoteDetailScreen(
+  note: NoteEntity,
+  course: CourseEntity?,
+  isBookmarked: Boolean,
+  onBackClick: () -> Unit,
+  onToggleBookmark: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  Column(
+    modifier = modifier
+      .fillMaxSize()
+      .testTag("note_detail_screen")
+  ) {
+    DetailTopBar(
+      title = note.title,
+      subtitle = "${course?.title ?: "Revision Note"} • ${note.readTimeMinutes} min read",
+      onBackClick = onBackClick,
+      isBookmarked = isBookmarked,
+      onBookmarkClick = onToggleBookmark
+    )
+
+    LazyColumn(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(horizontal = 20.dp, vertical = 16.dp),
+      verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+      // Summary Callout Card
+      item {
+        Card(
+          shape = RoundedCornerShape(14.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+              text = "Key Takeaways & Concept Summary",
+              style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+              color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+              text = note.summary,
+              style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+              color = MaterialTheme.colorScheme.onSurface
+            )
+          }
+        }
+      }
+
+      // Key Formulas Banner
+      if (note.keyFormulas.isNotBlank()) {
+        item {
+          Card(
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Functions, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                  text = "Crucial Formulas",
+                  style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                  color = MaterialTheme.colorScheme.primary
+                )
+              }
+              Spacer(modifier = Modifier.height(8.dp))
+              Text(
+                text = note.keyFormulas,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                  fontFamily = FontFamily.Monospace,
+                  lineHeight = 22.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface
+              )
+            }
+          }
+        }
+      }
+
+      // Note Body Markdown
+      item {
+        Card(
+          shape = RoundedCornerShape(16.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          elevation = CardDefaults.cardElevation(1.dp),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Column(modifier = Modifier.padding(18.dp)) {
+            Text(
+              text = note.contentMarkdown,
+              style = MaterialTheme.typography.bodyMedium.copy(
+                lineHeight = 24.sp,
+                fontSize = 15.sp
+              ),
+              color = MaterialTheme.colorScheme.onSurface
+            )
+          }
+        }
+      }
+    }
+  }
+}

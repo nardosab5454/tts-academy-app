@@ -1,0 +1,6 @@
+{
+  "name": "TTS Academy",
+  "description": "University freshman learning platform with course revision, multiple-choice quizzes, answer explanations, past exams, and study tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

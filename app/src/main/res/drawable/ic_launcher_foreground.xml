@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Academic Mortarboard Top -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,28 L84,40 L54,52 L24,40 Z" />
+    
+    <!-- Mortarboard Cap Under/Base -->
+    <path
+        android:fillColor="#E2E8F0"
+        android:pathData="M36,45.5 L36,56 C36,63 72,63 72,56 L72,45.5 L54,52.5 Z" />
+    
+    <!-- Golden Tassel & Ribbon -->
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M81,42 L85,44 L83,57 C83,59 86,59 86,57 L84,43.5 Z" />
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M81.5,57 C81.5,58.5 85.5,58.5 85.5,57 C85.5,55.5 81.5,55.5 81.5,57 Z" />
+
+    <!-- Open Knowledge Book / Wings -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M27,65 C36,63 46,65 52,69 L52,78 C46,74 36,73 27,75 Z" />
+    <path
+        android:fillColor="#E2E8F0"
+        android:pathData="M81,65 C72,63 62,65 56,69 L56,78 C62,74 72,73 81,75 Z" />
+
+    <!-- Golden Center Star / Emblem -->
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M54,61 L55.5,64.5 L59,64.5 L56,67 L57.5,70.5 L54,68.5 L50.5,70.5 L52,67 L49,64.5 L52.5,64.5 Z" />
+</vector>
