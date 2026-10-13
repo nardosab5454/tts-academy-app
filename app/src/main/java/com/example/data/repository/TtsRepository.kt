@@ -54,8 +54,27 @@ class TtsRepository(private val database: AppDatabase) {
       AppDatabase.populateDatabase(database)
     }
 
-    val activeId = prefDao.getPreference("active_user_id") ?: "student_1"
-    val user = userDao.getUserById(activeId) ?: userDao.getAllUsers().firstOrNull()
+    // Ensure primary administrator account exists in database with requested credentials
+    val existingAdmin = userDao.getUserByEmail("spikenarrd@gmail.com")
+    if (existingAdmin == null) {
+      val adminUser = UserEntity(
+        id = "admin_1",
+        name = "System Administrator",
+        email = "spikenarrd@gmail.com",
+        password = "Spike@6776",
+        studentId = "SYS-ADMIN-01",
+        department = "Academic Affairs",
+        role = "ADMIN",
+        avatarUrl = "avatar_admin",
+        streakDays = 12
+      )
+      userDao.insertUser(adminUser)
+    } else if (existingAdmin.role != "ADMIN" || existingAdmin.password != "Spike@6776") {
+      userDao.updateUser(existingAdmin.copy(role = "ADMIN", password = "Spike@6776"))
+    }
+
+    val activeId = prefDao.getPreference("active_user_id")
+    val user = if (!activeId.isNullOrBlank()) userDao.getUserById(activeId) else null
     _currentUser.value = user
 
     val theme = prefDao.getPreference("app_theme") ?: "SYSTEM"
@@ -68,20 +87,27 @@ class TtsRepository(private val database: AppDatabase) {
   suspend fun login(email: String, password: String): Result<UserEntity> = withContext(Dispatchers.IO) {
     val cleanEmail = email.trim()
     val cleanPassword = password.trim()
+    val isAdminEmail = cleanEmail.equals("spikenarrd@gmail.com", ignoreCase = true)
 
     val user = userDao.getUserByEmail(cleanEmail)
     if (user != null) {
       val isPasswordValid = user.password == cleanPassword ||
-        (cleanEmail.equals("spikenarrd@gmail.com", ignoreCase = true) && cleanPassword == "Spike@6776")
+        (isAdminEmail && (cleanPassword == "Spike@6776" || user.password == "Spike@6776"))
 
       if (isPasswordValid) {
-        _currentUser.value = user
-        prefDao.setPreference(UserPreferenceEntity("active_user_id", user.id))
-        Result.success(user)
+        val updatedUser = if (isAdminEmail && user.role != "ADMIN") {
+          userDao.updateUserRole(user.id, "ADMIN")
+          user.copy(role = "ADMIN")
+        } else {
+          user
+        }
+        _currentUser.value = updatedUser
+        prefDao.setPreference(UserPreferenceEntity("active_user_id", updatedUser.id))
+        Result.success(updatedUser)
       } else {
-        Result.failure(Exception("Incorrect password."))
+        Result.failure(Exception("Incorrect password. Please try again."))
       }
-    } else if (cleanEmail.equals("spikenarrd@gmail.com", ignoreCase = true) && cleanPassword == "Spike@6776") {
+    } else if (isAdminEmail && cleanPassword == "Spike@6776") {
       // Ensure primary administrator account exists
       val adminUser = UserEntity(
         id = "admin_1",
@@ -91,14 +117,15 @@ class TtsRepository(private val database: AppDatabase) {
         studentId = "SYS-ADMIN-01",
         department = "Academic Affairs",
         role = "ADMIN",
-        avatarUrl = "avatar_admin"
+        avatarUrl = "avatar_admin",
+        streakDays = 12
       )
       userDao.insertUser(adminUser)
       _currentUser.value = adminUser
       prefDao.setPreference(UserPreferenceEntity("active_user_id", adminUser.id))
       Result.success(adminUser)
     } else {
-      Result.failure(Exception("Account with this email not found."))
+      Result.failure(Exception("Account with this email not found. Please register."))
     }
   }
 
@@ -168,19 +195,40 @@ class TtsRepository(private val database: AppDatabase) {
     department: String,
     role: String = "STUDENT"
   ): Result<UserEntity> = withContext(Dispatchers.IO) {
-    val existing = userDao.getUserByEmail(email.trim())
+    val cleanEmail = email.trim()
+    val cleanPassword = password.trim()
+    val cleanName = name.trim()
+    val cleanStudentId = studentId.trim()
+    val cleanDepartment = department.trim()
+
+    val isAdminEmail = cleanEmail.equals("spikenarrd@gmail.com", ignoreCase = true)
+    val assignedRole = if (isAdminEmail) "ADMIN" else role
+
+    val existing = userDao.getUserByEmail(cleanEmail)
     if (existing != null) {
+      if (isAdminEmail) {
+        userDao.updateUserRole(existing.id, "ADMIN")
+        val updated = existing.copy(
+          role = "ADMIN",
+          password = cleanPassword.ifBlank { "Spike@6776" }
+        )
+        userDao.updateUser(updated)
+        _currentUser.value = updated
+        prefDao.setPreference(UserPreferenceEntity("active_user_id", updated.id))
+        return@withContext Result.success(updated)
+      }
       return@withContext Result.failure(Exception("An account with this email already exists."))
     }
+
     val newUser = UserEntity(
-      id = "user_" + UUID.randomUUID().toString().take(8),
-      name = name.trim(),
-      email = email.trim(),
-      password = password.trim().ifBlank { "student123" },
-      studentId = studentId.trim(),
-      department = department.trim(),
-      role = role,
-      avatarUrl = if (role == "ADMIN") "avatar_admin" else "avatar_1",
+      id = if (isAdminEmail) "admin_1" else "user_" + UUID.randomUUID().toString().take(8),
+      name = cleanName.ifBlank { if (isAdminEmail) "System Administrator" else "TTS Student" },
+      email = cleanEmail,
+      password = cleanPassword.ifBlank { if (isAdminEmail) "Spike@6776" else "student123" },
+      studentId = cleanStudentId.ifBlank { if (isAdminEmail) "SYS-ADMIN-01" else "STU-" + UUID.randomUUID().toString().take(4).uppercase() },
+      department = cleanDepartment.ifBlank { if (isAdminEmail) "Academic Affairs" else "General Freshman Studies" },
+      role = assignedRole,
+      avatarUrl = if (assignedRole == "ADMIN") "avatar_admin" else "avatar_1",
       streakDays = 1,
       questionsAnsweredCount = 0,
       correctAnswersCount = 0
@@ -189,6 +237,11 @@ class TtsRepository(private val database: AppDatabase) {
     _currentUser.value = newUser
     prefDao.setPreference(UserPreferenceEntity("active_user_id", newUser.id))
     Result.success(newUser)
+  }
+
+  suspend fun signOut() = withContext(Dispatchers.IO) {
+    _currentUser.value = null
+    prefDao.setPreference(UserPreferenceEntity("active_user_id", ""))
   }
 
   suspend fun switchUser(userId: String) = withContext(Dispatchers.IO) {
@@ -208,24 +261,29 @@ class TtsRepository(private val database: AppDatabase) {
     role: String = "STUDENT",
     department: String = "Computer Science"
   ): UserEntity = withContext(Dispatchers.IO) {
+    val cleanEmail = email.trim()
+    val isAdminEmail = cleanEmail.equals("spikenarrd@gmail.com", ignoreCase = true)
+    val effectiveRole = if (isAdminEmail) "ADMIN" else role
+
     val existing = userDao.getUserById(uid)
     val user = if (existing != null) {
       val updated = existing.copy(
         name = name.ifBlank { existing.name },
-        email = email.ifBlank { existing.email }
+        email = cleanEmail.ifBlank { existing.email },
+        role = if (isAdminEmail) "ADMIN" else existing.role
       )
       userDao.updateUser(updated)
       updated
     } else {
       val newUser = UserEntity(
         id = uid,
-        name = name.ifBlank { "TTS Student" },
-        email = email.ifBlank { "student@ttsacademy.edu" },
-        password = "",
-        studentId = "STU-" + uid.take(6).uppercase(),
+        name = name.ifBlank { if (isAdminEmail) "System Administrator" else "TTS Student" },
+        email = cleanEmail.ifBlank { "student@ttsacademy.edu" },
+        password = if (isAdminEmail) "Spike@6776" else "",
+        studentId = if (isAdminEmail) "SYS-ADMIN-01" else "STU-" + uid.take(6).uppercase(),
         department = department,
-        role = role,
-        avatarUrl = if (role == "ADMIN") "avatar_admin" else "avatar_1",
+        role = effectiveRole,
+        avatarUrl = if (effectiveRole == "ADMIN") "avatar_admin" else "avatar_1",
         streakDays = 1,
         questionsAnsweredCount = 0,
         correctAnswersCount = 0

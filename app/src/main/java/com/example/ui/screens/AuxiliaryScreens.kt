@@ -317,6 +317,7 @@ fun ProfileScreen(
   onSwitchUser: (String) -> Unit,
   onOpenAdminPortal: () -> Unit,
   onBackClick: () -> Unit,
+  onSignOut: () -> Unit = {},
   modifier: Modifier = Modifier
 ) {
 
@@ -567,6 +568,7 @@ fun ProfileScreen(
                 } catch (_: Exception) {}
                 FirebaseAuth.getInstance().signOut()
               }
+              onSignOut()
             }
             .padding(16.dp),
           verticalAlignment = Alignment.CenterVertically,

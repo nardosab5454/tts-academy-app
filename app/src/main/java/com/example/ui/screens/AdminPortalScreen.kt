@@ -81,6 +81,7 @@ fun AdminPortalScreen(
   onUpdateUserRole: (String, String) -> Unit,
   onCreateAdmin: (String, String, String, String) -> Unit,
   onPromoteEmail: (String) -> Unit = {},
+  onDeleteAnnouncement: (String) -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   var selectedTab by remember { mutableIntStateOf(0) }
@@ -117,7 +118,7 @@ fun AdminPortalScreen(
       1 -> AdminCoursesTab(courses, { showNewCourseDialog = true }, onDeleteCourse)
       2 -> AdminAddQuestionTab(courses, onSaveQuestion)
       3 -> AdminAddNoteTab(courses, onSaveNote)
-      4 -> AdminAnnouncementsTab(announcements, { showNewAnnouncementDialog = true })
+      4 -> AdminAnnouncementsTab(announcements, { showNewAnnouncementDialog = true }, onDeleteAnnouncement)
       5 -> AdminStudentsTab(allUsers, { showNewAdminDialog = true }, onUpdateUserRole, onPromoteEmail)
     }
   }
@@ -580,7 +581,8 @@ private fun AdminAddNoteTab(
 @Composable
 private fun AdminAnnouncementsTab(
   announcements: List<AnnouncementEntity>,
-  onNewClick: () -> Unit
+  onNewClick: () -> Unit,
+  onDelete: (String) -> Unit = {}
 ) {
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -608,9 +610,25 @@ private fun AdminAnnouncementsTab(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier.fillMaxWidth()
       ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-          Text(text = ann.title, fontWeight = FontWeight.Bold)
-          Text(text = ann.message, style = MaterialTheme.typography.bodySmall)
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(14.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text(text = ann.title, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = ann.message, style = MaterialTheme.typography.bodySmall)
+          }
+          IconButton(onClick = { onDelete(ann.id) }) {
+            Icon(
+              imageVector = Icons.Default.Delete,
+              contentDescription = "Delete Notice",
+              tint = MaterialTheme.colorScheme.error
+            )
+          }
         }
       }
     }

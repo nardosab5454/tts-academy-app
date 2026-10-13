@@ -15,26 +15,38 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,6 +57,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,6 +70,7 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.example.R
+import com.example.ui.viewmodel.MainViewModel
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -66,30 +83,31 @@ import kotlinx.coroutines.tasks.await
 
 @Composable
 fun SignInScreen(
+  viewModel: MainViewModel,
   onAuthSuccess: () -> Unit,
   modifier: Modifier = Modifier
 ) {
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
   val credentialManager = remember { CredentialManager.create(context) }
-  var authErrorMessage by remember { mutableStateOf<String?>(null) }
-  var isAutoSigningIn by remember { mutableStateOf(true) }
 
-  // Attempt silent auto-sign in on screen launch
-  LaunchedEffect(Unit) {
-    attemptAutoSignIn(
-      context = context,
-      credentialManager = credentialManager,
-      onAuthSuccess = {
-        isAutoSigningIn = false
-        onAuthSuccess()
-      },
-      onUnauthenticated = {
-        isAutoSigningIn = false
-      },
-      scope = coroutineScope
-    )
-  }
+  var selectedTab by remember { mutableIntStateOf(0) } // 0: Sign In, 1: Register
+  var authErrorMessage by remember { mutableStateOf<String?>(null) }
+  var isAutoSigningIn by remember { mutableStateOf(false) }
+  var isSubmitting by remember { mutableStateOf(false) }
+
+  // Sign In inputs
+  var loginEmail by remember { mutableStateOf("") }
+  var loginPassword by remember { mutableStateOf("") }
+  var isLoginPasswordVisible by remember { mutableStateOf(false) }
+
+  // Register inputs
+  var regName by remember { mutableStateOf("") }
+  var regStudentId by remember { mutableStateOf("") }
+  var regDepartment by remember { mutableStateOf("Computer Science") }
+  var regEmail by remember { mutableStateOf("") }
+  var regPassword by remember { mutableStateOf("") }
+  var isRegPasswordVisible by remember { mutableStateOf(false) }
 
   Surface(
     modifier = modifier.fillMaxSize(),
@@ -98,7 +116,7 @@ fun SignInScreen(
     Box(
       modifier = Modifier
         .fillMaxSize()
-        .padding(24.dp),
+        .padding(horizontal = 24.dp, vertical = 16.dp),
       contentAlignment = Alignment.Center
     ) {
       if (isAutoSigningIn) {
@@ -119,27 +137,32 @@ fun SignInScreen(
         }
       } else {
         Column(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
           horizontalAlignment = Alignment.CenterHorizontally,
           verticalArrangement = Arrangement.Center
         ) {
+          Spacer(modifier = Modifier.height(12.dp))
+
           // App Logo / Badge
           Box(
             modifier = Modifier
-              .size(88.dp)
+              .size(80.dp)
               .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
             contentAlignment = Alignment.Center
           ) {
             Icon(
               imageVector = Icons.Default.School,
               contentDescription = "TTS Academy Logo",
-              modifier = Modifier.size(48.dp),
+              modifier = Modifier.size(44.dp),
               tint = MaterialTheme.colorScheme.onPrimaryContainer
             )
           }
 
-          Spacer(modifier = Modifier.height(24.dp))
+          Spacer(modifier = Modifier.height(18.dp))
 
+          // Bold Welcome to TTS ACADEMY Header
           Text(
             text = "Welcome to TTS ACADEMY",
             style = MaterialTheme.typography.headlineMedium.copy(
@@ -150,7 +173,7 @@ fun SignInScreen(
             textAlign = TextAlign.Center
           )
 
-          Spacer(modifier = Modifier.height(8.dp))
+          Spacer(modifier = Modifier.height(6.dp))
 
           Text(
             text = "Freshman Academic Portal",
@@ -159,51 +182,369 @@ fun SignInScreen(
             textAlign = TextAlign.Center
           )
 
-          Spacer(modifier = Modifier.height(36.dp))
-
-          // Basic Options: Sign in with Google
-          GoogleSignInButton(
-            onAuthSuccess = onAuthSuccess,
-            onAuthError = { authErrorMessage = it }
-          )
-
-          Spacer(modifier = Modifier.height(14.dp))
-
-          // Basic Options: Guest Access
-          OutlinedButton(
-            onClick = onAuthSuccess,
-            shape = RoundedCornerShape(24.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .height(52.dp)
-              .testTag("guest_sign_in_button")
-          ) {
-            Text(
-              text = "Continue as Guest Student",
-              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
-            )
-          }
-
-          if (!authErrorMessage.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-              text = authErrorMessage ?: "",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.error,
-              textAlign = TextAlign.Center,
-              modifier = Modifier.padding(horizontal = 16.dp)
-            )
-          }
-
           Spacer(modifier = Modifier.height(24.dp))
 
-          Text(
-            text = "Sign in to save your quiz progress, bookmarks, and personalized freshman study notes.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 16.dp)
-          )
+          // Simple Mode Switcher (Log In & Register Only)
+          TabRow(
+            selectedTabIndex = selectedTab,
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Tab(
+              selected = selectedTab == 0,
+              onClick = {
+                selectedTab = 0
+                authErrorMessage = null
+              },
+              text = {
+                Text(
+                  text = "Sign In",
+                  fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal
+                )
+              }
+            )
+            Tab(
+              selected = selectedTab == 1,
+              onClick = {
+                selectedTab = 1
+                authErrorMessage = null
+              },
+              text = {
+                Text(
+                  text = "Register",
+                  fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal
+                )
+              }
+            )
+          }
+
+          Spacer(modifier = Modifier.height(20.dp))
+
+          // Error Display Banner
+          if (!authErrorMessage.isNullOrBlank()) {
+            Card(
+              shape = RoundedCornerShape(12.dp),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
+            ) {
+              Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(
+                  Icons.Default.ErrorOutline,
+                  contentDescription = "Error",
+                  tint = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                  text = authErrorMessage ?: "",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onErrorContainer
+                )
+              }
+            }
+          }
+
+          // Tab 0: Sign In
+          if (selectedTab == 0) {
+            OutlinedTextField(
+              value = loginEmail,
+              onValueChange = {
+                loginEmail = it
+                authErrorMessage = null
+              },
+              label = { Text("Email Address") },
+              placeholder = { Text("e.g. spikenarrd@gmail.com") },
+              leadingIcon = {
+                Icon(Icons.Default.Email, contentDescription = null)
+              },
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Email,
+                imeAction = ImeAction.Next
+              ),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("login_email_input"),
+              shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+              value = loginPassword,
+              onValueChange = {
+                loginPassword = it
+                authErrorMessage = null
+              },
+              label = { Text("Password") },
+              leadingIcon = {
+                Icon(Icons.Default.Lock, contentDescription = null)
+              },
+              trailingIcon = {
+                IconButton(onClick = { isLoginPasswordVisible = !isLoginPasswordVisible }) {
+                  Icon(
+                    imageVector = if (isLoginPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = if (isLoginPasswordVisible) "Hide password" else "Show password"
+                  )
+                }
+              },
+              visualTransformation = if (isLoginPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Password,
+                imeAction = ImeAction.Done
+              ),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("login_password_input"),
+              shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Button(
+              onClick = {
+                if (loginEmail.isBlank() || loginPassword.isBlank()) {
+                  authErrorMessage = "Please enter both email and password."
+                  return@Button
+                }
+                isSubmitting = true
+                authErrorMessage = null
+                viewModel.login(loginEmail, loginPassword) { success, errorMsg ->
+                  isSubmitting = false
+                  if (success) {
+                    onAuthSuccess()
+                  } else {
+                    authErrorMessage = errorMsg
+                  }
+                }
+              },
+              enabled = !isSubmitting,
+              shape = RoundedCornerShape(24.dp),
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .testTag("sign_in_button")
+            ) {
+              if (isSubmitting) {
+                CircularProgressIndicator(
+                  modifier = Modifier.size(24.dp),
+                  color = MaterialTheme.colorScheme.onPrimary,
+                  strokeWidth = 2.dp
+                )
+              } else {
+                Text(
+                  text = "Sign In",
+                  style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+              }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              HorizontalDivider(modifier = Modifier.weight(1f))
+              Text(
+                text = "  OR  ",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+              HorizontalDivider(modifier = Modifier.weight(1f))
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            GoogleSignInButton(
+              onAuthSuccess = onAuthSuccess,
+              onAuthError = { authErrorMessage = it }
+            )
+          }
+
+          // Tab 1: Register
+          if (selectedTab == 1) {
+            OutlinedTextField(
+              value = regName,
+              onValueChange = {
+                regName = it
+                authErrorMessage = null
+              },
+              label = { Text("Full Name") },
+              placeholder = { Text("e.g. Alex Morgan") },
+              leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("register_name_input"),
+              shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            OutlinedTextField(
+              value = regStudentId,
+              onValueChange = {
+                regStudentId = it
+                authErrorMessage = null
+              },
+              label = { Text("Student ID / Matric Number") },
+              placeholder = { Text("e.g. U2024/CS/1042") },
+              leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null) },
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("register_id_input"),
+              shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            OutlinedTextField(
+              value = regDepartment,
+              onValueChange = {
+                regDepartment = it
+                authErrorMessage = null
+              },
+              label = { Text("Department / Major") },
+              placeholder = { Text("e.g. Computer Science & Engineering") },
+              leadingIcon = { Icon(Icons.Default.School, contentDescription = null) },
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("register_dept_input"),
+              shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            OutlinedTextField(
+              value = regEmail,
+              onValueChange = {
+                regEmail = it
+                authErrorMessage = null
+              },
+              label = { Text("Email Address") },
+              placeholder = { Text("e.g. student@ttsacademy.edu") },
+              leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Email,
+                imeAction = ImeAction.Next
+              ),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("register_email_input"),
+              shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            OutlinedTextField(
+              value = regPassword,
+              onValueChange = {
+                regPassword = it
+                authErrorMessage = null
+              },
+              label = { Text("Password") },
+              leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+              trailingIcon = {
+                IconButton(onClick = { isRegPasswordVisible = !isRegPasswordVisible }) {
+                  Icon(
+                    imageVector = if (isRegPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = if (isRegPasswordVisible) "Hide password" else "Show password"
+                  )
+                }
+              },
+              visualTransformation = if (isRegPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Password,
+                imeAction = ImeAction.Done
+              ),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("register_password_input"),
+              shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Button(
+              onClick = {
+                if (regName.isBlank() || regEmail.isBlank() || regPassword.isBlank()) {
+                  authErrorMessage = "Please complete Name, Email, and Password."
+                  return@Button
+                }
+                isSubmitting = true
+                authErrorMessage = null
+                viewModel.register(
+                  name = regName,
+                  email = regEmail,
+                  password = regPassword,
+                  studentId = regStudentId.ifBlank { "STU-NEW" },
+                  department = regDepartment.ifBlank { "General Freshman Studies" }
+                ) { success, errorMsg ->
+                  isSubmitting = false
+                  if (success) {
+                    onAuthSuccess()
+                  } else {
+                    authErrorMessage = errorMsg
+                  }
+                }
+              },
+              enabled = !isSubmitting,
+              shape = RoundedCornerShape(24.dp),
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .testTag("create_account_button")
+            ) {
+              if (isSubmitting) {
+                CircularProgressIndicator(
+                  modifier = Modifier.size(24.dp),
+                  color = MaterialTheme.colorScheme.onPrimary,
+                  strokeWidth = 2.dp
+                )
+              } else {
+                Text(
+                  text = "Create Account",
+                  style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+              }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              HorizontalDivider(modifier = Modifier.weight(1f))
+              Text(
+                text = "  OR  ",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+              HorizontalDivider(modifier = Modifier.weight(1f))
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            GoogleSignInButton(
+              onAuthSuccess = onAuthSuccess,
+              onAuthError = { authErrorMessage = it }
+            )
+          }
+
+          Spacer(modifier = Modifier.height(20.dp))
         }
       }
     }

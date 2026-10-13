@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.model.AnnouncementEntity
 import com.example.data.local.model.CourseEntity
+import com.example.data.local.model.QuizAttemptEntity
 import com.example.data.local.model.UserEntity
 import com.example.ui.theme.AcademicBlueDark
 import com.example.ui.theme.AcademicBluePrimary
@@ -71,16 +72,20 @@ fun DashboardScreen(
   user: UserEntity?,
   courses: List<CourseEntity>,
   announcements: List<AnnouncementEntity>,
+  attempts: List<QuizAttemptEntity> = emptyList(),
   onCourseClick: (CourseEntity) -> Unit,
   onNavigate: (Screen) -> Unit,
   onStartQuickPractice: (CourseEntity) -> Unit,
   modifier: Modifier = Modifier
 ) {
-  val questionsAnswered = user?.questionsAnsweredCount ?: 0
-  val correctAnswers = user?.correctAnswersCount ?: 0
-  val accuracy = if (questionsAnswered > 0) (correctAnswers * 100) / questionsAnswered else 85
+  val totalFromAttempts = attempts.sumOf { it.totalQuestions }
+  val correctFromAttempts = attempts.sumOf { it.correctCount }
+  val questionsAnswered = totalFromAttempts.coerceAtLeast(user?.questionsAnsweredCount ?: 0)
+  val correctAnswers = correctFromAttempts.coerceAtLeast(user?.correctAnswersCount ?: 0)
+  val accuracy = if (questionsAnswered > 0) (correctAnswers * 100) / questionsAnswered else 0
   val streak = user?.streakDays ?: 1
   val recentCourse = courses.firstOrNull()
+  val totalQuizzes = attempts.size
 
   LazyColumn(
     modifier = modifier
@@ -169,9 +174,9 @@ fun DashboardScreen(
               modifier = Modifier.weight(1f)
             )
             DashboardMetricCard(
-              title = "Accuracy",
+              title = "Quiz Rate",
               value = "$accuracy%",
-              subtext = "Quiz Rate",
+              subtext = if (totalQuizzes > 0) "$totalQuizzes Quizzes" else "Accuracy",
               icon = Icons.Default.Speed,
               color = SuccessGreen,
               modifier = Modifier.weight(1f)
@@ -183,6 +188,62 @@ fun DashboardScreen(
               icon = Icons.Default.School,
               color = AcademicGold,
               modifier = Modifier.weight(1f)
+            )
+          }
+        }
+      }
+    }
+
+    // Live Recent Practice Card
+    if (attempts.isNotEmpty()) {
+      item {
+        val latestAttempt = attempts.first()
+        Surface(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clickable { onNavigate(Screen.PROGRESS) },
+          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+          shape = RoundedCornerShape(12.dp)
+        ) {
+          Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Box(
+              modifier = Modifier
+                .size(38.dp)
+                .background(
+                  if (latestAttempt.scorePercent >= 70) SuccessGreen.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primaryContainer,
+                  CircleShape
+                ),
+              contentAlignment = Alignment.Center
+            ) {
+              Text(
+                text = "${latestAttempt.scorePercent}%",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = if (latestAttempt.scorePercent >= 70) SuccessGreen else MaterialTheme.colorScheme.primary
+              )
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = "Live Quiz Result: ${latestAttempt.courseTitle}",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+              Text(
+                text = "${latestAttempt.correctCount} of ${latestAttempt.totalQuestions} correct • Live Analytics",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+            Icon(
+              imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+              contentDescription = "View",
+              tint = MaterialTheme.colorScheme.onSurfaceVariant,
+              modifier = Modifier.size(16.dp)
             )
           }
         }

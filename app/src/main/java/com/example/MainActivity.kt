@@ -86,8 +86,11 @@ fun AppContent(viewModel: MainViewModel) {
     }
   }
 
-  if (firebaseUser == null) {
+  val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+
+  if (currentUser == null) {
     SignInScreen(
+      viewModel = viewModel,
       onAuthSuccess = {
         val user = FirebaseAuth.getInstance().currentUser
         firebaseUser = user
@@ -189,6 +192,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             user = currentUser,
             courses = publishedCourses,
             announcements = announcements,
+            attempts = userAttempts,
             onCourseClick = { viewModel.selectCourse(it) },
             onNavigate = { viewModel.navigateTo(it) },
             onStartQuickPractice = { viewModel.startCoursePractice(it, false) }
@@ -409,7 +413,8 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             onLogin = { email, pass, cb -> viewModel.login(email, pass, cb) },
             onSwitchUser = { viewModel.switchUser(it) },
             onOpenAdminPortal = { viewModel.navigateTo(Screen.ADMIN_PORTAL) },
-            onBackClick = { viewModel.navigateBack() }
+            onBackClick = { viewModel.navigateBack() },
+            onSignOut = { viewModel.signOut() }
           )
         }
 
@@ -428,7 +433,8 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             onResetSeedData = { viewModel.adminResetData() },
             onUpdateUserRole = { userId, role -> viewModel.updateUserRole(userId, role) },
             onCreateAdmin = { name, email, pass, dept -> viewModel.createAdmin(name, email, pass, dept) },
-            onPromoteEmail = { email -> viewModel.promoteUserByEmail(email) }
+            onPromoteEmail = { email -> viewModel.promoteUserByEmail(email) },
+            onDeleteAnnouncement = { viewModel.adminDeleteAnnouncement(it) }
           )
         }
 

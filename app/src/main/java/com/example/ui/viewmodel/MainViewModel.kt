@@ -104,24 +104,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val currentUser: StateFlow<UserEntity?> = repository.currentUser
   val appTheme: StateFlow<String> = repository.appTheme
 
-  // Data streams
+  // Data streams (Eagerly shared for instant live updates across the platform)
   val publishedCourses: StateFlow<List<CourseEntity>> = repository.getPublishedCoursesFlow()
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
   val allCourses: StateFlow<List<CourseEntity>> = repository.getAllCoursesFlow()
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
   val allPublishedNotes: StateFlow<List<NoteEntity>> = repository.getAllPublishedNotesFlow()
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
   val allPastExams: StateFlow<List<PastExamEntity>> = repository.getAllPastExamsFlow()
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
   val announcements: StateFlow<List<AnnouncementEntity>> = repository.getPublishedAnnouncementsFlow()
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
   val allUsers: StateFlow<List<UserEntity>> = repository.getAllUsersFlow()
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
   // Selected item states
   private val _selectedCourse = MutableStateFlow<CourseEntity?>(null)
@@ -186,7 +186,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   init {
     viewModelScope.launch {
       repository.initialize()
-      loadUserData()
+    }
+    viewModelScope.launch {
+      repository.currentUser.collect { user ->
+        if (user != null) {
+          loadUserData(user.id)
+        } else {
+          _userAttempts.value = emptyList()
+          _userBookmarks.value = emptyList()
+          _weakTopics.value = emptyList()
+        }
+      }
     }
   }
 
@@ -218,12 +228,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       val res = repository.login(email, password)
       res.onSuccess { user ->
-        loadUserData()
+        loadUserData(user.id)
         showMessage("Welcome back, ${user.name}.")
         onResult(true, "")
       }.onFailure { err ->
         onResult(false, err.message ?: "Authentication failed.")
       }
+    }
+  }
+
+  fun register(
+    name: String,
+    email: String,
+    password: String,
+    studentId: String,
+    department: String,
+    onResult: (Boolean, String) -> Unit
+  ) {
+    viewModelScope.launch {
+      val res = repository.register(name, email, password, studentId, department)
+      res.onSuccess { user ->
+        loadUserData(user.id)
+        showMessage("Account created! Welcome, ${user.name}.")
+        onResult(true, "")
+      }.onFailure { err ->
+        onResult(false, err.message ?: "Registration failed.")
+      }
+    }
+  }
+
+  fun signOut() {
+    viewModelScope.launch {
+      try {
+        FirebaseAuth.getInstance().signOut()
+      } catch (_: Exception) {}
+      repository.signOut()
+      _currentScreen.value = Screen.DASHBOARD
+      screenBackStack.clear()
     }
   }
 
@@ -297,16 +338,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
-  private fun loadUserData() {
-    val user = currentUser.value ?: return
+  private fun loadUserData(userId: String? = null) {
+    val uid = userId ?: currentUser.value?.id ?: return
     viewModelScope.launch {
-      repository.getAttemptsForUserFlow(user.id).collect { attempts ->
+      repository.getAttemptsForUserFlow(uid).collect { attempts ->
         _userAttempts.value = attempts
-        _weakTopics.value = repository.getWeakTopics(user.id)
+        _weakTopics.value = repository.getWeakTopics(uid)
       }
     }
     viewModelScope.launch {
-      repository.getBookmarksForUserFlow(user.id).collect { bms ->
+      repository.getBookmarksForUserFlow(uid).collect { bms ->
         _userBookmarks.value = bms
       }
     }
@@ -640,6 +681,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       )
       repository.saveAnnouncement(ann)
       showMessage("Announcement broadcasted to all students.")
+    }
+  }
+
+  fun adminDeleteAnnouncement(id: String) {
+    viewModelScope.launch {
+      repository.deleteAnnouncement(id)
+      showMessage("Announcement removed.")
     }
   }
 
