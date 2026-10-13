@@ -24,15 +24,16 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Campaign
-import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -42,7 +43,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -410,47 +410,138 @@ fun ProfileScreen(
       }
     }
 
-    // Cloud Database Status Card
+    // Theme Switcher Section (Icon-Level)
     item {
       Card(
         modifier = Modifier
           .fillMaxWidth()
           .padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(1.dp)
       ) {
         Row(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
-          verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween
         ) {
-          Box(
-            modifier = Modifier
-              .size(40.dp)
-              .clip(CircleShape)
-              .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-          ) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-              imageVector = Icons.Default.CloudDone,
-              contentDescription = "Cloud Database Connected",
-              tint = MaterialTheme.colorScheme.primary
+              imageVector = Icons.Default.Palette,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(20.dp)
             )
-          }
-          Spacer(modifier = Modifier.width(12.dp))
-          Column(modifier = Modifier.weight(1f)) {
+            Spacer(modifier = Modifier.width(10.dp))
             Text(
-              text = "Cloud Firestore Database",
+              text = "Theme Mode",
               style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
               color = MaterialTheme.colorScheme.onSurface
             )
-            Text(
-              text = "Real-time sync active for progress & bookmarks",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
+          }
+
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            ThemeIconButton(
+              icon = Icons.Default.LightMode,
+              label = "Light",
+              isSelected = currentTheme == "LIGHT",
+              onClick = { onThemeSelect("LIGHT") }
+            )
+            ThemeIconButton(
+              icon = Icons.Default.DarkMode,
+              label = "Dark",
+              isSelected = currentTheme == "DARK",
+              onClick = { onThemeSelect("DARK") }
+            )
+            ThemeIconButton(
+              icon = Icons.Default.PhoneAndroid,
+              label = "System",
+              isSelected = currentTheme == "SYSTEM",
+              onClick = { onThemeSelect("SYSTEM") }
             )
           }
+        }
+      }
+    }
+
+    // About the App Section
+    item {
+      Card(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(1.dp)
+      ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+              imageVector = Icons.Default.Info,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+              text = "About the App",
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+              color = MaterialTheme.colorScheme.onSurface
+            )
+          }
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(
+            text = "TTS Academy App is an academic portal designed specifically for university freshmen to study notes, practice past examinations, and track their academic performance.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            lineHeight = 20.sp
+          )
+        }
+      }
+    }
+
+    // Meet the Developer Section
+    item {
+      Card(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(1.dp)
+      ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+              imageVector = Icons.Default.Code,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+              text = "Meet the Developer",
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+              color = MaterialTheme.colorScheme.onSurface
+            )
+          }
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(
+            text = "The app is developed by Nayo Technologies",
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.primary
+          )
+          Spacer(modifier = Modifier.height(4.dp))
+          Text(
+            text = "Dedicated to crafting high-performance, modern digital educational solutions.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
         }
       }
     }
@@ -543,116 +634,33 @@ fun ProfileScreen(
         }
       }
     }
-
-    // Theme Switcher Section
-    item {
-      Card(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(16.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(1.dp)
-      ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-          Text(
-            text = "App Theme Mode",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-          )
-          Spacer(modifier = Modifier.height(10.dp))
-
-          ThemeOptionRow("System Default", Icons.Default.PhoneAndroid, currentTheme == "SYSTEM") {
-            onThemeSelect("SYSTEM")
-          }
-          ThemeOptionRow("Light Mode", Icons.Default.LightMode, currentTheme == "LIGHT") {
-            onThemeSelect("LIGHT")
-          }
-          ThemeOptionRow("Dark Mode", Icons.Default.DarkMode, currentTheme == "DARK") {
-            onThemeSelect("DARK")
-          }
-        }
-      }
-    }
-
-    // Student Profiles Switcher (Regular Students Only)
-    val studentUsers = allUsers.filter { it.role == "STUDENT" }
-    if (studentUsers.isNotEmpty()) {
-      item {
-        Card(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-          shape = RoundedCornerShape(16.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(1.dp)
-        ) {
-          Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-              text = "Student Accounts",
-              style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-              text = "Switch between enrolled student profiles.",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-
-            studentUsers.forEach { u ->
-              val isCurrent = u.id == user?.id
-              Surface(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(vertical = 4.dp)
-                  .clickable { onSwitchUser(u.id) },
-                shape = RoundedCornerShape(8.dp),
-                color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-              ) {
-                Row(
-                  modifier = Modifier.padding(12.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                  Column {
-                    Text(text = u.name, fontWeight = FontWeight.Bold)
-                    Text(text = "${u.studentId} • ${u.department}", style = MaterialTheme.typography.bodySmall)
-                  }
-                  if (isCurrent) {
-                    Text("Active", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-                  } else {
-                    Icon(Icons.Default.SwapHoriz, contentDescription = "Switch", tint = MaterialTheme.colorScheme.primary)
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
   }
-
-
 }
 
 @Composable
-private fun ThemeOptionRow(
-  label: String,
+private fun ThemeIconButton(
   icon: androidx.compose.ui.graphics.vector.ImageVector,
+  label: String,
   isSelected: Boolean,
-  onSelect: () -> Unit
+  onClick: () -> Unit
 ) {
-  Row(
+  Surface(
     modifier = Modifier
-      .fillMaxWidth()
-      .clickable(onClick = onSelect)
-      .padding(vertical = 6.dp),
-    verticalAlignment = Alignment.CenterVertically
+      .clip(RoundedCornerShape(8.dp))
+      .clickable(onClick = onClick),
+    shape = RoundedCornerShape(8.dp),
+    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
   ) {
-    RadioButton(selected = isSelected, onClick = onSelect)
-    Spacer(modifier = Modifier.width(8.dp))
-    Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    Spacer(modifier = Modifier.width(10.dp))
-    Text(text = label, style = MaterialTheme.typography.bodyMedium)
+    Box(
+      modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+      contentAlignment = Alignment.Center
+    ) {
+      Icon(
+        imageVector = icon,
+        contentDescription = label,
+        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(18.dp)
+      )
+    }
   }
 }

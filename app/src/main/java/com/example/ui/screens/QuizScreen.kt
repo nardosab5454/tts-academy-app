@@ -95,8 +95,7 @@ fun QuizScreen(
 
   val currentQuestion = state.questions[state.currentIndex]
   val selectedAnswer = state.selectedAnswers[currentQuestion.id]
-  val isSubmittedInPractice = state.submittedInPractice.contains(currentQuestion.id)
-  val isRevealed = !state.isExamMode && isSubmittedInPractice
+  val isRevealed = selectedAnswer != null
 
   Column(
     modifier = modifier
@@ -306,25 +305,7 @@ fun QuizScreen(
         )
       }
 
-      // Practice Mode: Check Answer Button
-      if (!state.isExamMode && !isSubmittedInPractice) {
-        item {
-          Button(
-            onClick = { onSubmitPracticeAnswer(currentQuestion.id) },
-            enabled = selectedAnswer != null,
-            modifier = Modifier
-              .fillMaxWidth()
-              .height(50.dp)
-              .testTag("check_answer_button"),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-            shape = RoundedCornerShape(12.dp)
-          ) {
-            Icon(Icons.Default.Check, contentDescription = null)
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Submit & View Explanation", style = MaterialTheme.typography.titleSmall)
-          }
-        }
-      }
+
 
       // Detailed Explanation Card
       if (isRevealed) {

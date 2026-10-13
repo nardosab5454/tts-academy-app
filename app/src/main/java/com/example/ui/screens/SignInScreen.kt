@@ -29,6 +29,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,6 +47,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -136,59 +138,54 @@ fun SignInScreen(
             )
           }
 
-          Spacer(modifier = Modifier.height(20.dp))
+          Spacer(modifier = Modifier.height(24.dp))
 
           Text(
-            text = "TTS ACADEMY",
-            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+            text = "Welcome to TTS ACADEMY",
+            style = MaterialTheme.typography.headlineMedium.copy(
+              fontWeight = FontWeight.Bold,
+              letterSpacing = 0.5.sp
+            ),
             color = MaterialTheme.colorScheme.primary,
             textAlign = TextAlign.Center
           )
 
+          Spacer(modifier = Modifier.height(8.dp))
+
           Text(
-            text = "University Freshman Academic Companion",
-            style = MaterialTheme.typography.titleSmall,
+            text = "Freshman Academic Portal",
+            style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
           )
 
-          Spacer(modifier = Modifier.height(28.dp))
+          Spacer(modifier = Modifier.height(36.dp))
 
-          // Feature Highlights Card
-          Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-          ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-              FeatureRow(
-                icon = Icons.Default.CloudDone,
-                title = "Real Cloud Database",
-                description = "Synchronize quiz scores, bookmarks & study notes across all devices."
-              )
-              FeatureRow(
-                icon = Icons.Default.AutoAwesome,
-                title = "Gemini AI Academic Tutor",
-                description = "Instant step-by-step derivations and research clarification."
-              )
-              FeatureRow(
-                icon = Icons.Default.Security,
-                title = "Zero-Trust Security",
-                description = "Authenticated isolation protecting your personal university notes."
-              )
-            }
-          }
-
-          Spacer(modifier = Modifier.height(32.dp))
-
-          // Interactive Google Sign-In Button
+          // Basic Options: Sign in with Google
           GoogleSignInButton(
             onAuthSuccess = onAuthSuccess,
             onAuthError = { authErrorMessage = it }
           )
 
+          Spacer(modifier = Modifier.height(14.dp))
+
+          // Basic Options: Guest Access
+          OutlinedButton(
+            onClick = onAuthSuccess,
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(52.dp)
+              .testTag("guest_sign_in_button")
+          ) {
+            Text(
+              text = "Continue as Guest Student",
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
+            )
+          }
+
           if (!authErrorMessage.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Text(
               text = authErrorMessage ?: "",
               style = MaterialTheme.typography.bodySmall,
@@ -198,56 +195,17 @@ fun SignInScreen(
             )
           }
 
-          Spacer(modifier = Modifier.height(16.dp))
+          Spacer(modifier = Modifier.height(24.dp))
 
           Text(
-            text = "Sign in using your Google account to unlock cloud sync and personalized AI learning.",
-            style = MaterialTheme.typography.labelSmall,
+            text = "Sign in to save your quiz progress, bookmarks, and personalized freshman study notes.",
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 24.dp)
+            modifier = Modifier.padding(horizontal = 16.dp)
           )
         }
       }
-    }
-  }
-}
-
-@Composable
-private fun FeatureRow(
-  icon: androidx.compose.ui.graphics.vector.ImageVector,
-  title: String,
-  description: String
-) {
-  Row(
-    verticalAlignment = Alignment.Top,
-    modifier = Modifier.fillMaxWidth()
-  ) {
-    Box(
-      modifier = Modifier
-        .size(36.dp)
-        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), CircleShape),
-      contentAlignment = Alignment.Center
-    ) {
-      Icon(
-        imageVector = icon,
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.size(20.dp)
-      )
-    }
-    Spacer(modifier = Modifier.width(12.dp))
-    Column {
-      Text(
-        text = title,
-        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-        color = MaterialTheme.colorScheme.onSurface
-      )
-      Text(
-        text = description,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-      )
     }
   }
 }

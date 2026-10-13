@@ -407,7 +407,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val current = _activeQuiz.value
     val newAnswers = current.selectedAnswers.toMutableMap()
     newAnswers[questionId] = answer
-    _activeQuiz.value = current.copy(selectedAnswers = newAnswers)
+    val newSubmitted = current.submittedInPractice + questionId
+    _activeQuiz.value = current.copy(
+      selectedAnswers = newAnswers,
+      submittedInPractice = newSubmitted
+    )
   }
 
   fun submitPracticeAnswer(questionId: String) {
