@@ -20,9 +20,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.LightMode
@@ -48,12 +50,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.CredentialManager
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -311,10 +319,6 @@ fun ProfileScreen(
   onBackClick: () -> Unit,
   modifier: Modifier = Modifier
 ) {
-  var showLoginDialog by remember { mutableStateOf(false) }
-  var loginEmail by remember { mutableStateOf("") }
-  var loginPassword by remember { mutableStateOf("") }
-  var loginError by remember { mutableStateOf<String?>(null) }
 
   LazyColumn(
     modifier = modifier
@@ -406,44 +410,97 @@ fun ProfileScreen(
       }
     }
 
-    // Account Sign In Button (Private & Clean)
+    // Cloud Database Status Card
     item {
       Card(
         modifier = Modifier
           .fillMaxWidth()
           .padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))
+      ) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Box(
+            modifier = Modifier
+              .size(40.dp)
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.CloudDone,
+              contentDescription = "Cloud Database Connected",
+              tint = MaterialTheme.colorScheme.primary
+            )
+          }
+          Spacer(modifier = Modifier.width(12.dp))
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "Cloud Firestore Database",
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+              color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+              text = "Real-time sync active for progress & bookmarks",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+        }
+      }
+    }
+
+    // Sign Out Button
+    item {
+      val context = LocalContext.current
+      val coroutineScope = rememberCoroutineScope()
+      Card(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f))
       ) {
         Row(
           modifier = Modifier
             .fillMaxWidth()
             .clickable {
-              loginEmail = ""
-              loginPassword = ""
-              loginError = null
-              showLoginDialog = true
+              coroutineScope.launch {
+                try {
+                  CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest())
+                } catch (_: Exception) {}
+                FirebaseAuth.getInstance().signOut()
+              }
             }
             .padding(16.dp),
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.SpaceBetween
         ) {
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(
+              Icons.AutoMirrored.Filled.Logout,
+              contentDescription = "Sign Out",
+              tint = MaterialTheme.colorScheme.error
+            )
             Spacer(modifier = Modifier.width(12.dp))
             Column {
               Text(
-                text = "Account Sign In",
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                text = "Sign Out",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.error
               )
               Text(
-                text = "Sign in with your email and password credentials",
+                text = "Log out from your Google account",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
               )
             }
           }
-          Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         }
       }
     }
@@ -575,71 +632,7 @@ fun ProfileScreen(
     }
   }
 
-  // Account Sign In Dialog
-  if (showLoginDialog) {
-    AlertDialog(
-      onDismissRequest = { showLoginDialog = false },
-      title = { Text("Account Sign In") },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text(
-            text = "Enter your university email address and account password to sign in.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
-          OutlinedTextField(
-            value = loginEmail,
-            onValueChange = {
-              loginEmail = it
-              loginError = null
-            },
-            label = { Text("Email Address") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-          )
-          OutlinedTextField(
-            value = loginPassword,
-            onValueChange = {
-              loginPassword = it
-              loginError = null
-            },
-            label = { Text("Password") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-          )
-          if (!loginError.isNullOrBlank()) {
-            Text(
-              text = loginError ?: "",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.error
-            )
-          }
-        }
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            if (loginEmail.isNotBlank()) {
-              onLogin(loginEmail, loginPassword) { success, msg ->
-                if (success) {
-                  showLoginDialog = false
-                } else {
-                  loginError = msg
-                }
-              }
-            }
-          }
-        ) {
-          Text("Sign In")
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { showLoginDialog = false }) {
-          Text("Cancel")
-        }
-      }
-    )
-  }
+
 }
 
 @Composable

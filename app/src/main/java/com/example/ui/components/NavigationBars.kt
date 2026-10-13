@@ -17,7 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bookmark
@@ -58,6 +58,7 @@ fun AppHeader(
   onNotificationsClick: () -> Unit,
   onSearchClick: () -> Unit,
   onProfileClick: () -> Unit,
+  onAiTutorClick: (() -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   Surface(
@@ -116,6 +117,19 @@ fun AppHeader(
       }
 
       Row(verticalAlignment = Alignment.CenterVertically) {
+        if (onAiTutorClick != null) {
+          IconButton(
+            onClick = onAiTutorClick,
+            modifier = Modifier.testTag("ai_tutor_icon_button")
+          ) {
+            Icon(
+              imageVector = Icons.Default.AutoAwesome,
+              contentDescription = "Gemini AI Tutor",
+              tint = MaterialTheme.colorScheme.primary
+            )
+          }
+        }
+
         IconButton(
           onClick = onSearchClick,
           modifier = Modifier.testTag("search_icon_button")

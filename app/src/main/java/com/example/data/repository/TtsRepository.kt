@@ -142,6 +142,24 @@ class TtsRepository(private val database: AppDatabase) {
     Result.success(newAdmin)
   }
 
+  suspend fun promoteUserByEmail(email: String): Result<UserEntity> = withContext(Dispatchers.IO) {
+    val cleanEmail = email.trim()
+    val existing = userDao.getUserByEmail(cleanEmail)
+    if (existing != null) {
+      userDao.updateUserRole(existing.id, "ADMIN")
+      val updated = existing.copy(role = "ADMIN")
+      userDao.updateUser(updated)
+      Result.success(updated)
+    } else {
+      createAdminAccount(
+        name = cleanEmail.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() },
+        email = cleanEmail,
+        password = "Admin@${cleanEmail.take(4)}",
+        department = "University Administration"
+      )
+    }
+  }
+
   suspend fun register(
     name: String,
     email: String,
@@ -179,6 +197,45 @@ class TtsRepository(private val database: AppDatabase) {
       _currentUser.value = user
       prefDao.setPreference(UserPreferenceEntity("active_user_id", user.id))
     }
+  }
+
+  suspend fun switchActiveUser(userId: String) = switchUser(userId)
+
+  suspend fun syncFirebaseUser(
+    uid: String,
+    email: String,
+    name: String,
+    role: String = "STUDENT",
+    department: String = "Computer Science"
+  ): UserEntity = withContext(Dispatchers.IO) {
+    val existing = userDao.getUserById(uid)
+    val user = if (existing != null) {
+      val updated = existing.copy(
+        name = name.ifBlank { existing.name },
+        email = email.ifBlank { existing.email }
+      )
+      userDao.updateUser(updated)
+      updated
+    } else {
+      val newUser = UserEntity(
+        id = uid,
+        name = name.ifBlank { "TTS Student" },
+        email = email.ifBlank { "student@ttsacademy.edu" },
+        password = "",
+        studentId = "STU-" + uid.take(6).uppercase(),
+        department = department,
+        role = role,
+        avatarUrl = if (role == "ADMIN") "avatar_admin" else "avatar_1",
+        streakDays = 1,
+        questionsAnsweredCount = 0,
+        correctAnswersCount = 0
+      )
+      userDao.insertUser(newUser)
+      newUser
+    }
+    _currentUser.value = user
+    prefDao.setPreference(UserPreferenceEntity("active_user_id", user.id))
+    user
   }
 
   suspend fun updateUserProfile(user: UserEntity) = withContext(Dispatchers.IO) {

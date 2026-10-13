@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -79,6 +80,7 @@ fun AdminPortalScreen(
   onResetSeedData: () -> Unit,
   onUpdateUserRole: (String, String) -> Unit,
   onCreateAdmin: (String, String, String, String) -> Unit,
+  onPromoteEmail: (String) -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   var selectedTab by remember { mutableIntStateOf(0) }
@@ -116,7 +118,7 @@ fun AdminPortalScreen(
       2 -> AdminAddQuestionTab(courses, onSaveQuestion)
       3 -> AdminAddNoteTab(courses, onSaveNote)
       4 -> AdminAnnouncementsTab(announcements, { showNewAnnouncementDialog = true })
-      5 -> AdminStudentsTab(allUsers, { showNewAdminDialog = true }, onUpdateUserRole)
+      5 -> AdminStudentsTab(allUsers, { showNewAdminDialog = true }, onUpdateUserRole, onPromoteEmail)
     }
   }
 
@@ -619,8 +621,11 @@ private fun AdminAnnouncementsTab(
 private fun AdminStudentsTab(
   users: List<UserEntity>,
   onAddAdminClick: () -> Unit,
-  onUpdateRole: (String, String) -> Unit
+  onUpdateRole: (String, String) -> Unit,
+  onPromoteEmail: (String) -> Unit
 ) {
+  var targetEmailInput by remember { mutableStateOf("") }
+
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(16.dp),
@@ -633,14 +638,64 @@ private fun AdminStudentsTab(
         verticalAlignment = Alignment.CenterVertically
       ) {
         Column(modifier = Modifier.weight(1f)) {
-          Text("Admin & User Management (${users.size})", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-          Text("Promote students to administrator or create new admin accounts.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Text("Admin & Role Management (${users.size})", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+          Text("Make any user an administrator anytime, or create new admin profiles.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(modifier = Modifier.width(8.dp))
         Button(onClick = onAddAdminClick) {
           Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
           Spacer(modifier = Modifier.width(4.dp))
           Text("Add Admin")
+        }
+      }
+    }
+
+    // Direct "Make Anyone Admin Anytime" Card
+    item {
+      Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+          Text(
+            text = "Grant Administrator Access to Any Email",
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.primary
+          )
+          Text(
+            text = "Type any registered student email address or new staff email to immediately grant full admin rights.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+          Spacer(modifier = Modifier.height(10.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            OutlinedTextField(
+              value = targetEmailInput,
+              onValueChange = { targetEmailInput = it },
+              placeholder = { Text("e.g. alex.morgan@university.edu") },
+              singleLine = true,
+              modifier = Modifier.weight(1f),
+              shape = RoundedCornerShape(10.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+              onClick = {
+                if (targetEmailInput.isNotBlank()) {
+                  onPromoteEmail(targetEmailInput.trim())
+                  targetEmailInput = ""
+                }
+              },
+              enabled = targetEmailInput.isNotBlank(),
+              shape = RoundedCornerShape(10.dp)
+            ) {
+              Text("Make Admin")
+            }
+          }
         }
       }
     }

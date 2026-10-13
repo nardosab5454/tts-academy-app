@@ -1,0 +1,182 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile containing academic details, role, and department",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Unique user ID matching auth UID"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Student or educator email"
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name of student"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["STUDENT", "ADMIN"],
+          "description": "User access role"
+        },
+        "department": {
+          "type": "string",
+          "description": "University department"
+        },
+        "enrolledCourses": {
+          "type": "array",
+          "description": "List of course IDs student is enrolled in"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp via serverTimestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp via serverTimestamp"
+        }
+      },
+      "required": ["userId", "email", "name", "role", "createdAt"]
+    },
+    "QuizAttempt": {
+      "title": "QuizAttempt",
+      "description": "Recorded quiz test score and performance for a student",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique attempt record ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner student UID"
+        },
+        "courseId": {
+          "type": "string",
+          "description": "Course identifier"
+        },
+        "topicId": {
+          "type": "string",
+          "description": "Topic or exam identifier"
+        },
+        "score": {
+          "type": "integer",
+          "description": "Raw score obtained"
+        },
+        "totalQuestions": {
+          "type": "integer",
+          "description": "Total question count"
+        },
+        "percentage": {
+          "type": "integer",
+          "description": "Percentage score (0-100)"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Completion timestamp via serverTimestamp"
+        }
+      },
+      "required": ["id", "userId", "courseId", "score", "totalQuestions", "completedAt"]
+    },
+    "Bookmark": {
+      "title": "Bookmark",
+      "description": "Saved question bookmark for later review and AI explanation",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique bookmark record ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner student UID"
+        },
+        "questionId": {
+          "type": "string",
+          "description": "Question ID"
+        },
+        "courseId": {
+          "type": "string",
+          "description": "Course identifier"
+        },
+        "topicId": {
+          "type": "string",
+          "description": "Topic identifier"
+        },
+        "savedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when bookmarked via serverTimestamp"
+        }
+      },
+      "required": ["id", "userId", "questionId", "savedAt"]
+    },
+    "StudyNote": {
+      "title": "StudyNote",
+      "description": "Personalized study note, revision summary, or research note",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique note record ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner student UID"
+        },
+        "courseId": {
+          "type": "string",
+          "description": "Associated course ID"
+        },
+        "title": {
+          "type": "string",
+          "description": "Note title or subject"
+        },
+        "content": {
+          "type": "string",
+          "description": "Note content or AI explanation breakdown"
+        },
+        "tags": {
+          "type": "array",
+          "description": "List of search tags"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp via serverTimestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp via serverTimestamp"
+        }
+      },
+      "required": ["id", "userId", "courseId", "title", "content", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles scoped by user ID"
+    },
+    "/users/{userId}/quiz_attempts/{attemptId}": {
+      "schema": "QuizAttempt",
+      "description": "Quiz attempts for a student"
+    },
+    "/users/{userId}/bookmarks/{bookmarkId}": {
+      "schema": "Bookmark",
+      "description": "Saved question bookmarks for a student"
+    },
+    "/users/{userId}/notes/{noteId}": {
+      "schema": "StudyNote",
+      "description": "Personalized study and revision notes for a student"
+    }
+  }
+}

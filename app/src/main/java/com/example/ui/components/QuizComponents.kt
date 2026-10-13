@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -30,6 +31,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -172,6 +174,7 @@ fun QuestionOptionItem(
 fun ExplanationCard(
   question: QuestionEntity,
   selectedAnswer: String?,
+  onAskAiTutor: ((QuestionEntity) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   val isCorrect = selectedAnswer.equals(question.correctAnswer, ignoreCase = true)
@@ -193,20 +196,27 @@ fun ExplanationCard(
         .padding(16.dp)
     ) {
       Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
       ) {
-        Icon(
-          imageVector = if (isCorrect) Icons.Default.CheckCircle else Icons.Default.Lightbulb,
-          contentDescription = null,
-          tint = if (isCorrect) SuccessGreen else MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(22.dp)
-        )
-        Text(
-          text = if (isCorrect) "Excellent! Correct Answer: (${question.correctAnswer})" else "Correct Answer is (${question.correctAnswer})",
-          style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-          color = if (isCorrect) SuccessGreenDark else MaterialTheme.colorScheme.onSurface
-        )
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          modifier = Modifier.weight(1f)
+        ) {
+          Icon(
+            imageVector = if (isCorrect) Icons.Default.CheckCircle else Icons.Default.Lightbulb,
+            contentDescription = null,
+            tint = if (isCorrect) SuccessGreen else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp)
+          )
+          Text(
+            text = if (isCorrect) "Excellent! Correct Answer: (${question.correctAnswer})" else "Correct Answer is (${question.correctAnswer})",
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+            color = if (isCorrect) SuccessGreenDark else MaterialTheme.colorScheme.onSurface
+          )
+        }
       }
 
       Spacer(modifier = Modifier.height(8.dp))
@@ -216,6 +226,27 @@ fun ExplanationCard(
         style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
         color = MaterialTheme.colorScheme.onSurface
       )
+
+      if (onAskAiTutor != null) {
+        Spacer(modifier = Modifier.height(10.dp))
+        OutlinedButton(
+          onClick = { onAskAiTutor(question) },
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(10.dp)
+        ) {
+          Icon(
+            imageVector = Icons.Default.AutoAwesome,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(16.dp)
+          )
+          Spacer(modifier = Modifier.width(6.dp))
+          Text(
+            text = "Ask Gemini AI Tutor for Clarification",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+          )
+        }
+      }
 
       Spacer(modifier = Modifier.height(14.dp))
       HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))

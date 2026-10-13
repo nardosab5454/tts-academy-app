@@ -82,6 +82,7 @@ fun QuizScreen(
   onFinishQuiz: () -> Unit,
   onToggleBookmark: () -> Unit,
   onExit: () -> Unit,
+  onAskAiTutor: ((QuestionEntity, String?) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   var showExitDialog by remember { mutableStateOf(false) }
@@ -330,7 +331,8 @@ fun QuizScreen(
         item {
           ExplanationCard(
             question = currentQuestion,
-            selectedAnswer = selectedAnswer
+            selectedAnswer = selectedAnswer,
+            onAskAiTutor = { q -> onAskAiTutor?.invoke(q, selectedAnswer) }
           )
         }
       }
@@ -566,6 +568,7 @@ fun ReviewAnswersScreen(
   questions: List<QuestionEntity>,
   selectedAnswers: Map<String, String>,
   onBackClick: () -> Unit,
+  onAskAiTutor: ((QuestionEntity, String?) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   Column(
@@ -640,7 +643,11 @@ fun ReviewAnswersScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             // Detailed Explanation
-            ExplanationCard(question = q, selectedAnswer = chosen)
+            ExplanationCard(
+              question = q,
+              selectedAnswer = chosen,
+              onAskAiTutor = { question -> onAskAiTutor?.invoke(question, chosen) }
+            )
           }
         }
       }

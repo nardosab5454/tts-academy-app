@@ -20,10 +20,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -244,6 +246,7 @@ fun NoteDetailScreen(
   isBookmarked: Boolean,
   onBackClick: () -> Unit,
   onToggleBookmark: () -> Unit,
+  onAskAiTutor: ((NoteEntity) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   Column(
@@ -285,6 +288,19 @@ fun NoteDetailScreen(
               style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
               color = MaterialTheme.colorScheme.onSurface
             )
+
+            if (onAskAiTutor != null) {
+              Spacer(modifier = Modifier.height(12.dp))
+              Button(
+                onClick = { onAskAiTutor(note) },
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Research & Clarify with Gemini AI", style = MaterialTheme.typography.labelMedium)
+              }
+            }
           }
         }
       }

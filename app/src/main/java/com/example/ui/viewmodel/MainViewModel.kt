@@ -13,8 +13,14 @@ import com.example.data.local.model.QuestionEntity
 import com.example.data.local.model.QuizAttemptEntity
 import com.example.data.local.model.TopicEntity
 import com.example.data.local.model.UserEntity
+import com.example.data.firestore.FirestoreRepository
+import com.example.data.firestore.model.FirestoreBookmark
+import com.example.data.firestore.model.FirestoreQuizAttempt
+import com.example.data.firestore.model.FirestoreUserProfile
 import com.example.data.repository.TtsRepository
 import com.example.data.repository.WeakTopicSummary
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +46,7 @@ enum class Screen {
   ANNOUNCEMENTS,
   PROFILE,
   ADMIN_PORTAL,
+  AI_TUTOR,
   AUTH
 }
 
@@ -65,6 +72,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   private val database = AppDatabase.getDatabase(application, viewModelScope)
   val repository = TtsRepository(database)
+  val firestoreRepository = FirestoreRepository(application)
+
+  fun syncWithFirebaseUser(firebaseUser: FirebaseUser?) {
+    if (firebaseUser == null) return
+    viewModelScope.launch {
+      val uid = firebaseUser.uid
+      val email = firebaseUser.email ?: "student@ttsacademy.edu"
+      val name = firebaseUser.displayName ?: "TTS Student"
+      val profileResult = firestoreRepository.getOrCreateUserProfile(uid, email, name)
+      profileResult.onSuccess { profile ->
+        repository.syncFirebaseUser(
+          uid = uid,
+          email = email,
+          name = profile.name,
+          role = profile.role,
+          department = profile.department
+        )
+        loadUserData()
+      }
+    }
+  }
 
   // Current active screen and navigation history
   private val _currentScreen = MutableStateFlow(Screen.DASHBOARD)
@@ -141,6 +169,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private val _searchQuestionResults = MutableStateFlow<List<QuestionEntity>>(emptyList())
   val searchQuestionResults: StateFlow<List<QuestionEntity>> = _searchQuestionResults.asStateFlow()
 
+  // Gemini AI Tutor state
+  private val _isAiLoading = MutableStateFlow(false)
+  val isAiLoading: StateFlow<Boolean> = _isAiLoading.asStateFlow()
+
+  private val _aiResponse = MutableStateFlow<String?>(null)
+  val aiResponse: StateFlow<String?> = _aiResponse.asStateFlow()
+
+  private val _aiActiveContext = MutableStateFlow<String?>(null)
+  val aiActiveContext: StateFlow<String?> = _aiActiveContext.asStateFlow()
+
   // Feedback banner / snackbar
   private val _message = MutableStateFlow<String?>(null)
   val message: StateFlow<String?> = _message.asStateFlow()
@@ -205,6 +243,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showMessage("Failed to create admin: ${err.message}")
       }
     }
+  }
+
+  fun promoteUserByEmail(email: String) {
+    viewModelScope.launch {
+      val res = repository.promoteUserByEmail(email)
+      res.onSuccess { user ->
+        showMessage("Granted full administrator privileges to ${user.name} (${user.email}).")
+      }.onFailure { err ->
+        showMessage("Could not promote user: ${err.message}")
+      }
+    }
+  }
+
+  // --- Gemini AI Student Clarification & Research ---
+  fun askGeminiTutor(
+    prompt: String,
+    courseTitle: String? = null,
+    contextInfo: String? = null,
+    onResult: ((String) -> Unit)? = null
+  ) {
+    viewModelScope.launch {
+      _isAiLoading.value = true
+      _aiActiveContext.value = courseTitle ?: "Freshman University Topic"
+      val explanation = com.example.data.remote.GeminiTutorService.askTutor(
+        prompt = prompt,
+        courseTitle = courseTitle,
+        contextInfo = contextInfo
+      )
+      _aiResponse.value = explanation
+      _isAiLoading.value = false
+      onResult?.invoke(explanation)
+    }
+  }
+
+  fun clearAiTutorState() {
+    _aiResponse.value = null
+    _isAiLoading.value = false
+    _aiActiveContext.value = null
   }
 
   fun switchUser(userId: String) {
@@ -409,6 +485,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         resultAttempt = attempt
       )
       navigateTo(Screen.QUIZ_RESULT)
+
+      // Also persist to real cloud Firestore database
+      val fbUser = FirebaseAuth.getInstance().currentUser
+      if (fbUser != null) {
+        val fsAttempt = FirestoreQuizAttempt(
+          id = attempt.id,
+          userId = fbUser.uid,
+          courseId = attempt.courseId,
+          topicId = attempt.topicId ?: "",
+          score = attempt.correctCount.toLong(),
+          totalQuestions = attempt.totalQuestions.toLong(),
+          percentage = attempt.scorePercent.toLong()
+        )
+        firestoreRepository.recordQuizAttempt(fsAttempt)
+      }
     }
   }
 
@@ -431,6 +522,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       val isSaved = repository.toggleBookmark(user.id, itemType, itemId, courseId, courseTitle, title)
       showMessage(if (isSaved) "Saved to bookmarks" else "Removed from bookmarks")
+      val fbUser = FirebaseAuth.getInstance().currentUser
+      if (fbUser != null && isSaved) {
+        val fsBookmark = FirestoreBookmark(
+          id = "bm_${UUID.randomUUID().toString().take(8)}",
+          userId = fbUser.uid,
+          questionId = itemId,
+          courseId = courseId,
+          topicId = ""
+        )
+        firestoreRepository.addBookmark(fsBookmark)
+      }
     }
   }
 

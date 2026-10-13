@@ -13,9 +13,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -23,6 +26,7 @@ import com.example.data.local.model.CourseEntity
 import com.example.ui.components.AppBottomNavigation
 import com.example.ui.components.AppHeader
 import com.example.ui.screens.AdminPortalScreen
+import com.example.ui.screens.AiTutorScreen
 import com.example.ui.screens.AnnouncementsScreen
 import com.example.ui.screens.BookmarksScreen
 import com.example.ui.screens.CourseDetailScreen
@@ -38,9 +42,11 @@ import com.example.ui.screens.QuizResultScreen
 import com.example.ui.screens.QuizScreen
 import com.example.ui.screens.ReviewAnswersScreen
 import com.example.ui.screens.SearchScreen
+import com.example.ui.screens.SignInScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.Screen
+import com.google.firebase.auth.FirebaseAuth
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,9 +63,39 @@ class MainActivity : ComponentActivity() {
       }
 
       MyApplicationTheme(darkTheme = darkTheme) {
-        TtsAcademyApp(viewModel = viewModel)
+        AppContent(viewModel = viewModel)
       }
     }
+  }
+}
+
+@Composable
+fun AppContent(viewModel: MainViewModel) {
+  var firebaseUser by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser) }
+
+  DisposableEffect(Unit) {
+    val listener = FirebaseAuth.AuthStateListener { auth ->
+      firebaseUser = auth.currentUser
+      auth.currentUser?.let { user ->
+        viewModel.syncWithFirebaseUser(user)
+      }
+    }
+    FirebaseAuth.getInstance().addAuthStateListener(listener)
+    onDispose {
+      FirebaseAuth.getInstance().removeAuthStateListener(listener)
+    }
+  }
+
+  if (firebaseUser == null) {
+    SignInScreen(
+      onAuthSuccess = {
+        val user = FirebaseAuth.getInstance().currentUser
+        firebaseUser = user
+        user?.let { viewModel.syncWithFirebaseUser(it) }
+      }
+    )
+  } else {
+    TtsAcademyApp(viewModel = viewModel)
   }
 }
 
@@ -128,7 +164,8 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
           unreadAnnouncementsCount = announcements.size,
           onNotificationsClick = { viewModel.navigateTo(Screen.ANNOUNCEMENTS) },
           onSearchClick = { viewModel.navigateTo(Screen.SEARCH) },
-          onProfileClick = { viewModel.navigateTo(Screen.PROFILE) }
+          onProfileClick = { viewModel.navigateTo(Screen.PROFILE) },
+          onAiTutorClick = { viewModel.navigateTo(Screen.AI_TUTOR) }
         )
       }
     },
@@ -209,7 +246,17 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
                 )
               }
             },
-            onExit = { viewModel.navigateBack() }
+            onExit = { viewModel.navigateBack() },
+            onAskAiTutor = { q, selectedAns ->
+              val context = "Question: ${q.questionText}\nOption A: ${q.optionA}\nOption B: ${q.optionB}\nOption C: ${q.optionC}\nOption D: ${q.optionD}\nCorrect Answer: (${q.correctAnswer})" + (if (selectedAns != null) "\nStudent Selected: ($selectedAns)" else "") + "\nOfficial Explanation: ${q.explanationGeneral}"
+              val prompt = if (selectedAns != null && selectedAns != q.correctAnswer) {
+                "Explain step-by-step why (${q.correctAnswer}) is correct and why my choice ($selectedAns) is incorrect with common student pitfalls."
+              } else {
+                "Explain this freshman question step-by-step with formulas, intuitive analogies, and key exam tips."
+              }
+              viewModel.askGeminiTutor(prompt, activeQuiz.courseTitle, context)
+              viewModel.navigateTo(Screen.AI_TUTOR)
+            }
           )
         }
 
@@ -228,7 +275,12 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
           ReviewAnswersScreen(
             questions = activeQuiz.questions,
             selectedAnswers = activeQuiz.selectedAnswers,
-            onBackClick = { viewModel.navigateBack() }
+            onBackClick = { viewModel.navigateBack() },
+            onAskAiTutor = { q, selectedAns ->
+              val context = "Question: ${q.questionText}\nOption A: ${q.optionA}\nOption B: ${q.optionB}\nOption C: ${q.optionC}\nOption D: ${q.optionD}\nCorrect Answer: (${q.correctAnswer})" + (if (selectedAns != null) "\nStudent Selected: ($selectedAns)" else "") + "\nExplanation: ${q.explanationGeneral}"
+              viewModel.askGeminiTutor("Provide deep academic analysis of this exam question.", activeQuiz.courseTitle, context)
+              viewModel.navigateTo(Screen.AI_TUTOR)
+            }
           )
         }
 
@@ -280,6 +332,15 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
                   courseTitle = course?.title ?: "Note",
                   title = note.title
                 )
+              },
+              onAskAiTutor = { n ->
+                val context = "Course: ${course?.title ?: ""}\nTopic: ${n.title}\nKey Formulas: ${n.keyFormulas}\nSummary: ${n.summary}\nFull Content: ${n.contentMarkdown.take(600)}"
+                viewModel.askGeminiTutor(
+                  prompt = "Provide an in-depth pedagogical explanation of '${n.title}', break down the core formulas, and give practical university exam tips.",
+                  courseTitle = course?.title,
+                  contextInfo = context
+                )
+                viewModel.navigateTo(Screen.AI_TUTOR)
               }
             )
           }
@@ -366,7 +427,26 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             onPublishAnnouncement = { t, m, c, u -> viewModel.adminPublishAnnouncement(t, m, c, u) },
             onResetSeedData = { viewModel.adminResetData() },
             onUpdateUserRole = { userId, role -> viewModel.updateUserRole(userId, role) },
-            onCreateAdmin = { name, email, pass, dept -> viewModel.createAdmin(name, email, pass, dept) }
+            onCreateAdmin = { name, email, pass, dept -> viewModel.createAdmin(name, email, pass, dept) },
+            onPromoteEmail = { email -> viewModel.promoteUserByEmail(email) }
+          )
+        }
+
+        Screen.AI_TUTOR -> {
+          val aiResponse by viewModel.aiResponse.collectAsStateWithLifecycle()
+          val isAiLoading by viewModel.isAiLoading.collectAsStateWithLifecycle()
+          val aiContext by viewModel.aiActiveContext.collectAsStateWithLifecycle()
+
+          AiTutorScreen(
+            courses = publishedCourses,
+            initialContext = aiContext,
+            aiResponse = aiResponse,
+            isLoading = isAiLoading,
+            onAskGemini = { prompt, courseTitle, context ->
+              viewModel.askGeminiTutor(prompt, courseTitle, context)
+            },
+            onBackClick = { viewModel.navigateBack() },
+            onShowMessage = { viewModel.showMessage(it) }
           )
         }
 
