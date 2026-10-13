@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.local.model.CourseEntity
@@ -111,6 +112,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
   val allPublishedNotes by viewModel.allPublishedNotes.collectAsStateWithLifecycle()
   val allPastExams by viewModel.allPastExams.collectAsStateWithLifecycle()
   val announcements by viewModel.announcements.collectAsStateWithLifecycle()
+  val unreadAnnouncementsCount by viewModel.unreadAnnouncementsCount.collectAsStateWithLifecycle()
 
   val selectedCourse by viewModel.selectedCourse.collectAsStateWithLifecycle()
   val courseTopics by viewModel.courseTopics.collectAsStateWithLifecycle()
@@ -133,7 +135,15 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
   val appTheme by viewModel.appTheme.collectAsStateWithLifecycle()
   val message by viewModel.message.collectAsStateWithLifecycle()
 
+  val context = LocalContext.current
   val snackbarHostState = remember { SnackbarHostState() }
+
+  // Automatically clear notification badge count when user views Announcements
+  LaunchedEffect(currentScreen) {
+    if (currentScreen == Screen.ANNOUNCEMENTS) {
+      viewModel.markAnnouncementsAsViewed()
+    }
+  }
 
   // Handle Toast/Snackbar feedback
   LaunchedEffect(message) {
@@ -164,8 +174,11 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
       if (isMainTabScreen) {
         AppHeader(
           user = currentUser,
-          unreadAnnouncementsCount = announcements.size,
-          onNotificationsClick = { viewModel.navigateTo(Screen.ANNOUNCEMENTS) },
+          unreadAnnouncementsCount = unreadAnnouncementsCount,
+          onNotificationsClick = {
+            viewModel.markAnnouncementsAsViewed()
+            viewModel.navigateTo(Screen.ANNOUNCEMENTS)
+          },
           onSearchClick = { viewModel.navigateTo(Screen.SEARCH) },
           onProfileClick = { viewModel.navigateTo(Screen.PROFILE) },
           onAiTutorClick = { viewModel.navigateTo(Screen.AI_TUTOR) }
@@ -195,7 +208,11 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             attempts = userAttempts,
             onCourseClick = { viewModel.selectCourse(it) },
             onNavigate = { viewModel.navigateTo(it) },
-            onStartQuickPractice = { viewModel.startCoursePractice(it, false) }
+            onStartQuickPractice = { viewModel.startCoursePractice(it, false) },
+            onAnnouncementsClick = {
+              viewModel.markAnnouncementsAsViewed()
+              viewModel.navigateTo(Screen.ANNOUNCEMENTS)
+            }
           )
         }
 
@@ -292,7 +309,11 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
           PastExamsScreen(
             pastExams = allPastExams,
             courses = publishedCourses,
-            onExamClick = { viewModel.selectPastExam(it) }
+            onExamClick = { viewModel.selectPastExam(it) },
+            onDownloadExam = { exam ->
+              val course = publishedCourses.find { it.id == exam.courseId }
+              viewModel.downloadExamPdf(context, exam, course)
+            }
           )
         }
 
@@ -305,7 +326,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               onBackClick = { viewModel.navigateBack() },
               onStartExam = { ex, crs -> viewModel.startExamQuiz(ex, crs) },
               onDownloadPaper = {
-                viewModel.showMessage("Downloading verified examination paper '${exam.title}.pdf' to offline cache.")
+                viewModel.downloadExamPdf(context, exam, course)
               }
             )
           }
@@ -442,15 +463,18 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
           val aiResponse by viewModel.aiResponse.collectAsStateWithLifecycle()
           val isAiLoading by viewModel.isAiLoading.collectAsStateWithLifecycle()
           val aiContext by viewModel.aiActiveContext.collectAsStateWithLifecycle()
+          val tutorConversation by viewModel.tutorConversation.collectAsStateWithLifecycle()
 
           AiTutorScreen(
             courses = publishedCourses,
             initialContext = aiContext,
             aiResponse = aiResponse,
             isLoading = isAiLoading,
+            conversation = tutorConversation,
             onAskGemini = { prompt, courseTitle, context ->
               viewModel.askGeminiTutor(prompt, courseTitle, context)
             },
+            onClearConversation = { viewModel.clearAiTutorState() },
             onBackClick = { viewModel.navigateBack() },
             onShowMessage = { viewModel.showMessage(it) }
           )

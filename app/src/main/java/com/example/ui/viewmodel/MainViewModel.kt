@@ -50,6 +50,13 @@ enum class Screen {
   AUTH
 }
 
+data class TutorMessage(
+  val id: String = UUID.randomUUID().toString(),
+  val isUser: Boolean,
+  val text: String,
+  val timestamp: Long = System.currentTimeMillis()
+)
+
 data class ActiveQuizState(
   val title: String = "",
   val courseId: String = "",
@@ -120,6 +127,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val announcements: StateFlow<List<AnnouncementEntity>> = repository.getPublishedAnnouncementsFlow()
     .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+  private val _viewedAnnouncementIds = MutableStateFlow<Set<String>>(emptySet())
+  val unreadAnnouncementsCount: StateFlow<Int> = kotlinx.coroutines.flow.combine(
+    announcements,
+    _viewedAnnouncementIds
+  ) { list, viewedIds ->
+    list.count { it.id !in viewedIds }
+  }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+  fun markAnnouncementsAsViewed() {
+    val currentIds = announcements.value.map { it.id }.toSet()
+    _viewedAnnouncementIds.value = _viewedAnnouncementIds.value + currentIds
+  }
+
   val allUsers: StateFlow<List<UserEntity>> = repository.getAllUsersFlow()
     .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -178,6 +198,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   private val _aiActiveContext = MutableStateFlow<String?>(null)
   val aiActiveContext: StateFlow<String?> = _aiActiveContext.asStateFlow()
+
+  private val _tutorConversation = MutableStateFlow<List<TutorMessage>>(emptyList())
+  val tutorConversation: StateFlow<List<TutorMessage>> = _tutorConversation.asStateFlow()
 
   // Feedback banner / snackbar
   private val _message = MutableStateFlow<String?>(null)
@@ -304,14 +327,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     contextInfo: String? = null,
     onResult: ((String) -> Unit)? = null
   ) {
+    val cleanPrompt = prompt.trim()
+    if (cleanPrompt.isBlank()) return
+
     viewModelScope.launch {
+      // Append student question immediately to the interactive conversation
+      val userMsg = TutorMessage(isUser = true, text = cleanPrompt)
+      _tutorConversation.value = _tutorConversation.value + userMsg
+
       _isAiLoading.value = true
       _aiActiveContext.value = courseTitle ?: "Freshman University Topic"
+
       val explanation = com.example.data.remote.GeminiTutorService.askTutor(
-        prompt = prompt,
+        prompt = cleanPrompt,
         courseTitle = courseTitle,
         contextInfo = contextInfo
       )
+
+      val aiMsg = TutorMessage(isUser = false, text = explanation)
+      _tutorConversation.value = _tutorConversation.value + aiMsg
       _aiResponse.value = explanation
       _isAiLoading.value = false
       onResult?.invoke(explanation)
@@ -319,9 +353,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun clearAiTutorState() {
+    _tutorConversation.value = emptyList()
     _aiResponse.value = null
     _isAiLoading.value = false
     _aiActiveContext.value = null
+  }
+
+  fun downloadExamPdf(
+    context: android.content.Context,
+    exam: PastExamEntity,
+    course: CourseEntity?
+  ) {
+    viewModelScope.launch {
+      try {
+        val examQuestions = repository.getQuestionsForExamYear(exam.courseId, exam.academicYear)
+        val questions = if (examQuestions.isNotEmpty()) examQuestions else repository.getQuestionsForCourse(exam.courseId)
+        val result = com.example.util.ExamPdfGenerator.generateExamPdf(context, exam, course, questions)
+        result.onSuccess { file ->
+          showMessage("Exam paper downloaded: ${file.name}")
+          try {
+            val intent = com.example.util.ExamPdfGenerator.createOpenPdfIntent(context, file)
+            context.startActivity(intent)
+          } catch (_: Exception) {
+            showMessage("PDF saved to downloads: ${file.name}")
+          }
+        }.onFailure { err ->
+          showMessage("Failed to generate PDF: ${err.message}")
+        }
+      } catch (e: Exception) {
+        showMessage("Error preparing exam PDF: ${e.message}")
+      }
+    }
   }
 
   fun switchUser(userId: String) {

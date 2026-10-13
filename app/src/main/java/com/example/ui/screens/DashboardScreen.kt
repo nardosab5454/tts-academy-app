@@ -76,6 +76,7 @@ fun DashboardScreen(
   onCourseClick: (CourseEntity) -> Unit,
   onNavigate: (Screen) -> Unit,
   onStartQuickPractice: (CourseEntity) -> Unit,
+  onAnnouncementsClick: () -> Unit = { onNavigate(Screen.ANNOUNCEMENTS) },
   modifier: Modifier = Modifier
 ) {
   val totalFromAttempts = attempts.sumOf { it.totalQuestions }
@@ -182,9 +183,9 @@ fun DashboardScreen(
               modifier = Modifier.weight(1f)
             )
             DashboardMetricCard(
-              title = "Courses",
+              title = "Active Courses",
               value = "${courses.size}",
-              subtext = "Active Units",
+              subtext = "Enrolled",
               icon = Icons.Default.School,
               color = AcademicGold,
               modifier = Modifier.weight(1f)
@@ -258,7 +259,7 @@ fun DashboardScreen(
           modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp)
-            .clickable { onNavigate(Screen.ANNOUNCEMENTS) },
+            .clickable { onAnnouncementsClick() },
           color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f),
           shape = RoundedCornerShape(12.dp)
         ) {
@@ -473,8 +474,8 @@ fun DashboardScreen(
           horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
           QuickActionTile(
-            title = "All Courses",
-            sub = "12 Units",
+            title = "Active Courses",
+            sub = "${courses.size} Available Courses",
             icon = Icons.Default.School,
             onClick = { onNavigate(Screen.COURSES) },
             modifier = Modifier.weight(1f)

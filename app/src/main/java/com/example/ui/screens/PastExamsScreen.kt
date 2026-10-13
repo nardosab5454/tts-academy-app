@@ -31,6 +31,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -58,6 +59,7 @@ fun PastExamsScreen(
   pastExams: List<PastExamEntity>,
   courses: List<CourseEntity>,
   onExamClick: (PastExamEntity) -> Unit,
+  onDownloadExam: ((PastExamEntity) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   var selectedYear by remember { mutableStateOf("All") }
@@ -120,7 +122,8 @@ fun PastExamsScreen(
           PastExamCard(
             exam = exam,
             courseCode = course?.code ?: "COURSE",
-            onClick = { onExamClick(exam) }
+            onClick = { onExamClick(exam) },
+            onDownload = onDownloadExam?.let { { it(exam) } }
           )
         }
       }
@@ -132,7 +135,8 @@ fun PastExamsScreen(
 private fun PastExamCard(
   exam: PastExamEntity,
   courseCode: String,
-  onClick: () -> Unit
+  onClick: () -> Unit,
+  onDownload: (() -> Unit)? = null
 ) {
   Card(
     shape = RoundedCornerShape(16.dp),
@@ -239,12 +243,28 @@ private fun PastExamCard(
           }
         }
 
-        Icon(
-          imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-          contentDescription = null,
-          tint = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(16.dp)
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          if (onDownload != null) {
+            IconButton(
+              onClick = onDownload,
+              modifier = Modifier.size(32.dp)
+            ) {
+              Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = "Download PDF",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+              )
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+          }
+          Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(16.dp)
+          )
+        }
       }
     }
   }

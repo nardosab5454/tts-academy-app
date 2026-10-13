@@ -1,8 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,21 +17,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -45,9 +43,11 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +66,8 @@ import com.example.ui.theme.AcademicBlueDark
 import com.example.ui.theme.AcademicBluePrimary
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
+import com.example.ui.viewmodel.TutorMessage
+import kotlinx.coroutines.launch
 
 @Composable
 fun AiTutorScreen(
@@ -74,7 +76,9 @@ fun AiTutorScreen(
   initialPrompt: String? = null,
   aiResponse: String?,
   isLoading: Boolean,
+  conversation: List<TutorMessage> = emptyList(),
   onAskGemini: (prompt: String, courseTitle: String?, context: String?) -> Unit,
+  onClearConversation: () -> Unit = {},
   onBackClick: () -> Unit,
   onShowMessage: (String) -> Unit,
   modifier: Modifier = Modifier
@@ -82,6 +86,8 @@ fun AiTutorScreen(
   var selectedCourse by remember { mutableStateOf<CourseEntity?>(courses.firstOrNull()) }
   var userQuery by remember { mutableStateOf(initialPrompt ?: "") }
   val clipboardManager = LocalClipboardManager.current
+  val listState = rememberLazyListState()
+  val coroutineScope = rememberCoroutineScope()
 
   val suggestedPrompts = remember(selectedCourse) {
     when (selectedCourse?.code) {
@@ -118,6 +124,15 @@ fun AiTutorScreen(
     }
   }
 
+  // Auto-scroll to bottom whenever a new message is added or loading finishes
+  LaunchedEffect(conversation.size, isLoading, aiResponse) {
+    if (conversation.isNotEmpty() || isLoading) {
+      coroutineScope.launch {
+        listState.animateScrollToItem(listState.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1)
+      }
+    }
+  }
+
   Column(
     modifier = modifier
       .fillMaxSize()
@@ -125,16 +140,17 @@ fun AiTutorScreen(
   ) {
     DetailTopBar(
       title = "Gemini AI Tutor",
-      subtitle = "Academic Clarification & Research Assistant",
+      subtitle = "Live Academic Clarification & Research",
       onBackClick = onBackClick
     )
 
     LazyColumn(
+      state = listState,
       modifier = Modifier
         .weight(1f)
         .fillMaxWidth(),
       contentPadding = PaddingValues(16.dp),
-      verticalArrangement = Arrangement.spacedBy(16.dp)
+      verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
       // Hero Header Card
       item {
@@ -155,41 +171,56 @@ fun AiTutorScreen(
               .padding(18.dp)
           ) {
             Column {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                  modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.2f)),
-                  contentAlignment = Alignment.Center
-                ) {
-                  Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = AcademicGold,
-                    modifier = Modifier.size(24.dp)
-                  )
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Box(
+                    modifier = Modifier
+                      .size(38.dp)
+                      .clip(CircleShape)
+                      .background(Color.White.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Icon(
+                      imageVector = Icons.Default.AutoAwesome,
+                      contentDescription = null,
+                      tint = AcademicGold,
+                      modifier = Modifier.size(22.dp)
+                    )
+                  }
+                  Spacer(modifier = Modifier.width(12.dp))
+                  Column {
+                    Text(
+                      text = "TTS Academy AI Research Tutor",
+                      style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                      color = Color.White
+                    )
+                    Text(
+                      text = "Powered by Google Gemini 3.5 Flash",
+                      style = MaterialTheme.typography.labelSmall,
+                      color = AcademicGold
+                    )
+                  }
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                  Text(
-                    text = "TTS Academy AI Research Tutor",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color.White
-                  )
-                  Text(
-                    text = "Powered by Google Gemini 3.5 Flash",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AcademicGold
-                  )
+
+                if (conversation.isNotEmpty()) {
+                  IconButton(onClick = onClearConversation) {
+                    Icon(
+                      imageVector = Icons.Default.DeleteSweep,
+                      contentDescription = "Clear Chat",
+                      tint = Color.White.copy(alpha = 0.8f)
+                    )
+                  }
                 }
               }
 
               Spacer(modifier = Modifier.height(10.dp))
-
               Text(
-                text = "Ask any university question for step-by-step mathematical reasoning, exam tips, and deep pedagogical concept clarity.",
-                style = MaterialTheme.typography.bodySmall,
+                text = "Ask any university freshman question for instant pedagogical clarification, step-by-step mathematical proofs, and examination strategies.",
+                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
                 color = Color.White.copy(alpha = 0.9f)
               )
             }
@@ -197,15 +228,15 @@ fun AiTutorScreen(
         }
       }
 
-      // Course Selection Row
+      // Course Subject Selection Row
       item {
         Column {
           Text(
-            text = "Select Course Subject:",
+            text = "Active Course Subject:",
             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
             color = MaterialTheme.colorScheme.onSurface
           )
-          Spacer(modifier = Modifier.height(8.dp))
+          Spacer(modifier = Modifier.height(6.dp))
           Row(
             modifier = Modifier
               .fillMaxWidth()
@@ -232,33 +263,33 @@ fun AiTutorScreen(
       item {
         Column {
           Text(
-            text = "Quick Academic Research Prompts:",
+            text = "Suggested Freshman Questions:",
             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
             color = MaterialTheme.colorScheme.primary
           )
-          Spacer(modifier = Modifier.height(8.dp))
-          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             suggestedPrompts.forEach { promptText ->
               Surface(
                 modifier = Modifier
                   .fillMaxWidth()
                   .clickable {
-                    userQuery = promptText
+                    userQuery = ""
                     onAskGemini(promptText, selectedCourse?.title, initialContext)
                   },
                 shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
               ) {
                 Row(
-                  modifier = Modifier.padding(12.dp),
+                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Icon(
                     imageVector = Icons.Default.AutoAwesome,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(15.dp)
                   )
                   Spacer(modifier = Modifier.width(8.dp))
                   Text(
@@ -274,45 +305,48 @@ fun AiTutorScreen(
         }
       }
 
-      // AI Response Card
-      if (isLoading) {
-        item {
+      // Render conversation messages
+      items(conversation) { msg ->
+        if (msg.isUser) {
+          // User Question Bubble
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+          ) {
+            Surface(
+              shape = RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
+              color = MaterialTheme.colorScheme.primaryContainer,
+              modifier = Modifier.fillMaxWidth(0.88f)
+            ) {
+              Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.Top
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Person,
+                  contentDescription = "Student",
+                  tint = MaterialTheme.colorScheme.primary,
+                  modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                  text = msg.text,
+                  style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                  color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+              }
+            }
+          }
+        } else {
+          // Gemini Tutor Response Card
           Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
             elevation = CardDefaults.cardElevation(2.dp),
             modifier = Modifier.fillMaxWidth()
           ) {
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.Center
-            ) {
-              CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                color = MaterialTheme.colorScheme.primary
-              )
-              Spacer(modifier = Modifier.width(16.dp))
-              Text(
-                text = "Gemini AI is analyzing academic principles...",
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface
-              )
-            }
-          }
-        }
-      } else if (!aiResponse.isNullOrBlank()) {
-        item {
-          Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-            elevation = CardDefaults.cardElevation(3.dp),
-            modifier = Modifier.fillMaxWidth()
-          ) {
-            Column(modifier = Modifier.padding(18.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -323,11 +357,11 @@ fun AiTutorScreen(
                     imageVector = Icons.Default.AutoAwesome,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                   )
                   Spacer(modifier = Modifier.width(8.dp))
                   Text(
-                    text = "Tutor Explanation & Proof",
+                    text = "Gemini AI Tutor Response",
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.primary
                   )
@@ -335,7 +369,7 @@ fun AiTutorScreen(
 
                 IconButton(
                   onClick = {
-                    clipboardManager.setText(AnnotatedString(aiResponse))
+                    clipboardManager.setText(AnnotatedString(msg.text))
                     onShowMessage("Copied explanation to clipboard")
                   }
                 ) {
@@ -351,11 +385,43 @@ fun AiTutorScreen(
               Spacer(modifier = Modifier.height(10.dp))
 
               Text(
-                text = aiResponse,
+                text = msg.text,
                 style = MaterialTheme.typography.bodyMedium.copy(
-                  lineHeight = 24.sp,
-                  fontSize = 15.sp
+                  lineHeight = 23.sp,
+                  fontSize = 14.5.sp
                 ),
+                color = MaterialTheme.colorScheme.onSurface
+              )
+            }
+          }
+        }
+      }
+
+      // Loading Indicator Card
+      if (isLoading) {
+        item {
+          Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(2.dp),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.Center
+            ) {
+              CircularProgressIndicator(
+                modifier = Modifier.size(22.dp),
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 2.5.dp
+              )
+              Spacer(modifier = Modifier.width(14.dp))
+              Text(
+                text = "Gemini AI is analyzing academic principles...",
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurface
               )
             }
@@ -379,7 +445,7 @@ fun AiTutorScreen(
         OutlinedTextField(
           value = userQuery,
           onValueChange = { userQuery = it },
-          placeholder = { Text("Ask Gemini tutor for clarification or research...") },
+          placeholder = { Text("Ask Gemini tutor any question...") },
           modifier = Modifier
             .weight(1f)
             .testTag("ai_tutor_input"),
@@ -394,8 +460,10 @@ fun AiTutorScreen(
 
         Button(
           onClick = {
-            if (userQuery.isNotBlank() && !isLoading) {
-              onAskGemini(userQuery, selectedCourse?.title, initialContext)
+            val queryToSend = userQuery.trim()
+            if (queryToSend.isNotBlank() && !isLoading) {
+              userQuery = "" // Clear input immediately
+              onAskGemini(queryToSend, selectedCourse?.title, initialContext)
             }
           },
           enabled = userQuery.isNotBlank() && !isLoading,
