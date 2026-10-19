@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.data.local.dao.AccessCodeDao
 import com.example.data.local.dao.AnnouncementDao
 import com.example.data.local.dao.BookmarkDao
 import com.example.data.local.dao.CourseDao
@@ -15,6 +16,7 @@ import com.example.data.local.dao.QuizAttemptDao
 import com.example.data.local.dao.TopicDao
 import com.example.data.local.dao.UserDao
 import com.example.data.local.dao.UserPreferenceDao
+import com.example.data.local.model.AccessCodeEntity
 import com.example.data.local.model.AnnouncementEntity
 import com.example.data.local.model.BookmarkEntity
 import com.example.data.local.model.CourseEntity
@@ -40,9 +42,10 @@ import kotlinx.coroutines.launch
     QuizAttemptEntity::class,
     BookmarkEntity::class,
     AnnouncementEntity::class,
-    UserPreferenceEntity::class
+    UserPreferenceEntity::class,
+    AccessCodeEntity::class
   ],
-  version = 1,
+  version = 3,
   exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -56,6 +59,7 @@ abstract class AppDatabase : RoomDatabase() {
   abstract fun bookmarkDao(): BookmarkDao
   abstract fun announcementDao(): AnnouncementDao
   abstract fun userPreferenceDao(): UserPreferenceDao
+  abstract fun accessCodeDao(): AccessCodeDao
 
   companion object {
     @Volatile
@@ -69,7 +73,7 @@ abstract class AppDatabase : RoomDatabase() {
           "tts_academy_database"
         )
           .addCallback(DatabaseCallback(scope))
-          .fallbackToDestructiveMigration()
+          .fallbackToDestructiveMigration(dropAllTables = true)
           .build()
         INSTANCE = instance
         instance
@@ -116,9 +120,13 @@ abstract class AppDatabase : RoomDatabase() {
       val announcementDao = database.announcementDao()
       announcementDao.insertAnnouncements(SeedData.getAnnouncements())
 
+      // Seed access codes
+      val accessCodeDao = database.accessCodeDao()
+      accessCodeDao.insertAccessCodes(SeedData.getAccessCodes())
+
       // Seed preferences
       val prefDao = database.userPreferenceDao()
-      prefDao.setPreference(UserPreferenceEntity("active_user_id", "student_1"))
+      prefDao.setPreference(UserPreferenceEntity("active_user_id", ""))
       prefDao.setPreference(UserPreferenceEntity("app_theme", "SYSTEM"))
     }
   }

@@ -51,6 +51,9 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.model.CourseEntity
 import com.example.data.local.model.PastExamEntity
 import com.example.ui.components.DetailTopBar
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.filled.Lock
+import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
 import com.example.ui.theme.SuccessGreen
 
@@ -60,6 +63,8 @@ fun PastExamsScreen(
   courses: List<CourseEntity>,
   onExamClick: (PastExamEntity) -> Unit,
   onDownloadExam: ((PastExamEntity) -> Unit)? = null,
+  isUnlocked: Boolean = true,
+  onUnlockClick: () -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   var selectedYear by remember { mutableStateOf("All") }
@@ -95,6 +100,45 @@ fun PastExamsScreen(
       }
     }
 
+    if (!isUnlocked) {
+      Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f)),
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 16.dp, vertical = 8.dp)
+      ) {
+        Row(
+          modifier = Modifier.padding(14.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(24.dp))
+          Spacer(modifier = Modifier.width(12.dp))
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "Exams Archive Locked",
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+              color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+              text = "Enter your admin 6-digit access code to unlock all midterm and final papers.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+          Spacer(modifier = Modifier.width(8.dp))
+          Button(
+            onClick = onUnlockClick,
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = AcademicCobalt)
+          ) {
+            Text("Unlock", fontWeight = FontWeight.Bold)
+          }
+        }
+      }
+    }
+
     // Year Filter Chips
     LazyRow(
       contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -122,6 +166,7 @@ fun PastExamsScreen(
           PastExamCard(
             exam = exam,
             courseCode = course?.code ?: "COURSE",
+            isUnlocked = isUnlocked,
             onClick = { onExamClick(exam) },
             onDownload = onDownloadExam?.let { { it(exam) } }
           )
@@ -135,6 +180,7 @@ fun PastExamsScreen(
 private fun PastExamCard(
   exam: PastExamEntity,
   courseCode: String,
+  isUnlocked: Boolean = true,
   onClick: () -> Unit,
   onDownload: (() -> Unit)? = null
 ) {
@@ -142,6 +188,7 @@ private fun PastExamCard(
     shape = RoundedCornerShape(16.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     elevation = CardDefaults.cardElevation(2.dp),
+    border = if (!isUnlocked) BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)) else null,
     modifier = Modifier
       .fillMaxWidth()
       .clickable(onClick = onClick)
@@ -178,7 +225,25 @@ private fun PastExamCard(
           }
         }
 
-        if (exam.isVerified) {
+        if (!isUnlocked) {
+          Surface(
+            color = MaterialTheme.colorScheme.errorContainer,
+            shape = RoundedCornerShape(6.dp)
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(Icons.Default.Lock, contentDescription = "Locked", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(12.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text(
+                text = "Locked • 6-Digit Pass",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.error
+              )
+            }
+          }
+        } else if (exam.isVerified) {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
               imageVector = Icons.Default.Verified,

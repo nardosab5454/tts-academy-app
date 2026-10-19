@@ -19,8 +19,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
@@ -35,6 +38,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -49,17 +53,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.local.model.AccessCodeEntity
 import com.example.data.local.model.AnnouncementEntity
 import com.example.data.local.model.CourseEntity
 import com.example.data.local.model.NoteEntity
 import com.example.data.local.model.PastExamEntity
 import com.example.data.local.model.QuestionEntity
 import com.example.data.local.model.UserEntity
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import com.example.ui.components.DetailTopBar
+import com.example.ui.theme.AcademicBlueDark
+import com.example.ui.theme.AcademicBluePrimary
+import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
 import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.SuccessGreen
@@ -70,27 +83,51 @@ fun AdminPortalScreen(
   courses: List<CourseEntity>,
   allUsers: List<UserEntity>,
   announcements: List<AnnouncementEntity>,
+  accessCodes: List<AccessCodeEntity> = emptyList(),
+  questions: List<QuestionEntity> = emptyList(),
+  notes: List<NoteEntity> = emptyList(),
+  pastExams: List<PastExamEntity> = emptyList(),
   onBackClick: () -> Unit,
   onSaveCourse: (CourseEntity) -> Unit,
   onDeleteCourse: (String) -> Unit,
   onSaveQuestion: (QuestionEntity) -> Unit,
+  onDeleteQuestion: (String) -> Unit = {},
   onSaveNote: (NoteEntity) -> Unit,
+  onDeleteNote: (String) -> Unit = {},
   onSavePastExam: (PastExamEntity) -> Unit,
+  onDeletePastExam: (String) -> Unit = {},
   onPublishAnnouncement: (String, String, String, Boolean) -> Unit,
   onResetSeedData: () -> Unit,
   onUpdateUserRole: (String, String) -> Unit,
   onCreateAdmin: (String, String, String, String) -> Unit,
   onPromoteEmail: (String) -> Unit = {},
   onDeleteAnnouncement: (String) -> Unit = {},
+  onGenerateCode: (String, String, String?, (String) -> Unit) -> Unit = { _, _, _, _ -> },
+  onDeleteCode: (String) -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   var selectedTab by remember { mutableIntStateOf(0) }
-  val tabs = listOf("Dashboard", "Courses", "Add Question", "Add Note", "Announcements", "Admins & Users")
+  var activeCourseIdForAdd by remember(courses) {
+    mutableStateOf(courses.firstOrNull()?.id ?: "")
+  }
+
+  val tabs = listOf(
+    "Dashboard",
+    "Courses",
+    "Add Question",
+    "Add Note",
+    "Past Year Questions",
+    "Customize Content",
+    "Announcements",
+    "Admins & Users",
+    "Access Codes"
+  )
 
   // Dialog states for creation
   var showNewCourseDialog by remember { mutableStateOf(false) }
   var showNewAnnouncementDialog by remember { mutableStateOf(false) }
   var showNewAdminDialog by remember { mutableStateOf(false) }
+  var newlyAddedCourse by remember { mutableStateOf<CourseEntity?>(null) }
 
   Column(
     modifier = modifier
@@ -99,11 +136,14 @@ fun AdminPortalScreen(
   ) {
     DetailTopBar(
       title = "Administrator Portal",
-      subtitle = "Content & Role Management Dashboard",
+      subtitle = "Curriculum, Content & Roles Management",
       onBackClick = onBackClick
     )
 
-    TabRow(selectedTabIndex = selectedTab) {
+    ScrollableTabRow(
+      selectedTabIndex = selectedTab,
+      edgePadding = 16.dp
+    ) {
       tabs.forEachIndexed { index, title ->
         Tab(
           selected = selectedTab == index,
@@ -114,13 +154,111 @@ fun AdminPortalScreen(
     }
 
     when (selectedTab) {
-      0 -> AdminOverviewTab(courses, allUsers, announcements, onResetSeedData)
-      1 -> AdminCoursesTab(courses, { showNewCourseDialog = true }, onDeleteCourse)
-      2 -> AdminAddQuestionTab(courses, onSaveQuestion)
-      3 -> AdminAddNoteTab(courses, onSaveNote)
-      4 -> AdminAnnouncementsTab(announcements, { showNewAnnouncementDialog = true }, onDeleteAnnouncement)
-      5 -> AdminStudentsTab(allUsers, { showNewAdminDialog = true }, onUpdateUserRole, onPromoteEmail)
+      0 -> AdminOverviewTab(courses, allUsers, announcements, accessCodes, onResetSeedData)
+      1 -> AdminCoursesTab(
+        courses = courses,
+        questions = questions,
+        notes = notes,
+        onAddNew = { showNewCourseDialog = true },
+        onDelete = onDeleteCourse,
+        onAddQuestionForCourse = { cId ->
+          activeCourseIdForAdd = cId
+          selectedTab = 2 // Switch to Add Question
+        },
+        onAddNoteForCourse = { cId ->
+          activeCourseIdForAdd = cId
+          selectedTab = 3 // Switch to Add Note
+        },
+        onManageCourse = { cId ->
+          activeCourseIdForAdd = cId
+          selectedTab = 5 // Switch to Customize Content
+        }
+      )
+      2 -> AdminAddQuestionTab(
+        courses = courses,
+        initialCourseId = activeCourseIdForAdd,
+        onCourseSelected = { activeCourseIdForAdd = it },
+        onSaveQuestion = onSaveQuestion
+      )
+      3 -> AdminAddNoteTab(
+        courses = courses,
+        initialCourseId = activeCourseIdForAdd,
+        onCourseSelected = { activeCourseIdForAdd = it },
+        onSaveNote = onSaveNote
+      )
+      4 -> AdminPastExamTab(
+        courses = courses,
+        questions = questions,
+        initialCourseId = activeCourseIdForAdd,
+        onSaveQuestion = onSaveQuestion,
+        onSavePastExam = onSavePastExam,
+        onDeleteQuestion = onDeleteQuestion
+      )
+      5 -> AdminManageContentTab(
+        courses = courses,
+        questions = questions,
+        notes = notes,
+        initialCourseId = activeCourseIdForAdd,
+        onSaveQuestion = onSaveQuestion,
+        onDeleteQuestion = onDeleteQuestion,
+        onSaveNote = onSaveNote,
+        onDeleteNote = onDeleteNote,
+        onSwitchToAddQuestion = { cId ->
+          activeCourseIdForAdd = cId
+          selectedTab = 2
+        },
+        onSwitchToAddNote = { cId ->
+          activeCourseIdForAdd = cId
+          selectedTab = 3
+        }
+      )
+      6 -> AdminAnnouncementsTab(announcements, { showNewAnnouncementDialog = true }, onDeleteAnnouncement)
+      7 -> AdminStudentsTab(allUsers, { showNewAdminDialog = true }, onUpdateUserRole, onPromoteEmail)
+      8 -> AdminAccessCodesTab(accessCodes, onGenerateCode, onDeleteCode)
     }
+  }
+
+  // Follow-up dialog after creating a course
+  if (newlyAddedCourse != null) {
+    val course = newlyAddedCourse!!
+    AlertDialog(
+      onDismissRequest = { newlyAddedCourse = null },
+      title = { Text("Course Created Successfully!") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("You added '${course.code}: ${course.title}'. What would you like to populate in this newly added course now?")
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            activeCourseIdForAdd = course.id
+            selectedTab = 2 // Add Question
+            newlyAddedCourse = null
+          }
+        ) {
+          Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+          Spacer(modifier = Modifier.width(4.dp))
+          Text("+ Add Question")
+        }
+      },
+      dismissButton = {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          OutlinedButton(
+            onClick = {
+              activeCourseIdForAdd = course.id
+              selectedTab = 3 // Add Note
+              newlyAddedCourse = null
+            }
+          ) {
+            Text("+ Add Note")
+          }
+          TextButton(onClick = { newlyAddedCourse = null }) {
+            Text("Done")
+          }
+        }
+      }
+    )
   }
 
   // New Course Dialog
@@ -158,6 +296,8 @@ fun AdminPortalScreen(
                 orderIndex = courses.size + 1
               )
               onSaveCourse(newCourse)
+              activeCourseIdForAdd = newCourse.id
+              newlyAddedCourse = newCourse
               showNewCourseDialog = false
             }
           }
@@ -258,9 +398,14 @@ private fun AdminOverviewTab(
   courses: List<CourseEntity>,
   users: List<UserEntity>,
   announcements: List<AnnouncementEntity>,
+  accessCodes: List<AccessCodeEntity> = emptyList(),
   onResetSeedData: () -> Unit
 ) {
   var showResetConfirm by remember { mutableStateOf(false) }
+  val studentUsers = users.filter { it.role == "STUDENT" }
+  val totalQuestionsAnswered = users.sumOf { it.questionsAnsweredCount }
+  val activePasses = accessCodes.count { !it.isRedeemed && System.currentTimeMillis() <= it.expiresAt }
+  val redeemedPasses = accessCodes.count { it.isRedeemed }
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -269,7 +414,7 @@ private fun AdminOverviewTab(
   ) {
     item {
       Text(
-        text = "System Metrics",
+        text = "Real-Time System Metrics",
         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
       )
     }
@@ -277,8 +422,16 @@ private fun AdminOverviewTab(
     item {
       Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         AdminStatCard("Courses", "${courses.size}", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-        AdminStatCard("Students", "${users.filter { it.role == "STUDENT" }.size}", SuccessGreen, Modifier.weight(1f))
+        AdminStatCard("Students", "${studentUsers.size}", SuccessGreen, Modifier.weight(1f))
         AdminStatCard("Notices", "${announcements.size}", AcademicGold, Modifier.weight(1f))
+      }
+    }
+
+    item {
+      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        AdminStatCard("Live Qs Practiced", "$totalQuestionsAnswered", AcademicCobalt, Modifier.weight(1f))
+        AdminStatCard("Active 1-Hr Passes", "$activePasses", AcademicGold, Modifier.weight(1f))
+        AdminStatCard("Redeemed Passes", "$redeemedPasses", SuccessGreen, Modifier.weight(1f))
       }
     }
 
@@ -353,9 +506,16 @@ private fun AdminStatCard(title: String, value: String, tint: Color, modifier: M
 @Composable
 private fun AdminCoursesTab(
   courses: List<CourseEntity>,
+  questions: List<QuestionEntity> = emptyList(),
+  notes: List<NoteEntity> = emptyList(),
   onAddNew: () -> Unit,
-  onDelete: (String) -> Unit
+  onDelete: (String) -> Unit,
+  onAddQuestionForCourse: (String) -> Unit,
+  onAddNoteForCourse: (String) -> Unit,
+  onManageCourse: (String) -> Unit
 ) {
+  var courseToDelete by remember { mutableStateOf<CourseEntity?>(null) }
+
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(16.dp),
@@ -367,8 +527,14 @@ private fun AdminCoursesTab(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Text("Manage Courses (${courses.size})", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-        Button(onClick = onAddNew) {
+        Column {
+          Text("Curriculum Courses (${courses.size})", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+          Text("Add courses and immediately customize their questions and notes.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Button(
+          onClick = onAddNew,
+          colors = ButtonDefaults.buttonColors(containerColor = AcademicBluePrimary)
+        ) {
           Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
           Spacer(modifier = Modifier.width(4.dp))
           Text("New Course")
@@ -377,35 +543,158 @@ private fun AdminCoursesTab(
     }
 
     items(courses) { course ->
+      val courseQCount = questions.count { it.courseId == course.id }
+      val courseNCount = notes.count { it.courseId == course.id }
+
       Card(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(2.dp),
         modifier = Modifier.fillMaxWidth()
       ) {
-        Row(
-          modifier = Modifier.padding(14.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-          Column(modifier = Modifier.weight(1f)) {
-            Text("${course.code}: ${course.title}", fontWeight = FontWeight.Bold)
-            Text("${course.category} • ${course.totalQuestions} Questions", style = MaterialTheme.typography.bodySmall)
+        Column(modifier = Modifier.padding(14.dp)) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+          ) {
+            Column(modifier = Modifier.weight(1f)) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                  color = AcademicBluePrimary.copy(alpha = 0.12f),
+                  shape = RoundedCornerShape(6.dp)
+                ) {
+                  Text(
+                    text = course.code,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = AcademicBluePrimary,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                  )
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                  text = course.category,
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = course.title,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleSmall
+              )
+              Text(
+                text = course.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2
+              )
+            }
+
+            IconButton(onClick = { courseToDelete = course }) {
+              Icon(Icons.Default.Delete, contentDescription = "Delete Course", tint = MaterialTheme.colorScheme.error)
+            }
           }
-          IconButton(onClick = { onDelete(course.id) }) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+
+          Spacer(modifier = Modifier.height(10.dp))
+          HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+          Spacer(modifier = Modifier.height(10.dp))
+
+          // Live counts banner
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text(
+              text = "$courseQCount Questions • $courseNCount Revision Notes",
+              style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+              color = AcademicCobalt
+            )
+          }
+
+          Spacer(modifier = Modifier.height(10.dp))
+
+          // Action buttons right inside the course card!
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            Button(
+              onClick = { onAddQuestionForCourse(course.id) },
+              modifier = Modifier.weight(1f),
+              shape = RoundedCornerShape(8.dp),
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+              colors = ButtonDefaults.buttonColors(containerColor = AcademicBluePrimary)
+            ) {
+              Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("+ Question", style = MaterialTheme.typography.labelSmall)
+            }
+
+            OutlinedButton(
+              onClick = { onAddNoteForCourse(course.id) },
+              modifier = Modifier.weight(1f),
+              shape = RoundedCornerShape(8.dp),
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+              Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(14.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("+ Note", style = MaterialTheme.typography.labelSmall)
+            }
+
+            OutlinedButton(
+              onClick = { onManageCourse(course.id) },
+              modifier = Modifier.weight(1.2f),
+              shape = RoundedCornerShape(8.dp),
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+              Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Customize", style = MaterialTheme.typography.labelSmall)
+            }
           }
         }
       }
     }
+  }
+
+  // Delete Course Confirmation Dialog
+  if (courseToDelete != null) {
+    val targetCourse = courseToDelete!!
+    AlertDialog(
+      onDismissRequest = { courseToDelete = null },
+      title = { Text("Delete ${targetCourse.code}?") },
+      text = { Text("Are you sure you want to remove '${targetCourse.title}' from the curriculum?") },
+      confirmButton = {
+        Button(
+          onClick = {
+            onDelete(targetCourse.id)
+            courseToDelete = null
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+        ) {
+          Text("Delete")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { courseToDelete = null }) { Text("Cancel") }
+      }
+    )
   }
 }
 
 @Composable
 private fun AdminAddQuestionTab(
   courses: List<CourseEntity>,
+  initialCourseId: String = "",
+  onCourseSelected: (String) -> Unit = {},
   onSaveQuestion: (QuestionEntity) -> Unit
 ) {
-  var selectedCourseId by remember { mutableStateOf(courses.firstOrNull()?.id ?: "") }
+  var selectedCourseId by remember(initialCourseId, courses) {
+    mutableStateOf(if (initialCourseId.isNotBlank()) initialCourseId else courses.firstOrNull()?.id ?: "")
+  }
   var questionText by remember { mutableStateOf("") }
   var optA by remember { mutableStateOf("") }
   var optB by remember { mutableStateOf("") }
@@ -425,7 +714,19 @@ private fun AdminAddQuestionTab(
   ) {
     item {
       Text("Create Multiple-Choice Question", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-      Text("Add authentic educational question with choice explanations.", style = MaterialTheme.typography.bodySmall)
+      Text("Add questions to newly added or existing freshman courses with choice explanations.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+
+    // Course Selector
+    item {
+      AdminCourseSelector(
+        courses = courses,
+        selectedCourseId = selectedCourseId,
+        onCourseSelected = {
+          selectedCourseId = it
+          onCourseSelected(it)
+        }
+      )
     }
 
     item {
@@ -515,9 +816,12 @@ private fun AdminAddQuestionTab(
             generalExplanation = ""
           }
         },
-        modifier = Modifier.fillMaxWidth().height(48.dp)
+        modifier = Modifier.fillMaxWidth().height(48.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = AcademicBluePrimary)
       ) {
-        Text("Save & Publish Question")
+        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.width(6.dp))
+        Text("Save & Publish Question to Selected Course", fontWeight = FontWeight.Bold)
       }
     }
   }
@@ -526,9 +830,13 @@ private fun AdminAddQuestionTab(
 @Composable
 private fun AdminAddNoteTab(
   courses: List<CourseEntity>,
+  initialCourseId: String = "",
+  onCourseSelected: (String) -> Unit = {},
   onSaveNote: (NoteEntity) -> Unit
 ) {
-  var selectedCourseId by remember { mutableStateOf(courses.firstOrNull()?.id ?: "") }
+  var selectedCourseId by remember(initialCourseId, courses) {
+    mutableStateOf(if (initialCourseId.isNotBlank()) initialCourseId else courses.firstOrNull()?.id ?: "")
+  }
   var title by remember { mutableStateOf("") }
   var summary by remember { mutableStateOf("") }
   var formulas by remember { mutableStateOf("") }
@@ -541,6 +849,19 @@ private fun AdminAddNoteTab(
   ) {
     item {
       Text("Create Revision Note", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+      Text("Add comprehensive summaries and formulas to any freshman course.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+
+    // Course Selector
+    item {
+      AdminCourseSelector(
+        courses = courses,
+        selectedCourseId = selectedCourseId,
+        onCourseSelected = {
+          selectedCourseId = it
+          onCourseSelected(it)
+        }
+      )
     }
 
     item { OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Note Title") }, modifier = Modifier.fillMaxWidth()) }
@@ -570,9 +891,12 @@ private fun AdminAddNoteTab(
             markdownContent = ""
           }
         },
-        modifier = Modifier.fillMaxWidth().height(48.dp)
+        modifier = Modifier.fillMaxWidth().height(48.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = AcademicBluePrimary)
       ) {
-        Text("Save Revision Note")
+        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.width(6.dp))
+        Text("Save Revision Note to Selected Course", fontWeight = FontWeight.Bold)
       }
     }
   }
@@ -763,7 +1087,7 @@ private fun AdminStudentsTab(
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            if (user.email.equals("spikenarrd@gmail.com", ignoreCase = true)) {
+            if (user.email.equals("spikenarrd@gmail.com", ignoreCase = true) || user.email.equals("abebewottee@gmail.com", ignoreCase = true)) {
               Text(
                 text = "Primary Admin",
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
@@ -790,3 +1114,289 @@ private fun AdminStudentsTab(
     }
   }
 }
+
+@Composable
+private fun AdminAccessCodesTab(
+  accessCodes: List<AccessCodeEntity>,
+  onGenerateCode: (note: String, format: String, customCode: String?, onResult: (String) -> Unit) -> Unit,
+  onDeleteCode: (String) -> Unit
+) {
+  val clipboardManager = LocalClipboardManager.current
+  var noteInput by remember { mutableStateOf("Freshman Semester Pass") }
+  var selectedFormat by remember { mutableStateOf("ALPHANUMERIC") }
+  var customCodeInput by remember { mutableStateOf("") }
+  var lastGeneratedCode by remember { mutableStateOf<String?>(null) }
+  var isCopied by remember { mutableStateOf(false) }
+
+  val activeCount = accessCodes.count { !it.isRedeemed }
+  val redeemedCount = accessCodes.count { it.isRedeemed }
+
+  LazyColumn(
+    modifier = Modifier.fillMaxSize(),
+    contentPadding = PaddingValues(16.dp),
+    verticalArrangement = Arrangement.spacedBy(14.dp)
+  ) {
+    // Top Summary Banner
+    item {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+      ) {
+        Card(
+          shape = RoundedCornerShape(12.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+          modifier = Modifier.weight(1f)
+        ) {
+          Column(modifier = Modifier.padding(14.dp)) {
+            Text("Active Keys", style = MaterialTheme.typography.labelMedium)
+            Text("$activeCount", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
+            Text("Ready for students", style = MaterialTheme.typography.bodySmall)
+          }
+        }
+
+        Card(
+          shape = RoundedCornerShape(12.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+          modifier = Modifier.weight(1f)
+        ) {
+          Column(modifier = Modifier.padding(14.dp)) {
+            Text("Redeemed", style = MaterialTheme.typography.labelMedium)
+            Text("$redeemedCount", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
+            Text("Enrolled payers", style = MaterialTheme.typography.bodySmall)
+          }
+        }
+      }
+    }
+
+    // Code Generator Widget Card
+    item {
+      Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(2.dp),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Key, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Generate New 6-Digit Access Code", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+          }
+          Spacer(modifier = Modifier.height(8.dp))
+
+          Text("Create single-use 6-character access pass codes for students paying for access.", style = MaterialTheme.typography.bodySmall)
+
+          Spacer(modifier = Modifier.height(12.dp))
+
+          Text("Key Format:", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+          Spacer(modifier = Modifier.height(6.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            listOf(
+              "ALPHANUMERIC" to "Letters & Digits",
+              "NUMERIC" to "6 Numbers",
+              "SPECIAL" to "Special Chars"
+            ).forEach { (formatKey, label) ->
+              val isSelected = selectedFormat == formatKey
+              Surface(
+                onClick = { selectedFormat = formatKey },
+                shape = RoundedCornerShape(8.dp),
+                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.weight(1f)
+              ) {
+                Text(
+                  text = label,
+                  style = MaterialTheme.typography.labelSmall.copy(fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal),
+                  color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.padding(vertical = 8.dp),
+                  textAlign = TextAlign.Center
+                )
+              }
+            }
+          }
+
+          Spacer(modifier = Modifier.height(10.dp))
+
+          OutlinedTextField(
+            value = noteInput,
+            onValueChange = { noteInput = it },
+            label = { Text("Note / Batch Label") },
+            placeholder = { Text("e.g. Semester 1 Pass / Engineering Batch") },
+            modifier = Modifier.fillMaxWidth()
+          )
+
+          Spacer(modifier = Modifier.height(8.dp))
+
+          OutlinedTextField(
+            value = customCodeInput,
+            onValueChange = { if (it.length <= 6) customCodeInput = it.uppercase() },
+            label = { Text("Custom 6-Char Code (Optional)") },
+            placeholder = { Text("Leave blank to auto-generate") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+          )
+
+          Spacer(modifier = Modifier.height(14.dp))
+
+          Button(
+            onClick = {
+              onGenerateCode(noteInput, selectedFormat, customCodeInput.ifBlank { null }) { gen ->
+                lastGeneratedCode = gen
+                isCopied = false
+              }
+              customCodeInput = ""
+            },
+            modifier = Modifier.fillMaxWidth().height(48.dp)
+          ) {
+            Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Generate Access Code", fontWeight = FontWeight.Bold)
+          }
+
+          if (lastGeneratedCode != null) {
+            Spacer(modifier = Modifier.height(14.dp))
+            Surface(
+              color = MaterialTheme.colorScheme.primaryContainer,
+              shape = RoundedCornerShape(12.dp),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Column {
+                  Text("New Code Ready:", style = MaterialTheme.typography.labelSmall)
+                  Text(
+                    text = lastGeneratedCode ?: "",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                      letterSpacing = 2.sp
+                    ),
+                    color = MaterialTheme.colorScheme.primary
+                  )
+                }
+
+                Button(
+                  onClick = {
+                    clipboardManager.setText(AnnotatedString(lastGeneratedCode ?: ""))
+                    isCopied = true
+                  },
+                  colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                  Icon(if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text(if (isCopied) "Copied!" else "Copy")
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // List of All Access Codes
+    item {
+      Text(
+        text = "Access Codes Archive (${accessCodes.size})",
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+        color = MaterialTheme.colorScheme.onSurface
+      )
+    }
+
+    if (accessCodes.isEmpty()) {
+      item {
+        Card(
+          shape = RoundedCornerShape(12.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Text(
+            text = "No access codes generated yet. Tap 'Generate Access Code' above to create single-use passcodes for paying students.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(16.dp),
+            textAlign = TextAlign.Center
+          )
+        }
+      }
+    } else {
+      items(accessCodes) { item ->
+        Card(
+          shape = RoundedCornerShape(14.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          elevation = CardDefaults.cardElevation(1.dp),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Column(modifier = Modifier.weight(1f)) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                  text = item.code,
+                  style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 1.sp
+                  ),
+                  color = if (item.isRedeemed) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Surface(
+                  color = if (item.isRedeemed) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer,
+                  shape = RoundedCornerShape(4.dp)
+                ) {
+                  Text(
+                    text = if (item.isRedeemed) "REDEEMED" else "ACTIVE",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = if (item.isRedeemed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                  )
+                }
+              }
+
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = item.note,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+
+              if (item.isRedeemed && !item.redeemedByEmail.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = "Redeemed by: ${item.redeemedByEmail}",
+                  style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                  color = MaterialTheme.colorScheme.primary
+                )
+              }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              IconButton(
+                onClick = { clipboardManager.setText(AnnotatedString(item.code)) }
+              ) {
+                Icon(Icons.Default.ContentCopy, contentDescription = "Copy Code", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+              IconButton(
+                onClick = { onDeleteCode(item.code) }
+              ) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete Code", tint = MaterialTheme.colorScheme.error)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

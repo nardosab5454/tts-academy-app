@@ -31,6 +31,16 @@ abstract class FirestoreEmulatorTestBase {
 
   @Before
   open fun setUpFirebase() {
+    val emulatorAvailable = try {
+      val socket = java.net.Socket()
+      socket.connect(java.net.InetSocketAddress(EMULATOR_HOST, FIRESTORE_PORT), 300)
+      socket.close()
+      true
+    } catch (_: Exception) {
+      false
+    }
+    org.junit.Assume.assumeTrue("Firestore emulator is not running on port $FIRESTORE_PORT, skipping integration tests", emulatorAvailable)
+
     val context = ApplicationProvider.getApplicationContext<Context>()
     val resId = context.resources.getIdentifier("firestore_database_id", "string", context.packageName)
     databaseId = if (resId != 0) context.getString(resId) else "ai-studio-android-ttsacade-83155dbd-f660-46c6-82f5-2d6ada94d7c9"
@@ -51,27 +61,35 @@ abstract class FirestoreEmulatorTestBase {
         .build()
 
       val newAuth = FirebaseAuth.getInstance(newApp)
-      newAuth.useEmulator(EMULATOR_HOST, AUTH_PORT)
+      try { newAuth.useEmulator(EMULATOR_HOST, AUTH_PORT) } catch (_: Exception) {}
       newApp
     } else {
       FirebaseApp.getInstance()
     }
 
     firestore = FirebaseFirestore.getInstance(app, databaseId)
+    try { firestore.useEmulator(EMULATOR_HOST, FIRESTORE_PORT) } catch (_: Exception) {}
     auth = FirebaseAuth.getInstance(app)
+    try { auth.useEmulator(EMULATOR_HOST, AUTH_PORT) } catch (_: Exception) {}
   }
 
   @After
   open fun tearDownFirebase() {
-    auth.signOut()
+    if (::auth.isInitialized) {
+      try { auth.signOut() } catch (_: Exception) {}
+    }
   }
 
   protected suspend fun signInTestUser(email: String): String = withContext(Dispatchers.IO) {
     withTimeout(AUTH_TIMEOUT_MS) {
       val result = try {
         auth.signInWithEmailAndPassword(email, DEFAULT_PASSWORD).await()
-      } catch (unused: FirebaseAuthInvalidUserException) {
-        auth.createUserWithEmailAndPassword(email, DEFAULT_PASSWORD).await()
+      } catch (_: Exception) {
+        try {
+          auth.createUserWithEmailAndPassword(email, DEFAULT_PASSWORD).await()
+        } catch (_: Exception) {
+          auth.signInWithEmailAndPassword(email, DEFAULT_PASSWORD).await()
+        }
       }
       checkNotNull(result.user?.uid) { "User auth failed" }
     }

@@ -93,7 +93,8 @@ fun QuizScreen(
     return
   }
 
-  val currentQuestion = state.questions[state.currentIndex]
+  val safeIndex = state.currentIndex.coerceIn(0, state.questions.lastIndex)
+  val currentQuestion = state.questions[safeIndex]
   val selectedAnswer = state.selectedAnswers[currentQuestion.id]
   val isRevealed = selectedAnswer != null
 
@@ -157,7 +158,13 @@ fun QuizScreen(
 
     // Progress Bar
     LinearProgressIndicator(
-      progress = { (state.currentIndex + 1).toFloat() / state.questions.size.toFloat() },
+      progress = {
+        if (state.questions.isNotEmpty()) {
+          ((state.currentIndex + 1).toFloat() / state.questions.size.toFloat()).coerceIn(0f, 1f)
+        } else {
+          0f
+        }
+      },
       modifier = Modifier.fillMaxWidth(),
       color = MaterialTheme.colorScheme.primary
     )

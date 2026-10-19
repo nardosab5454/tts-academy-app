@@ -16,33 +16,36 @@ object GeminiTutorService {
   private const val TAG = "GeminiTutorService"
   private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
-  // Primary model per Gemini API skill guidelines, followed by high-availability fast preview fallback
+  // Candidate models prioritising active, responsive preview and flash-lite models
   private val CANDIDATE_MODELS = listOf(
-    "gemini-3.5-flash",
-    "gemini-3.1-flash-lite-preview"
+    "gemini-3.5-flash-lite",
+    "gemini-flash-lite-latest",
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-3.5-flash"
   )
 
   private val client = OkHttpClient.Builder()
     .connectTimeout(15, TimeUnit.SECONDS)
-    .readTimeout(20, TimeUnit.SECONDS)
+    .readTimeout(25, TimeUnit.SECONDS)
     .writeTimeout(15, TimeUnit.SECONDS)
     .build()
 
   /**
-   * Generates academic clarification, step-by-step explanations, and research guidance
-   * for university freshman students using Google Gemini AI.
+   * Generates natural, helpful, and academically rigorous responses for university students
+   * using Google Gemini AI, supporting conversational multi-turn context.
    */
   suspend fun askTutor(
     prompt: String,
     courseTitle: String? = null,
-    contextInfo: String? = null
+    contextInfo: String? = null,
+    history: List<Pair<String, Boolean>> = emptyList() // List of (text, isUser)
   ): String = withContext(Dispatchers.IO) {
     val apiKey = getApiKey()
 
     if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
-      // Try candidate models in priority order
       for (model in CANDIDATE_MODELS) {
-        val result = tryModelCall(apiKey, model, prompt, courseTitle, contextInfo)
+        val result = tryModelCall(apiKey, model, prompt, courseTitle, contextInfo, history)
         if (!result.isNullOrBlank()) {
           Log.i(TAG, "Successfully generated response using $model")
           return@withContext result
@@ -50,7 +53,7 @@ object GeminiTutorService {
       }
     }
 
-    // High-quality pedagogical fallback if quota/network is temporarily unreachable
+    // High-quality conversational & academic fallback if network/quota is temporarily unreachable
     generateDirectAcademicResponse(prompt, courseTitle, contextInfo)
   }
 
@@ -59,40 +62,66 @@ object GeminiTutorService {
     model: String,
     prompt: String,
     courseTitle: String?,
-    contextInfo: String?
+    contextInfo: String?,
+    history: List<Pair<String, Boolean>>
   ): String? {
     try {
       val systemPrompt = buildString {
-        append("You are the official TTS Academy AI University Freshman Tutor. ")
-        append("Your mission is to provide clear, rigorous, and student-friendly academic explanations for university freshmen. ")
-        append("Guidelines:\n")
-        append("- Answer the student's question directly with comprehensive step-by-step reasoning.\n")
-        append("- For mathematics, engineering, and science, write all formulas, derivation steps, and units clearly.\n")
-        append("- Point out key theorems, common student misconceptions, and practical examination tips.\n")
+        append("You are the official TTS Academy AI Academic Tutor for university freshman students. ")
+        append("You are an intelligent, friendly, and pedagogical chatbot tutor. ")
+        append("Communication Guidelines:\n")
+        append("1. When the student greets you (e.g. 'hi', 'hello', 'hey', 'how are you'), greet them warmly and naturally, introduce yourself as the TTS Academy AI Tutor, and ask how you can help with their university courses today.\n")
+        append("2. When answering academic questions (Calculus, Physics, Computer Science, Chemistry, Engineering), provide rigorous, crystal-clear, step-by-step explanations, derivations, and formulas.\n")
+        append("3. Highlight key definitions, intuitive physical/mathematical analogies, common student pitfalls, and examination tips.\n")
+        append("4. Keep the conversation natural, interactive, conversational, and encouraging like a real university professor and teaching assistant.\n")
         if (!courseTitle.isNullOrBlank()) {
-          append("- Active Subject Context: $courseTitle.\n")
+          append("5. Current Active Course Subject Context: $courseTitle.\n")
         }
-      }
-
-      val fullUserPrompt = buildString {
-        if (!contextInfo.isNullOrBlank()) {
-          append("[Academic Study Context]\n")
-          append(contextInfo)
-          append("\n\n")
-        }
-        append("[Student Query]\n")
-        append(prompt)
       }
 
       val requestBodyJson = JSONObject().apply {
         val contentsArray = JSONArray().apply {
-          val contentObj = JSONObject().apply {
-            val partsArray = JSONArray().apply {
-              put(JSONObject().put("text", fullUserPrompt))
+          // Gemini API requires conversational turns to strictly alternate: user -> model -> user -> model
+          val sanitized = mutableListOf<Pair<String, String>>()
+          var lastRole: String? = null
+          for ((msgText, isUser) in history.takeLast(6)) {
+            val role = if (isUser) "user" else "model"
+            if (role != lastRole && msgText.isNotBlank()) {
+              sanitized.add(role to msgText)
+              lastRole = role
             }
-            put("parts", partsArray)
           }
-          put(contentObj)
+          // The history preceding the current user prompt MUST end on a "model" turn
+          while (sanitized.isNotEmpty() && sanitized.last().first == "user") {
+            sanitized.removeAt(sanitized.lastIndex)
+          }
+
+          for ((role, text) in sanitized) {
+            val turnObj = JSONObject().apply {
+              put("role", role)
+              val partsArray = JSONArray().apply {
+                put(JSONObject().put("text", text))
+              }
+              put("parts", partsArray)
+            }
+            put(turnObj)
+          }
+
+          // Current user prompt turn
+          val currentTurn = JSONObject().apply {
+            put("role", "user")
+            val userParts = JSONArray().apply {
+              val formattedPrompt = buildString {
+                if (!contextInfo.isNullOrBlank()) {
+                  append("[Study Context: $contextInfo]\n")
+                }
+                append(prompt)
+              }
+              put(JSONObject().put("text", formattedPrompt))
+            }
+            put("parts", userParts)
+          }
+          put(currentTurn)
         }
         put("contents", contentsArray)
 
@@ -162,17 +191,34 @@ object GeminiTutorService {
   }
 
   /**
-   * Generates a rigorous, contextual, subject-specific answer for university freshman queries.
-   * All mathematical symbols use plain text or properly escaped symbols to avoid template syntax errors.
+   * Generates a warm, natural, and academically comprehensive response.
+   * Handles greetings naturally, and breaks down complex questions pedagogically.
    */
   fun generateDirectAcademicResponse(
     prompt: String,
     courseTitle: String?,
     contextInfo: String?
   ): String {
-    val lower = prompt.lowercase()
+    val trimmed = prompt.trim()
+    val lower = trimmed.lowercase()
+    val cleanLower = lower.replace(Regex("[^a-z0-9 ]"), " ").trim()
     val subject = courseTitle ?: "Freshman University Academics"
 
+    // 1. Natural Conversational Greetings
+    if (cleanLower in listOf("hi", "hello", "hey", "hola", "yo", "sup", "greetings", "good morning", "good afternoon", "good evening", "hi there", "hello tutor", "hey tutor", "how are you", "how are you doing", "hi how are you") ||
+      cleanLower.startsWith("hi ") || cleanLower.startsWith("hello ") || cleanLower.startsWith("hey ") || cleanLower.startsWith("how are you")) {
+      return "Hello! 👋 I'm your TTS Academy AI Academic Tutor, powered by Google Gemini. How are your university studies going today? Feel free to ask me to explain any difficult concept, derive mathematical formulas, solve physics problems, or help you prepare for upcoming examinations!"
+    }
+
+    if (lower.contains("who are you") || lower.contains("what can you do") || lower.contains("help me")) {
+      return "I am the TTS Academy AI Tutor, powered by Google Gemini! 🎓\n\nI can help you with:\n• Step-by-step mathematical proofs and calculus derivations\n• Explaining physics principles, kinematics, and energy conservation\n• Computer science algorithms, data structures, and Big-O analysis\n• Chemistry redox balancing, chemical equilibrium, and thermodynamics\n• Breaking down past exam questions and clarifying difficult lecture notes\n\nWhat topic are you studying today?"
+    }
+
+    if (lower in listOf("thank you", "thanks", "thank u", "thx", "great thanks", "appreciate it")) {
+      return "You're very welcome! Keep up the great studying, and feel free to ask anytime you run into a tricky problem. Best of luck with your university courses! 🌟"
+    }
+
+    // 2. Structured Academic Explanations
     return buildString {
       append("### 🎓 TTS Academy Gemini AI Tutor ($subject)\n\n")
 
@@ -289,26 +335,18 @@ object GeminiTutorService {
           append("💡 **Exam Tip:** The trace of matrix A equals the sum of its eigenvalues; the determinant equals their product.")
         }
 
-        // General Academic Inquiry / Specific Student Query
+        // General Student Question
         else -> {
-          append("**Academic Analysis for Student Query:**\n")
-          append("\"$prompt\"\n\n")
+          append("Here is the pedagogical explanation for your query:\n\n")
+          append("> **\"$trimmed\"**\n\n")
           if (!contextInfo.isNullOrBlank()) {
-            append("**Context Examined:**\n")
-            append(contextInfo.take(250))
-            if (contextInfo.length > 250) append("...")
-            append("\n\n")
+            append("**Subject Context:** $contextInfo\n\n")
           }
-          append("**1. Theoretical Foundation:**\n")
-          append("In university freshman curricula, this question tests core foundational principles rather than superficial memorization. Let's break down the definitions, governing rules, and step-by-step logic needed to master this topic.\n\n")
-          append("**2. Step-by-Step Breakdown:**\n")
-          append("1. **Identify the Core Concept:** Distinguish known parameters from the required unknowns.\n")
-          append("2. **Apply the Governing Formula/Principle:** Write down the general equation or definition before substituting numbers.\n")
-          append("3. **Execute the Derivation/Solution:** Follow consistent algebraic and logical progression.\n")
-          append("4. **Sanity Check:** Check physical units, dimensions, and extreme boundary values to verify reasonableness.\n\n")
-          append("**3. Key Examination Strategy:**\n")
-          append("University markers award substantial marks for structured methodology and clear reasoning. Always state your definitions clearly and show intermediate steps.\n\n")
-          append("💡 **Tip:** Practice with past exam papers in the Past Exams section to reinforce this concept under timed conditions.")
+          append("To understand this concept clearly, let's break it down into core principles:\n\n")
+          append("1. **Core Concept:** Review the fundamental definition and identify what is given versus what needs to be determined.\n")
+          append("2. **Underlying Principle:** Apply the relevant rule or theoretical framework systematically.\n")
+          append("3. **Application & Verification:** Test your reasoning with a concrete example and check edge cases.\n\n")
+          append("💡 **Tip:** If you need a more specific derivation or step-by-step calculation, please provide the exact problem parameters!")
         }
       }
     }

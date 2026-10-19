@@ -58,4 +58,52 @@ class ExampleRobolectricTest {
     assertEquals("ADMIN", admin?.role)
     assertEquals("Spike@6776", admin?.password)
   }
+
+  @Test
+  fun `verify room persistence of study materials and offline quiz progress`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = androidx.room.Room.inMemoryDatabaseBuilder(context, com.example.data.local.AppDatabase::class.java)
+      .allowMainThreadQueries()
+      .build()
+
+    com.example.data.local.AppDatabase.populateDatabase(db)
+    val repo = com.example.data.repository.TtsRepository(db)
+    repo.initialize()
+
+    val stats = repo.getOfflineCacheStats("student_1")
+    assertTrue("Courses should be cached locally in Room", stats.cachedCoursesCount > 0)
+    assertTrue("Questions should be cached locally in Room", stats.cachedQuestionsCount > 0)
+    assertTrue("Notes should be cached locally in Room", stats.cachedNotesCount > 0)
+    assertTrue("Past exams should be cached locally in Room", stats.cachedPastExamsCount > 0)
+    assertTrue("System should report offline ready", stats.isOfflineReady)
+
+    // Record offline quiz attempt
+    val testAttempt = com.example.data.local.model.QuizAttemptEntity(
+      id = "test_offline_attempt",
+      userId = "student_1",
+      courseId = "math101",
+      courseTitle = "Calculus I",
+      topicId = "derivatives",
+      topicTitle = "Derivatives",
+      examId = null,
+      isExamMode = false,
+      totalQuestions = 5,
+      correctCount = 4,
+      incorrectCount = 1,
+      scorePercent = 80,
+      timeSpentSeconds = 120,
+      answersJson = "q1:A:true;q2:B:false"
+    )
+
+    repo.recordQuizAttempt(testAttempt)
+    val savedAttempts = db.quizAttemptDao().getAttemptsForUser("student_1")
+    assertEquals(1, savedAttempts.size)
+    assertEquals(80, savedAttempts[0].scorePercent)
+    assertEquals("Calculus I", savedAttempts[0].courseTitle)
+
+    val updatedStats = repo.getOfflineCacheStats("student_1")
+    assertEquals(1, updatedStats.cachedQuizAttemptsCount)
+
+    db.close()
+  }
 }

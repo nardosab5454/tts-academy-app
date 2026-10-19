@@ -19,6 +19,9 @@ data class UserEntity(
   val correctAnswersCount: Int = 0,
   val isNotificationsEnabled: Boolean = true,
   val studyGoalMinutesPerDay: Int = 45,
+  val isPremium: Boolean = false,
+  val activationCode: String? = null,
+  val activatedAt: Long? = null,
   val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -149,3 +152,17 @@ data class UserPreferenceEntity(
   @PrimaryKey val key: String,
   val value: String
 )
+
+@Entity(tableName = "access_codes")
+data class AccessCodeEntity(
+  @PrimaryKey val code: String, // 6 characters, e.g. "739104", "8K#92X"
+  val createdAt: Long = System.currentTimeMillis(),
+  val expiresAt: Long = System.currentTimeMillis() + (365L * 24 * 60 * 60 * 1000L),
+  val createdByAdminId: String = "admin_1",
+  val isRedeemed: Boolean = false,
+  val redeemedByUserId: String? = null,
+  val redeemedByEmail: String? = null,
+  val redeemedAt: Long? = null,
+  val note: String = "Permanent Academic Access Pass"
+)
+

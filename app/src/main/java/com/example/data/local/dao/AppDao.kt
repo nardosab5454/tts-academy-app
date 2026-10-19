@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import com.example.data.local.model.AccessCodeEntity
 import com.example.data.local.model.AnnouncementEntity
 import com.example.data.local.model.BookmarkEntity
 import com.example.data.local.model.CourseEntity
@@ -42,6 +43,12 @@ interface UserDao {
 
   @Query("UPDATE users SET role = :newRole WHERE id = :userId")
   suspend fun updateUserRole(userId: String, newRole: String)
+
+  @Query("UPDATE users SET isPremium = :isPremium, activationCode = :code, activatedAt = :activatedAt WHERE id = :userId")
+  suspend fun updateUserPremium(userId: String, isPremium: Boolean, code: String, activatedAt: Long)
+
+  @Query("UPDATE users SET department = :department, studyGoalMinutesPerDay = :dailyGoalMinutes WHERE id = :userId")
+  suspend fun updateUserDepartmentAndGoal(userId: String, department: String, dailyGoalMinutes: Int)
 }
 
 @Dao
@@ -70,6 +77,9 @@ interface CourseDao {
   @Query("DELETE FROM courses WHERE id = :courseId")
   suspend fun deleteCourse(courseId: String)
 
+  @Query("UPDATE courses SET totalQuestions = (SELECT COUNT(*) FROM questions WHERE courseId = :courseId), totalNotes = (SELECT COUNT(*) FROM notes WHERE courseId = :courseId) WHERE id = :courseId")
+  suspend fun recalculateCounts(courseId: String)
+
   @Query("SELECT COUNT(*) FROM courses")
   suspend fun getCount(): Int
 }
@@ -93,6 +103,9 @@ interface TopicDao {
 
   @Query("DELETE FROM topics WHERE id = :topicId")
   suspend fun deleteTopic(topicId: String)
+
+  @Query("DELETE FROM topics WHERE courseId = :courseId")
+  suspend fun deleteTopicsForCourse(courseId: String)
 }
 
 @Dao
@@ -133,6 +146,9 @@ interface QuestionDao {
   @Query("DELETE FROM questions WHERE id = :questionId")
   suspend fun deleteQuestion(questionId: String)
 
+  @Query("DELETE FROM questions WHERE courseId = :courseId")
+  suspend fun deleteQuestionsForCourse(courseId: String)
+
   @Query("SELECT COUNT(*) FROM questions")
   suspend fun getCount(): Int
 
@@ -169,6 +185,9 @@ interface NoteDao {
   @Query("DELETE FROM notes WHERE id = :noteId")
   suspend fun deleteNote(noteId: String)
 
+  @Query("DELETE FROM notes WHERE courseId = :courseId")
+  suspend fun deleteNotesForCourse(courseId: String)
+
   @Query("SELECT COUNT(*) FROM notes")
   suspend fun getCount(): Int
 
@@ -201,6 +220,9 @@ interface PastExamDao {
 
   @Query("DELETE FROM past_exams WHERE id = :examId")
   suspend fun deletePastExam(examId: String)
+
+  @Query("DELETE FROM past_exams WHERE courseId = :courseId")
+  suspend fun deletePastExamsForCourse(courseId: String)
 
   @Query("SELECT COUNT(*) FROM past_exams")
   suspend fun getCount(): Int
@@ -268,3 +290,25 @@ interface UserPreferenceDao {
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun setPreference(pref: UserPreferenceEntity)
 }
+
+@Dao
+interface AccessCodeDao {
+  @Query("SELECT * FROM access_codes ORDER BY createdAt DESC")
+  fun getAllAccessCodesFlow(): Flow<List<AccessCodeEntity>>
+
+  @Query("SELECT * FROM access_codes WHERE code = :code LIMIT 1")
+  suspend fun getAccessCode(code: String): AccessCodeEntity?
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun insertAccessCode(accessCode: AccessCodeEntity)
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun insertAccessCodes(accessCodes: List<AccessCodeEntity>)
+
+  @Update
+  suspend fun updateAccessCode(accessCode: AccessCodeEntity)
+
+  @Query("DELETE FROM access_codes WHERE code = :code")
+  suspend fun deleteAccessCode(code: String)
+}
+

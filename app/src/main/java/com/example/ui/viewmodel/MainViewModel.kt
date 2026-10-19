@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
+import com.example.data.local.model.AccessCodeEntity
 import com.example.data.local.model.AnnouncementEntity
 import com.example.data.local.model.BookmarkEntity
 import com.example.data.local.model.CourseEntity
@@ -17,8 +18,10 @@ import com.example.data.firestore.FirestoreRepository
 import com.example.data.firestore.model.FirestoreBookmark
 import com.example.data.firestore.model.FirestoreQuizAttempt
 import com.example.data.firestore.model.FirestoreUserProfile
+import com.example.data.repository.OfflineCacheStats
 import com.example.data.repository.TtsRepository
 import com.example.data.repository.WeakTopicSummary
+import com.example.util.NetworkConnectivityObserver
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +29,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -47,7 +51,8 @@ enum class Screen {
   PROFILE,
   ADMIN_PORTAL,
   AI_TUTOR,
-  AUTH
+  AUTH,
+  PREMIUM_GATE
 }
 
 data class TutorMessage(
@@ -81,6 +86,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val repository = TtsRepository(database)
   val firestoreRepository = FirestoreRepository(application)
 
+  private val connectivityObserver = NetworkConnectivityObserver(application)
+  val isOnline: StateFlow<Boolean> = connectivityObserver.observe()
+    .stateIn(viewModelScope, SharingStarted.Eagerly, connectivityObserver.isCurrentlyConnected())
+
+  private val _offlineCacheStats = MutableStateFlow(
+    OfflineCacheStats(
+      cachedCoursesCount = 12,
+      cachedTopicsCount = 36,
+      cachedQuestionsCount = 50,
+      cachedNotesCount = 12,
+      cachedPastExamsCount = 6,
+      cachedQuizAttemptsCount = 0,
+      cachedBookmarksCount = 0
+    )
+  )
+  val offlineCacheStats: StateFlow<OfflineCacheStats> = _offlineCacheStats.asStateFlow()
+
+  fun refreshOfflineCache() {
+    viewModelScope.launch {
+      val stats = repository.refreshAndVerifyOfflineCache()
+      _offlineCacheStats.value = stats
+      // Silent cache synchronization without disturbing student UX
+    }
+  }
+
   fun syncWithFirebaseUser(firebaseUser: FirebaseUser?) {
     if (firebaseUser == null) return
     viewModelScope.launch {
@@ -110,6 +140,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   // Active user and Theme
   val currentUser: StateFlow<UserEntity?> = repository.currentUser
   val appTheme: StateFlow<String> = repository.appTheme
+  val isDeviceUnlocked: StateFlow<Boolean> = repository.isDeviceUnlocked
 
   // Data streams (Eagerly shared for instant live updates across the platform)
   val publishedCourses: StateFlow<List<CourseEntity>> = repository.getPublishedCoursesFlow()
@@ -121,7 +152,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val allPublishedNotes: StateFlow<List<NoteEntity>> = repository.getAllPublishedNotesFlow()
     .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+  val allNotes: StateFlow<List<NoteEntity>> = repository.getAllNotesFlow()
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
   val allPastExams: StateFlow<List<PastExamEntity>> = repository.getAllPastExamsFlow()
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+  val allAdminPastExams: StateFlow<List<PastExamEntity>> = repository.getAllAdminPastExamsFlow()
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+  val allQuestions: StateFlow<List<QuestionEntity>> = repository.getAllQuestionsFlow()
     .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
   val announcements: StateFlow<List<AnnouncementEntity>> = repository.getPublishedAnnouncementsFlow()
@@ -141,6 +181,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   val allUsers: StateFlow<List<UserEntity>> = repository.getAllUsersFlow()
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+  val allAccessCodes: StateFlow<List<AccessCodeEntity>> = repository.getAllAccessCodesFlow()
     .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
   // Selected item states
@@ -209,15 +252,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   init {
     viewModelScope.launch {
       repository.initialize()
+      _offlineCacheStats.value = repository.getOfflineCacheStats(repository.currentUser.value?.id)
     }
     viewModelScope.launch {
       repository.currentUser.collect { user ->
         if (user != null) {
           loadUserData(user.id)
+          _offlineCacheStats.value = repository.getOfflineCacheStats(user.id)
         } else {
           _userAttempts.value = emptyList()
           _userBookmarks.value = emptyList()
           _weakTopics.value = emptyList()
+          _offlineCacheStats.value = repository.getOfflineCacheStats(null)
         }
       }
     }
@@ -252,10 +298,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       val res = repository.login(email, password)
       res.onSuccess { user ->
         loadUserData(user.id)
+        _currentScreen.value = Screen.DASHBOARD
         showMessage("Welcome back, ${user.name}.")
         onResult(true, "")
       }.onFailure { err ->
         onResult(false, err.message ?: "Authentication failed.")
+      }
+    }
+  }
+
+  fun loginWithAccessCode(code: String, onResult: (Boolean, String) -> Unit) {
+    viewModelScope.launch {
+      val res = repository.loginWithAccessCode(code)
+      res.onSuccess { user ->
+        loadUserData(user.id)
+        _currentScreen.value = Screen.DASHBOARD
+        showMessage("Welcome, ${user.name}! Academic materials unlocked on this device.")
+        onResult(true, "Success")
+      }.onFailure { err ->
+        onResult(false, err.message ?: "Invalid or expired access code.")
       }
     }
   }
@@ -272,7 +333,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       val res = repository.register(name, email, password, studentId, department)
       res.onSuccess { user ->
         loadUserData(user.id)
-        showMessage("Account created! Welcome, ${user.name}.")
+        _currentScreen.value = Screen.DASHBOARD
+        showMessage("Account created! Welcome to TTS Academy, ${user.name}.")
         onResult(true, "")
       }.onFailure { err ->
         onResult(false, err.message ?: "Registration failed.")
@@ -295,6 +357,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       repository.setUserRole(userId, newRole)
       showMessage("User role updated to $newRole.")
+    }
+  }
+
+  fun updateStudentDepartmentAndGoal(department: String, dailyGoalMinutes: Int) {
+    val uid = currentUser.value?.id ?: return
+    viewModelScope.launch {
+      val cleanDept = department.trim().ifBlank { "General Freshman Studies" }
+      val safeGoal = dailyGoalMinutes.coerceIn(10, 360)
+      repository.updateStudentDepartmentAndGoal(uid, cleanDept, safeGoal)
+      showMessage("Profile updated: $cleanDept • ${safeGoal}m daily target")
     }
   }
 
@@ -338,10 +410,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       _isAiLoading.value = true
       _aiActiveContext.value = courseTitle ?: "Freshman University Topic"
 
+      val history = _tutorConversation.value.dropLast(1).map { it.text to it.isUser }
       val explanation = com.example.data.remote.GeminiTutorService.askTutor(
         prompt = cleanPrompt,
         courseTitle = courseTitle,
-        contextInfo = contextInfo
+        contextInfo = contextInfo,
+        history = history
       )
 
       val aiMsg = TutorMessage(isUser = false, text = explanation)
@@ -357,6 +431,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     _aiResponse.value = null
     _isAiLoading.value = false
     _aiActiveContext.value = null
+  }
+
+  // --- Access Code & Premium Management ---
+  fun redeemAccessCode(code: String, onResult: (Boolean, String) -> Unit) {
+    val user = currentUser.value
+    if (user == null) {
+      onResult(false, "User session not found. Please log in.")
+      return
+    }
+    viewModelScope.launch {
+      val result = repository.redeemAccessCode(user.id, user.email, code)
+      result.onSuccess {
+        loadUserData(user.id)
+        showMessage("Premium Account Activated! Welcome to TTS Academy.")
+        _currentScreen.value = Screen.DASHBOARD
+        onResult(true, "Activation successful!")
+      }.onFailure { err ->
+        onResult(false, err.message ?: "Invalid code.")
+      }
+    }
+  }
+
+  fun generateAccessCode(
+    note: String,
+    format: String = "NUMERIC",
+    customCode: String? = null,
+    onResult: (String) -> Unit
+  ) {
+    val admin = currentUser.value
+    val adminId = admin?.id ?: "admin_1"
+    viewModelScope.launch {
+      val newCode = repository.generateAccessCode(adminId, note, format, customCode)
+      showMessage("Generated Access Code: ${newCode.code}")
+      onResult(newCode.code)
+    }
+  }
+
+  fun generateQuickAdminAccessCode(onResult: (AccessCodeEntity) -> Unit) {
+    val admin = currentUser.value
+    val adminId = admin?.id ?: "admin_1"
+    viewModelScope.launch {
+      val newCode = repository.generateAccessCode(adminId, "Permanent Academic Pass", "NUMERIC", null)
+      showMessage("Generated Access Code: ${newCode.code}")
+      onResult(newCode)
+    }
+  }
+
+  fun deleteAccessCode(code: String) {
+    viewModelScope.launch {
+      repository.deleteAccessCode(code)
+      showMessage("Removed access code $code.")
+    }
   }
 
   fun downloadExamPdf(
@@ -400,15 +526,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
+  private var userAttemptsJob: Job? = null
+  private var userBookmarksJob: Job? = null
+
   private fun loadUserData(userId: String? = null) {
     val uid = userId ?: currentUser.value?.id ?: return
-    viewModelScope.launch {
+    userAttemptsJob?.cancel()
+    userAttemptsJob = viewModelScope.launch {
       repository.getAttemptsForUserFlow(uid).collect { attempts ->
         _userAttempts.value = attempts
         _weakTopics.value = repository.getWeakTopics(uid)
       }
     }
-    viewModelScope.launch {
+    userBookmarksJob?.cancel()
+    userBookmarksJob = viewModelScope.launch {
       repository.getBookmarksForUserFlow(uid).collect { bms ->
         _userBookmarks.value = bms
       }
@@ -552,6 +683,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     if (current.questions.isEmpty()) return
 
     val total = current.questions.size
+    if (total == 0) {
+      _currentScreen.value = Screen.DASHBOARD
+      return
+    }
     var correct = 0
     val answersLog = mutableListOf<String>()
 
@@ -562,8 +697,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       answersLog.add("${q.id}|$selected|${q.correctAnswer}|$isCorrect")
     }
 
-    val incorrect = total - correct
-    val scorePercent = (correct * 100) / total
+    val incorrect = (total - correct).coerceAtLeast(0)
+    val scorePercent = ((correct * 100) / total).coerceIn(0, 100)
     val timeSpent = ((System.currentTimeMillis() - current.startTimeMillis) / 1000).toInt()
     val userId = currentUser.value?.id ?: "student_1"
 
@@ -593,20 +728,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       )
       navigateTo(Screen.QUIZ_RESULT)
 
-      // Also persist to real cloud Firestore database
-      val fbUser = FirebaseAuth.getInstance().currentUser
-      if (fbUser != null) {
-        val fsAttempt = FirestoreQuizAttempt(
-          id = attempt.id,
-          userId = fbUser.uid,
-          courseId = attempt.courseId,
-          topicId = attempt.topicId ?: "",
-          score = attempt.correctCount.toLong(),
-          totalQuestions = attempt.totalQuestions.toLong(),
-          percentage = attempt.scorePercent.toLong()
-        )
-        firestoreRepository.recordQuizAttempt(fsAttempt)
-      }
+      // Update offline cache statistics for quiz progress
+      _offlineCacheStats.value = repository.getOfflineCacheStats(userId)
+
+      // Also persist to real cloud Firestore database if online
+      try {
+        val fbUser = FirebaseAuth.getInstance().currentUser
+        if (fbUser != null && isOnline.value) {
+          val fsAttempt = FirestoreQuizAttempt(
+            id = attempt.id,
+            userId = fbUser.uid,
+            courseId = attempt.courseId,
+            topicId = attempt.topicId ?: "",
+            score = attempt.correctCount.toLong(),
+            totalQuestions = attempt.totalQuestions.toLong(),
+            percentage = attempt.scorePercent.toLong()
+          )
+          firestoreRepository.recordQuizAttempt(fsAttempt)
+        }
+      } catch (_: Exception) {}
     }
   }
 

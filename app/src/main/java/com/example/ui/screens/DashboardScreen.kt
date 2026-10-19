@@ -24,16 +24,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -64,6 +66,7 @@ import com.example.ui.theme.AcademicBlueDark
 import com.example.ui.theme.AcademicBluePrimary
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
+import com.example.ui.theme.AcademicAmberDark
 import com.example.ui.theme.SuccessGreen
 import com.example.ui.viewmodel.Screen
 
@@ -77,6 +80,9 @@ fun DashboardScreen(
   onNavigate: (Screen) -> Unit,
   onStartQuickPractice: (CourseEntity) -> Unit,
   onAnnouncementsClick: () -> Unit = { onNavigate(Screen.ANNOUNCEMENTS) },
+  isUnlocked: Boolean = true,
+  onUnlockClick: () -> Unit = {},
+  isOnline: Boolean = true,
   modifier: Modifier = Modifier
 ) {
   val totalFromAttempts = attempts.sumOf { it.totalQuestions }
@@ -127,7 +133,7 @@ fun DashboardScreen(
                 color = Color.White
               )
               Text(
-                text = "${user?.department ?: "University Freshman"} • ${user?.studentId ?: "U2024"}",
+                text = user?.department ?: "Ethiopian University Freshman",
                 style = MaterialTheme.typography.bodySmall,
                 color = AcademicGold
               )
@@ -191,9 +197,135 @@ fun DashboardScreen(
               modifier = Modifier.weight(1f)
             )
           }
+
+          Spacer(modifier = Modifier.height(14.dp))
+
+          // Daily Study Target & Department Tracker Bar
+          Surface(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(16.dp))
+              .clickable { onNavigate(Screen.PROFILE) },
+            shape = RoundedCornerShape(16.dp),
+            color = Color.White.copy(alpha = 0.12f)
+          ) {
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+              ) {
+                Surface(
+                  shape = CircleShape,
+                  color = AcademicGold.copy(alpha = 0.25f),
+                  modifier = Modifier.size(32.dp)
+                ) {
+                  Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                      imageVector = Icons.Default.Timer,
+                      contentDescription = null,
+                      tint = AcademicGold,
+                      modifier = Modifier.size(18.dp)
+                    )
+                  }
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                  Text(
+                    text = "Daily Target: ${user?.studyGoalMinutesPerDay ?: 45} mins/day",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = Color.White
+                  )
+                  Text(
+                    text = "University: ${user?.department ?: "Ethiopian University Freshman"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                }
+              }
+
+              Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color.White.copy(alpha = 0.2f)
+              ) {
+                Text(
+                  text = "Edit Goal",
+                  style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                  color = Color.White,
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+              }
+            }
+          }
         }
       }
     }
+
+    // Locked Materials Warning Banner
+    if (!isUnlocked) {
+      item {
+        Card(
+          shape = RoundedCornerShape(18.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.28f)),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .testTag("dashboard_locked_resources_banner")
+        ) {
+          Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Box(
+              modifier = Modifier
+                .size(46.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f)),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = "Locked",
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(24.dp)
+              )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = "Exams & Notes Locked",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface
+              )
+              Spacer(modifier = Modifier.height(2.dp))
+              Text(
+                text = "Official exams and lecture notes require your 6-digit access code.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+              onClick = onUnlockClick,
+              shape = RoundedCornerShape(12.dp),
+              colors = ButtonDefaults.buttonColors(containerColor = AcademicCobalt)
+            ) {
+              Text("Unlock", fontWeight = FontWeight.Bold)
+            }
+          }
+        }
+      }
+    }
+
+
 
     // Live Recent Practice Card
     if (attempts.isNotEmpty()) {
@@ -483,7 +615,7 @@ fun DashboardScreen(
           QuickActionTile(
             title = "Past Exams",
             sub = "Digitized",
-            icon = Icons.Default.Assignment,
+            icon = Icons.AutoMirrored.Filled.Assignment,
             onClick = { onNavigate(Screen.PAST_EXAMS) },
             modifier = Modifier.weight(1f)
           )

@@ -37,6 +37,7 @@ import com.example.ui.screens.NoteDetailScreen
 import com.example.ui.screens.NotesScreen
 import com.example.ui.screens.PastExamDetailScreen
 import com.example.ui.screens.PastExamsScreen
+import com.example.ui.screens.PremiumGateScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.ProgressScreen
 import com.example.ui.screens.QuizResultScreen
@@ -44,6 +45,7 @@ import com.example.ui.screens.QuizScreen
 import com.example.ui.screens.ReviewAnswersScreen
 import com.example.ui.screens.SearchScreen
 import com.example.ui.screens.SignInScreen
+import com.example.ui.components.UnlockMaterialsDialog
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.Screen
@@ -109,6 +111,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
   val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
   val allUsers by viewModel.allUsers.collectAsStateWithLifecycle()
   val publishedCourses by viewModel.publishedCourses.collectAsStateWithLifecycle()
+  val allCourses by viewModel.allCourses.collectAsStateWithLifecycle()
   val allPublishedNotes by viewModel.allPublishedNotes.collectAsStateWithLifecycle()
   val allPastExams by viewModel.allPastExams.collectAsStateWithLifecycle()
   val announcements by viewModel.announcements.collectAsStateWithLifecycle()
@@ -134,9 +137,30 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
 
   val appTheme by viewModel.appTheme.collectAsStateWithLifecycle()
   val message by viewModel.message.collectAsStateWithLifecycle()
+  val allAccessCodes by viewModel.allAccessCodes.collectAsStateWithLifecycle()
+  val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
+  val isDeviceUnlocked by viewModel.isDeviceUnlocked.collectAsStateWithLifecycle()
+  val allQuestions by viewModel.allQuestions.collectAsStateWithLifecycle()
+  val allNotes by viewModel.allNotes.collectAsStateWithLifecycle()
 
   val context = LocalContext.current
   val snackbarHostState = remember { SnackbarHostState() }
+
+  // Permanent unlock on this device; requires code when accessing from a new device
+  val isUnlocked = currentUser?.role == "ADMIN" || isDeviceUnlocked
+  var showUnlockDialog by remember { mutableStateOf(false) }
+  var pendingUnlockAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+  var pendingTargetTitle by remember { mutableStateOf<String?>(null) }
+
+  fun performLockedAction(targetTitle: String, action: () -> Unit) {
+    if (isUnlocked) {
+      action()
+    } else {
+      pendingTargetTitle = targetTitle
+      pendingUnlockAction = action
+      showUnlockDialog = true
+    }
+  }
 
   // Automatically clear notification badge count when user views Announcements
   LaunchedEffect(currentScreen) {
@@ -153,7 +177,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
     }
   }
 
-  // Handle system back navigation
+  // Handle system back navigation (disable on Dashboard to exit smoothly)
   BackHandler(enabled = currentScreen != Screen.DASHBOARD) {
     if (!viewModel.navigateBack()) {
       viewModel.navigateTo(Screen.DASHBOARD)
@@ -181,7 +205,8 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
           },
           onSearchClick = { viewModel.navigateTo(Screen.SEARCH) },
           onProfileClick = { viewModel.navigateTo(Screen.PROFILE) },
-          onAiTutorClick = { viewModel.navigateTo(Screen.AI_TUTOR) }
+          onAiTutorClick = { viewModel.navigateTo(Screen.AI_TUTOR) },
+          isOnline = isOnline
         )
       }
     },
@@ -206,20 +231,37 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             courses = publishedCourses,
             announcements = announcements,
             attempts = userAttempts,
-            onCourseClick = { viewModel.selectCourse(it) },
+            isUnlocked = isUnlocked,
+            onUnlockClick = {
+              performLockedAction("Academic Materials") {}
+            },
+            onCourseClick = { course ->
+              performLockedAction(course.title) {
+                viewModel.selectCourse(course)
+              }
+            },
             onNavigate = { viewModel.navigateTo(it) },
-            onStartQuickPractice = { viewModel.startCoursePractice(it, false) },
+            onStartQuickPractice = { course ->
+              performLockedAction("${course.title} Practice Quiz") {
+                viewModel.startCoursePractice(course, false)
+              }
+            },
             onAnnouncementsClick = {
               viewModel.markAnnouncementsAsViewed()
               viewModel.navigateTo(Screen.ANNOUNCEMENTS)
-            }
+            },
+            isOnline = isOnline
           )
         }
 
         Screen.COURSES -> {
           CoursesScreen(
             courses = publishedCourses,
-            onCourseClick = { viewModel.selectCourse(it) }
+            onCourseClick = { course ->
+              performLockedAction(course.title) {
+                viewModel.selectCourse(course)
+              }
+            }
           )
         }
 
@@ -232,13 +274,25 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               pastExams = coursePastExams,
               onBackClick = { viewModel.navigateBack() },
               onStartTopicPractice = { topic, isExamMode ->
-                viewModel.startTopicQuiz(topic, course, isExamMode)
+                performLockedAction(topic.title) {
+                  viewModel.startTopicQuiz(topic, course, isExamMode)
+                }
               },
               onStartCoursePractice = { crs, isExamMode ->
-                viewModel.startCoursePractice(crs, isExamMode)
+                performLockedAction(crs.title) {
+                  viewModel.startCoursePractice(crs, isExamMode)
+                }
               },
-              onNoteClick = { viewModel.selectNote(it) },
-              onPastExamClick = { viewModel.selectPastExam(it) }
+              onNoteClick = { note ->
+                performLockedAction(note.title) {
+                  viewModel.selectNote(note)
+                }
+              },
+              onPastExamClick = { exam ->
+                performLockedAction(exam.title) {
+                  viewModel.selectPastExam(exam)
+                }
+              }
             )
           }
         }
@@ -309,10 +363,20 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
           PastExamsScreen(
             pastExams = allPastExams,
             courses = publishedCourses,
-            onExamClick = { viewModel.selectPastExam(it) },
+            isUnlocked = isUnlocked,
+            onUnlockClick = {
+              performLockedAction("Past Examination Papers") {}
+            },
+            onExamClick = { exam ->
+              performLockedAction(exam.title) {
+                viewModel.selectPastExam(exam)
+              }
+            },
             onDownloadExam = { exam ->
-              val course = publishedCourses.find { it.id == exam.courseId }
-              viewModel.downloadExamPdf(context, exam, course)
+              performLockedAction(exam.title) {
+                val course = publishedCourses.find { it.id == exam.courseId }
+                viewModel.downloadExamPdf(context, exam, course)
+              }
             }
           )
         }
@@ -324,9 +388,15 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               exam = exam,
               course = course,
               onBackClick = { viewModel.navigateBack() },
-              onStartExam = { ex, crs -> viewModel.startExamQuiz(ex, crs) },
+              onStartExam = { ex, crs ->
+                performLockedAction(ex.title) {
+                  viewModel.startExamQuiz(ex, crs)
+                }
+              },
               onDownloadPaper = {
-                viewModel.downloadExamPdf(context, exam, course)
+                performLockedAction(exam.title) {
+                  viewModel.downloadExamPdf(context, exam, course)
+                }
               }
             )
           }
@@ -336,7 +406,15 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
           NotesScreen(
             notes = allPublishedNotes,
             courses = publishedCourses,
-            onNoteClick = { viewModel.selectNote(it) }
+            isUnlocked = isUnlocked,
+            onUnlockClick = {
+              performLockedAction("Lecture Notes & Formulas") {}
+            },
+            onNoteClick = { note ->
+              performLockedAction(note.title) {
+                viewModel.selectNote(note)
+              }
+            }
           )
         }
 
@@ -378,8 +456,16 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             courseResults = searchCourseResults,
             noteResults = searchNoteResults,
             questionResults = searchQuestionResults,
-            onCourseClick = { viewModel.selectCourse(it) },
-            onNoteClick = { viewModel.selectNote(it) },
+            onCourseClick = { course ->
+              performLockedAction(course.title) {
+                viewModel.selectCourse(course)
+              }
+            },
+            onNoteClick = { note ->
+              performLockedAction(note.title) {
+                viewModel.selectNote(note)
+              }
+            },
             onBackClick = { viewModel.navigateBack() }
           )
         }
@@ -391,10 +477,18 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             onOpenItem = { bm ->
               if (bm.itemType == "NOTE") {
                 val note = allPublishedNotes.find { it.id == bm.itemId }
-                if (note != null) viewModel.selectNote(note)
+                if (note != null) {
+                  performLockedAction(note.title) {
+                    viewModel.selectNote(note)
+                  }
+                }
               } else {
                 val crs = publishedCourses.find { it.id == bm.courseId }
-                if (crs != null) viewModel.startCoursePractice(crs, false)
+                if (crs != null) {
+                  performLockedAction(crs.title) {
+                    viewModel.startCoursePractice(crs, false)
+                  }
+                }
               }
             },
             onBackClick = { viewModel.navigateBack() }
@@ -430,33 +524,57 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             user = currentUser,
             allUsers = allUsers,
             currentTheme = appTheme,
+            accessCodes = allAccessCodes,
+            onGenerateCode = { note, format, custom, cb -> viewModel.generateAccessCode(note, format, custom, cb) },
+            onDeleteCode = { viewModel.deleteAccessCode(it) },
             onThemeSelect = { viewModel.setAppTheme(it) },
+            onUpdateSettings = { dept, goal -> viewModel.updateStudentDepartmentAndGoal(dept, goal) },
+            onRedeemAccessCode = { code, cb -> viewModel.redeemAccessCode(code, cb) },
             onLogin = { email, pass, cb -> viewModel.login(email, pass, cb) },
             onSwitchUser = { viewModel.switchUser(it) },
             onOpenAdminPortal = { viewModel.navigateTo(Screen.ADMIN_PORTAL) },
             onBackClick = { viewModel.navigateBack() },
-            onSignOut = { viewModel.signOut() }
+            onSignOut = { viewModel.signOut() },
+            isOnline = isOnline
           )
         }
 
         Screen.ADMIN_PORTAL -> {
-          AdminPortalScreen(
-            courses = publishedCourses,
-            allUsers = allUsers,
-            announcements = announcements,
-            onBackClick = { viewModel.navigateBack() },
-            onSaveCourse = { viewModel.adminSaveCourse(it) },
-            onDeleteCourse = { viewModel.adminDeleteCourse(it) },
-            onSaveQuestion = { viewModel.adminSaveQuestion(it) },
-            onSaveNote = { viewModel.adminSaveNote(it) },
-            onSavePastExam = { viewModel.adminSavePastExam(it) },
-            onPublishAnnouncement = { t, m, c, u -> viewModel.adminPublishAnnouncement(t, m, c, u) },
-            onResetSeedData = { viewModel.adminResetData() },
-            onUpdateUserRole = { userId, role -> viewModel.updateUserRole(userId, role) },
-            onCreateAdmin = { name, email, pass, dept -> viewModel.createAdmin(name, email, pass, dept) },
-            onPromoteEmail = { email -> viewModel.promoteUserByEmail(email) },
-            onDeleteAnnouncement = { viewModel.adminDeleteAnnouncement(it) }
-          )
+          if (currentUser?.role == "ADMIN") {
+            AdminPortalScreen(
+              courses = allCourses,
+              allUsers = allUsers,
+              announcements = announcements,
+              accessCodes = allAccessCodes,
+              questions = allQuestions,
+              notes = allNotes,
+              pastExams = allPastExams,
+              onBackClick = { viewModel.navigateBack() },
+              onSaveCourse = { viewModel.adminSaveCourse(it) },
+              onDeleteCourse = { viewModel.adminDeleteCourse(it) },
+              onSaveQuestion = { viewModel.adminSaveQuestion(it) },
+              onDeleteQuestion = { viewModel.adminDeleteQuestion(it) },
+              onSaveNote = { viewModel.adminSaveNote(it) },
+              onDeleteNote = { viewModel.adminDeleteNote(it) },
+              onSavePastExam = { viewModel.adminSavePastExam(it) },
+              onDeletePastExam = { viewModel.adminDeletePastExam(it) },
+              onPublishAnnouncement = { t, m, c, u -> viewModel.adminPublishAnnouncement(t, m, c, u) },
+              onResetSeedData = { viewModel.adminResetData() },
+              onUpdateUserRole = { userId, role -> viewModel.updateUserRole(userId, role) },
+              onCreateAdmin = { name, email, pass, dept -> viewModel.createAdmin(name, email, pass, dept) },
+              onPromoteEmail = { email -> viewModel.promoteUserByEmail(email) },
+              onDeleteAnnouncement = { viewModel.adminDeleteAnnouncement(it) },
+              onGenerateCode = { note, format, customCode, onResult ->
+                viewModel.generateAccessCode(note, format, customCode, onResult)
+              },
+              onDeleteCode = { code -> viewModel.deleteAccessCode(code) }
+            )
+          } else {
+            LaunchedEffect(Unit) {
+              viewModel.showMessage("Access denied: Administrator privileges required.")
+              viewModel.navigateTo(Screen.DASHBOARD)
+            }
+          }
         }
 
         Screen.AI_TUTOR -> {
@@ -480,11 +598,45 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
           )
         }
 
+        Screen.PREMIUM_GATE -> {
+          PremiumGateScreen(
+            currentUser = currentUser,
+            onRedeemCode = { code, onResult ->
+              viewModel.redeemAccessCode(code, onResult)
+            },
+            onSignOut = {
+              viewModel.signOut()
+            }
+          )
+        }
+
         Screen.AUTH -> {
           // Handled or routed to profile/switch account
           viewModel.navigateTo(Screen.PROFILE)
         }
       }
+    }
+
+    if (showUnlockDialog) {
+      UnlockMaterialsDialog(
+        onDismiss = {
+          showUnlockDialog = false
+          pendingUnlockAction = null
+          pendingTargetTitle = null
+        },
+        targetTitle = pendingTargetTitle,
+        onUnlockWithCode = { code, onResult ->
+          viewModel.redeemAccessCode(code, onResult)
+        },
+        onUnlockSuccess = {
+          showUnlockDialog = false
+          val action = pendingUnlockAction
+          pendingUnlockAction = null
+          pendingTargetTitle = null
+          action?.invoke()
+          viewModel.showMessage("🎉 Academic materials unlocked forever on this device!")
+        }
+      )
     }
   }
 }

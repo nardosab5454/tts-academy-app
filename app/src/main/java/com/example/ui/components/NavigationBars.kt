@@ -16,12 +16,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.School
@@ -37,10 +43,14 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.model.UserEntity
 import com.example.ui.theme.AcademicBluePrimary
+import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
 import com.example.ui.viewmodel.Screen
 
@@ -59,6 +70,7 @@ fun AppHeader(
   onSearchClick: () -> Unit,
   onProfileClick: () -> Unit,
   onAiTutorClick: (() -> Unit)? = null,
+  isOnline: Boolean = true,
   modifier: Modifier = Modifier
 ) {
   Surface(
@@ -67,11 +79,12 @@ fun AppHeader(
     tonalElevation = 2.dp,
     shadowElevation = 2.dp
   ) {
-    Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .statusBarsPadding()
-        .padding(horizontal = 16.dp, vertical = 12.dp),
+    Column(modifier = Modifier.fillMaxWidth()) {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .statusBarsPadding()
+          .padding(horizontal = 16.dp, vertical = 12.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -182,6 +195,7 @@ fun AppHeader(
     }
   }
 }
+}
 
 @Composable
 fun DetailTopBar(
@@ -260,64 +274,154 @@ fun AppBottomNavigation(
   onNavigate: (Screen) -> Unit,
   modifier: Modifier = Modifier
 ) {
-  NavigationBar(
-    modifier = modifier.testTag("app_bottom_nav"),
-    containerColor = MaterialTheme.colorScheme.surface,
-    tonalElevation = 4.dp
+  Surface(
+    modifier = modifier
+      .fillMaxWidth()
+      .padding(horizontal = 16.dp, vertical = 8.dp)
+      .testTag("app_bottom_nav"),
+    shape = RoundedCornerShape(28.dp),
+    color = MaterialTheme.colorScheme.surface,
+    tonalElevation = 4.dp,
+    shadowElevation = 8.dp,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
   ) {
-    NavigationBarItem(
-      selected = currentScreen == Screen.DASHBOARD,
-      onClick = { onNavigate(Screen.DASHBOARD) },
-      icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-      label = { Text("Home") },
-      colors = NavigationBarItemDefaults.colors(
-        selectedIconColor = MaterialTheme.colorScheme.primary,
-        indicatorColor = MaterialTheme.colorScheme.primaryContainer
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 6.dp, vertical = 6.dp),
+      horizontalArrangement = Arrangement.SpaceAround,
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      val navItems = listOf(
+        ModernNavItem(
+          label = "Home",
+          icon = Icons.Default.Home,
+          isSelected = currentScreen == Screen.DASHBOARD,
+          tag = "nav_tab_home",
+          onClick = { onNavigate(Screen.DASHBOARD) }
+        ),
+        ModernNavItem(
+          label = "Courses",
+          icon = Icons.Default.School,
+          isSelected = currentScreen == Screen.COURSES || currentScreen == Screen.COURSE_DETAIL,
+          tag = "nav_tab_courses",
+          onClick = { onNavigate(Screen.COURSES) }
+        ),
+        ModernNavItem(
+          label = "Notes",
+          icon = Icons.AutoMirrored.Filled.MenuBook,
+          isSelected = currentScreen == Screen.NOTES || currentScreen == Screen.NOTE_DETAIL,
+          tag = "nav_tab_notes",
+          onClick = { onNavigate(Screen.NOTES) }
+        ),
+        ModernNavItem(
+          label = "Exams",
+          icon = Icons.AutoMirrored.Filled.Assignment,
+          isSelected = currentScreen == Screen.PAST_EXAMS || currentScreen == Screen.PAST_EXAM_DETAIL,
+          tag = "nav_tab_exams",
+          onClick = { onNavigate(Screen.PAST_EXAMS) }
+        ),
+        ModernNavItem(
+          label = "Progress",
+          icon = Icons.Default.BarChart,
+          isSelected = currentScreen == Screen.PROGRESS,
+          tag = "nav_tab_progress",
+          onClick = { onNavigate(Screen.PROGRESS) }
+        )
       )
-    )
 
-    NavigationBarItem(
-      selected = currentScreen == Screen.COURSES || currentScreen == Screen.COURSE_DETAIL,
-      onClick = { onNavigate(Screen.COURSES) },
-      icon = { Icon(Icons.Default.School, contentDescription = "Courses") },
-      label = { Text("Courses") },
-      colors = NavigationBarItemDefaults.colors(
-        selectedIconColor = MaterialTheme.colorScheme.primary,
-        indicatorColor = MaterialTheme.colorScheme.primaryContainer
-      )
-    )
+      navItems.forEach { item ->
+        ModernNavigationTabItem(
+          item = item,
+          modifier = Modifier.weight(1f)
+        )
+      }
+    }
+  }
+}
 
-    NavigationBarItem(
-      selected = currentScreen == Screen.NOTES || currentScreen == Screen.NOTE_DETAIL,
-      onClick = { onNavigate(Screen.NOTES) },
-      icon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Notes") },
-      label = { Text("Notes") },
-      colors = NavigationBarItemDefaults.colors(
-        selectedIconColor = MaterialTheme.colorScheme.primary,
-        indicatorColor = MaterialTheme.colorScheme.primaryContainer
-      )
-    )
+private data class ModernNavItem(
+  val label: String,
+  val icon: ImageVector,
+  val isSelected: Boolean,
+  val tag: String,
+  val onClick: () -> Unit
+)
 
-    NavigationBarItem(
-      selected = currentScreen == Screen.PAST_EXAMS || currentScreen == Screen.PAST_EXAM_DETAIL,
-      onClick = { onNavigate(Screen.PAST_EXAMS) },
-      icon = { Icon(Icons.Default.Assignment, contentDescription = "Past Exams") },
-      label = { Text("Exams") },
-      colors = NavigationBarItemDefaults.colors(
-        selectedIconColor = MaterialTheme.colorScheme.primary,
-        indicatorColor = MaterialTheme.colorScheme.primaryContainer
-      )
-    )
+@Composable
+private fun ModernNavigationTabItem(
+  item: ModernNavItem,
+  modifier: Modifier = Modifier
+) {
+  val animatedBgColor by animateColorAsState(
+    targetValue = if (item.isSelected) {
+      AcademicCobalt.copy(alpha = 0.14f)
+    } else {
+      Color.Transparent
+    },
+    animationSpec = tween(250),
+    label = "tabBg"
+  )
 
-    NavigationBarItem(
-      selected = currentScreen == Screen.PROGRESS,
-      onClick = { onNavigate(Screen.PROGRESS) },
-      icon = { Icon(Icons.Default.BarChart, contentDescription = "Progress") },
-      label = { Text("Progress") },
-      colors = NavigationBarItemDefaults.colors(
-        selectedIconColor = MaterialTheme.colorScheme.primary,
-        indicatorColor = MaterialTheme.colorScheme.primaryContainer
+  val animatedIconColor by animateColorAsState(
+    targetValue = if (item.isSelected) {
+      AcademicCobalt
+    } else {
+      MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+    },
+    animationSpec = tween(250),
+    label = "tabIcon"
+  )
+
+  Box(
+    modifier = modifier
+      .clip(RoundedCornerShape(20.dp))
+      .clickable(onClick = item.onClick)
+      .padding(vertical = 4.dp)
+      .testTag(item.tag),
+    contentAlignment = Alignment.Center
+  ) {
+    Column(
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.Center
+    ) {
+      Box(
+        modifier = Modifier
+          .clip(RoundedCornerShape(16.dp))
+          .background(animatedBgColor)
+          .padding(horizontal = 14.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center
+      ) {
+        Icon(
+          imageVector = item.icon,
+          contentDescription = item.label,
+          tint = animatedIconColor,
+          modifier = Modifier.size(22.dp)
+        )
+      }
+
+      Spacer(modifier = Modifier.height(2.dp))
+
+      Text(
+        text = item.label,
+        style = MaterialTheme.typography.labelSmall.copy(
+          fontWeight = if (item.isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+          fontSize = 11.sp,
+          letterSpacing = 0.2.sp
+        ),
+        color = animatedIconColor,
+        maxLines = 1
       )
-    )
+
+      Spacer(modifier = Modifier.height(2.dp))
+
+      // Subtle active indicator dot
+      Box(
+        modifier = Modifier
+          .size(4.dp)
+          .clip(CircleShape)
+          .background(if (item.isSelected) AcademicGold else Color.Transparent)
+      )
+    }
   }
 }

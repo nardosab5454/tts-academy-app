@@ -1,5 +1,6 @@
 package com.example.data.local
 
+import com.example.data.local.model.AccessCodeEntity
 import com.example.data.local.model.AnnouncementEntity
 import com.example.data.local.model.CourseEntity
 import com.example.data.local.model.NoteEntity
@@ -55,7 +56,8 @@ object SeedData {
       questionsAnsweredCount = 0,
       correctAnswersCount = 0,
       isNotificationsEnabled = true,
-      studyGoalMinutesPerDay = 30
+      studyGoalMinutesPerDay = 30,
+      isPremium = true
     )
   )
 
@@ -909,4 +911,44 @@ O(1) < O(log n) < O(n) < O(n log n) < O(n²) < O(2^n) < O(n!)
       isUrgent = false
     )
   )
+
+  fun getAccessCodes(): List<AccessCodeEntity> {
+    val now = System.currentTimeMillis()
+    val validWindow = 365L * 24 * 60 * 60 * 1000L
+    return listOf(
+      AccessCodeEntity(
+        code = "789123",
+        createdAt = now,
+        expiresAt = now + validWindow,
+        createdByAdminId = "admin_1",
+        isRedeemed = false,
+        note = "Permanent Starter Key (Calculus & STEM)"
+      ),
+      AccessCodeEntity(
+        code = "892104",
+        createdAt = now,
+        expiresAt = now + validWindow,
+        createdByAdminId = "admin_1",
+        isRedeemed = false,
+        note = "Permanent 6-Digit Numeric Key"
+      ),
+      AccessCodeEntity(
+        code = "654321",
+        createdAt = now,
+        expiresAt = now + validWindow,
+        createdByAdminId = "admin_1",
+        isRedeemed = false,
+        note = "Freshman Scholar Key"
+      ),
+      AccessCodeEntity(
+        code = "991244",
+        createdAt = now,
+        expiresAt = now + validWindow,
+        createdByAdminId = "admin_1",
+        isRedeemed = false,
+        note = "University Student Pass"
+      )
+    )
+  }
 }
+
