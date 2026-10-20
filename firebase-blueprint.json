@@ -2,7 +2,7 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "User profile containing academic details, role, and department",
+      "description": "User profile containing academic details, role, university, and status",
       "type": "object",
       "properties": {
         "userId": {
@@ -25,11 +25,15 @@
         },
         "department": {
           "type": "string",
-          "description": "University department"
+          "description": "University or department name"
         },
-        "enrolledCourses": {
-          "type": "array",
-          "description": "List of course IDs student is enrolled in"
+        "studentId": {
+          "type": "string",
+          "description": "Student matric ID"
+        },
+        "isPremium": {
+          "type": "boolean",
+          "description": "Device/account unlocked status"
         },
         "createdAt": {
           "type": "string",
@@ -44,121 +48,143 @@
       },
       "required": ["userId", "email", "name", "role", "createdAt"]
     },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Campus and curriculum announcement broadcast to all users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "author": { "type": "string" },
+        "isUrgent": { "type": "boolean" },
+        "isPublished": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "content", "createdAt"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "University freshman course",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "iconName": { "type": "string" },
+        "totalQuestions": { "type": "integer" },
+        "totalNotes": { "type": "integer" },
+        "isPublished": { "type": "boolean" },
+        "orderIndex": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "code", "title", "category"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "Curriculum multiple choice question with explanation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "topicId": { "type": "string" },
+        "questionText": { "type": "string" },
+        "optionA": { "type": "string" },
+        "optionB": { "type": "string" },
+        "optionC": { "type": "string" },
+        "optionD": { "type": "string" },
+        "correctAnswer": { "type": "string" },
+        "explanationGeneral": { "type": "string" },
+        "isPastExam": { "type": "boolean" },
+        "examYear": { "type": "string" },
+        "examType": { "type": "string" },
+        "isPublished": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "courseId", "questionText", "correctAnswer"]
+    },
+    "RevisionNote": {
+      "title": "RevisionNote",
+      "description": "Official revision and summary note for a course",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "contentMarkdown": { "type": "string" },
+        "isPublished": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "courseId", "title", "contentMarkdown"]
+    },
+    "PastExam": {
+      "title": "PastExam",
+      "description": "Past national / university examination paper",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "semester": { "type": "string" },
+        "examType": { "type": "string" },
+        "title": { "type": "string" },
+        "instructions": { "type": "string" },
+        "totalQuestions": { "type": "integer" },
+        "durationMinutes": { "type": "integer" },
+        "isPublished": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "courseId", "academicYear", "title"]
+    },
+    "AccessCode": {
+      "title": "AccessCode",
+      "description": "6-digit access code for device and account unlock",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "createdByAdminId": { "type": "string" },
+        "isRedeemed": { "type": "boolean" },
+        "redeemedByUserId": { "type": "string" },
+        "redeemedByEmail": { "type": "string" },
+        "redeemedAt": { "type": "string", "format": "date-time" },
+        "note": { "type": "string" }
+      },
+      "required": ["code", "createdAt", "expiresAt", "isRedeemed"]
+    },
     "QuizAttempt": {
       "title": "QuizAttempt",
       "description": "Recorded quiz test score and performance for a student",
       "type": "object",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique attempt record ID"
-        },
-        "userId": {
-          "type": "string",
-          "description": "Owner student UID"
-        },
-        "courseId": {
-          "type": "string",
-          "description": "Course identifier"
-        },
-        "topicId": {
-          "type": "string",
-          "description": "Topic or exam identifier"
-        },
-        "score": {
-          "type": "integer",
-          "description": "Raw score obtained"
-        },
-        "totalQuestions": {
-          "type": "integer",
-          "description": "Total question count"
-        },
-        "percentage": {
-          "type": "integer",
-          "description": "Percentage score (0-100)"
-        },
-        "completedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Completion timestamp via serverTimestamp"
-        }
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "topicId": { "type": "string" },
+        "score": { "type": "integer" },
+        "totalQuestions": { "type": "integer" },
+        "percentage": { "type": "integer" },
+        "completedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "userId", "courseId", "score", "totalQuestions", "completedAt"]
     },
     "Bookmark": {
       "title": "Bookmark",
-      "description": "Saved question bookmark for later review and AI explanation",
+      "description": "Saved question bookmark for later review",
       "type": "object",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique bookmark record ID"
-        },
-        "userId": {
-          "type": "string",
-          "description": "Owner student UID"
-        },
-        "questionId": {
-          "type": "string",
-          "description": "Question ID"
-        },
-        "courseId": {
-          "type": "string",
-          "description": "Course identifier"
-        },
-        "topicId": {
-          "type": "string",
-          "description": "Topic identifier"
-        },
-        "savedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Timestamp when bookmarked via serverTimestamp"
-        }
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "questionId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "topicId": { "type": "string" },
+        "savedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "userId", "questionId", "savedAt"]
-    },
-    "StudyNote": {
-      "title": "StudyNote",
-      "description": "Personalized study note, revision summary, or research note",
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique note record ID"
-        },
-        "userId": {
-          "type": "string",
-          "description": "Owner student UID"
-        },
-        "courseId": {
-          "type": "string",
-          "description": "Associated course ID"
-        },
-        "title": {
-          "type": "string",
-          "description": "Note title or subject"
-        },
-        "content": {
-          "type": "string",
-          "description": "Note content or AI explanation breakdown"
-        },
-        "tags": {
-          "type": "array",
-          "description": "List of search tags"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Creation timestamp via serverTimestamp"
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Update timestamp via serverTimestamp"
-        }
-      },
-      "required": ["id", "userId", "courseId", "title", "content", "createdAt"]
     }
   },
   "firestore": {
@@ -174,9 +200,29 @@
       "schema": "Bookmark",
       "description": "Saved question bookmarks for a student"
     },
-    "/users/{userId}/notes/{noteId}": {
-      "schema": "StudyNote",
-      "description": "Personalized study and revision notes for a student"
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Global announcements broadcast across devices"
+    },
+    "/courses/{courseId}": {
+      "schema": "Course",
+      "description": "University courses synced across all devices"
+    },
+    "/questions/{questionId}": {
+      "schema": "Question",
+      "description": "Curriculum questions and past exam questions"
+    },
+    "/notes/{noteId}": {
+      "schema": "RevisionNote",
+      "description": "Course revision notes synced across all devices"
+    },
+    "/past_exams/{examId}": {
+      "schema": "PastExam",
+      "description": "Past examination documents and test sets"
+    },
+    "/access_codes/{code}": {
+      "schema": "AccessCode",
+      "description": "Access codes for cloud-synced unlock verification"
     }
   }
 }

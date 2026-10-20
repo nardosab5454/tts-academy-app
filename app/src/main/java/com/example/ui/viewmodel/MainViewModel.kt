@@ -250,8 +250,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val message: StateFlow<String?> = _message.asStateFlow()
 
   init {
+    repository.firestoreRepository = firestoreRepository
     viewModelScope.launch {
       repository.initialize()
+      repository.startRealtimeCloudSync(viewModelScope)
       _offlineCacheStats.value = repository.getOfflineCacheStats(repository.currentUser.value?.id)
     }
     viewModelScope.launch {

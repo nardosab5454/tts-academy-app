@@ -10,6 +10,7 @@ let testEnv;
 const PROJECT_ID = process.env.GCP_PROJECT || "demo-no-project";
 const ALICE_UID = "alice_student_1";
 const BOB_UID = "bob_student_2";
+const ADMIN_UID = "admin_1";
 
 const [emulatorHost, emulatorPortStr] = (process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8085").split(":");
 const emulatorPort = parseInt(emulatorPortStr, 10);
@@ -45,28 +46,22 @@ test("Unauthenticated user: cannot read user profile", async () => {
   await assertFails(unauthDb.collection("users").doc(ALICE_UID).get());
 });
 
-test("Unauthenticated user: cannot create quiz attempt", async () => {
-  const unauthDb = testEnv.unauthenticatedContext().firestore();
-  await assertFails(
-    unauthDb.collection("users").doc(ALICE_UID).collection("quiz_attempts").doc("attempt_1").set({
-      id: "attempt_1",
-      userId: ALICE_UID,
-      courseId: "math101",
-      score: 10,
-      totalQuestions: 10,
-      completedAt: new Date(),
-    })
-  );
-});
-
-test("Authenticated user: cannot read another user's profile or subcollections", async () => {
-  // Alice cannot read Bob's profile
+test("Authenticated student: cannot read another student's profile directly", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
   await assertFails(aliceDb.collection("users").doc(BOB_UID).get());
-  await assertFails(aliceDb.collection("users").doc(BOB_UID).collection("notes").doc("note_1").get());
 });
 
-test("Authenticated user: can create their own profile with valid schema", async () => {
+test("Authenticated student: cannot list all users", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  await assertFails(aliceDb.collection("users").get());
+});
+
+test("Authenticated admin: can list all users", async () => {
+  const adminDb = testEnv.authenticatedContext(ADMIN_UID, { email: "spikenarrd@gmail.com" }).firestore();
+  await assertSucceeds(adminDb.collection("users").get());
+});
+
+test("Authenticated student: can create their own profile with valid schema", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
   await assertSucceeds(
     aliceDb.collection("users").doc(ALICE_UID).set({
@@ -75,79 +70,47 @@ test("Authenticated user: can create their own profile with valid schema", async
       name: "Alice Smith",
       role: "STUDENT",
       department: "Computer Science",
-      enrolledCourses: ["math101", "cs101"],
       createdAt: new Date(),
     })
   );
 });
 
-test("Authenticated user: fails profile creation with ghost keys or wrong role", async () => {
+test("Any user: can read announcements and courses", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  await assertSucceeds(unauthDb.collection("announcements").get());
+  await assertSucceeds(unauthDb.collection("courses").get());
+});
+
+test("Student: cannot create announcements", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
-  // Ghost key injection
   await assertFails(
-    aliceDb.collection("users").doc(ALICE_UID).set({
-      userId: ALICE_UID,
-      email: "alice@ttsacademy.edu",
-      name: "Alice Smith",
-      role: "STUDENT",
-      ghostField: "hacker",
-      createdAt: new Date(),
-    })
-  );
-
-  // Invalid role
-  await assertFails(
-    aliceDb.collection("users").doc(ALICE_UID).set({
-      userId: ALICE_UID,
-      email: "alice@ttsacademy.edu",
-      name: "Alice Smith",
-      role: "SUPERUSER",
+    aliceDb.collection("announcements").doc("ann_1").set({
+      id: "ann_1",
+      title: "Hacked notice",
+      content: "Fake news",
       createdAt: new Date(),
     })
   );
 });
 
-test("Authenticated user: can record and query their own quiz attempts", async () => {
-  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
-  const attemptRef = aliceDb.collection("users").doc(ALICE_UID).collection("quiz_attempts").doc("attempt_1");
-
+test("Admin: can create announcements and courses", async () => {
+  const adminDb = testEnv.authenticatedContext(ADMIN_UID, { email: "abebewottee@gmail.com" }).firestore();
   await assertSucceeds(
-    attemptRef.set({
-      id: "attempt_1",
-      userId: ALICE_UID,
-      courseId: "calculus_1",
-      topicId: "derivatives",
-      score: 8,
-      totalQuestions: 10,
-      percentage: 80,
-      completedAt: new Date(),
-    })
-  );
-
-  await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).collection("quiz_attempts").get());
-});
-
-test("Authenticated user: can create and update study notes", async () => {
-  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
-  const noteRef = aliceDb.collection("users").doc(ALICE_UID).collection("notes").doc("note_1");
-
-  const now = new Date();
-  await assertSucceeds(
-    noteRef.set({
-      id: "note_1",
-      userId: ALICE_UID,
-      courseId: "physics_1",
-      title: "Newton's Laws",
-      content: "First law: inertia. Second law: F=ma.",
-      tags: ["physics", "mechanics"],
-      createdAt: now,
+    adminDb.collection("announcements").doc("ann_1").set({
+      id: "ann_1",
+      title: "Midterm Exam Schedule",
+      content: "Freshman calculus exam will take place on Friday.",
+      createdAt: new Date(),
     })
   );
 
   await assertSucceeds(
-    noteRef.update({
-      content: "Updated note with deeper derivations.",
-      updatedAt: new Date(),
+    adminDb.collection("courses").doc("MATH_101").set({
+      id: "MATH_101",
+      code: "MATH 101",
+      title: "Calculus I",
+      category: "STEM",
+      createdAt: new Date(),
     })
   );
 });

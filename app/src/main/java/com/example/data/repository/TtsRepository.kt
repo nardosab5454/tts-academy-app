@@ -1,5 +1,8 @@
 package com.example.data.repository
 
+import android.util.Log
+import com.example.data.firestore.FirestoreRepository
+import com.example.data.firestore.model.*
 import com.example.data.local.AppDatabase
 import com.example.data.local.SeedData
 import com.example.data.local.model.AccessCodeEntity
@@ -13,11 +16,13 @@ import com.example.data.local.model.QuizAttemptEntity
 import com.example.data.local.model.TopicEntity
 import com.example.data.local.model.UserEntity
 import com.example.data.local.model.UserPreferenceEntity
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
@@ -42,7 +47,10 @@ data class OfflineCacheStats(
   val lastCacheVerifiedAt: Long = System.currentTimeMillis()
 )
 
-class TtsRepository(private val database: AppDatabase) {
+class TtsRepository(
+  private val database: AppDatabase,
+  var firestoreRepository: FirestoreRepository? = null
+) {
 
   private val userDao = database.userDao()
   private val courseDao = database.courseDao()
@@ -97,11 +105,31 @@ class TtsRepository(private val database: AppDatabase) {
         department = "Academic Affairs",
         role = "ADMIN",
         avatarUrl = "avatar_admin",
-        streakDays = 12
+        streakDays = 12,
+        isPremium = true
       )
       userDao.insertUser(adminUser)
     } else if (existingAdmin.role != "ADMIN" || existingAdmin.password != "Spike@6776") {
-      userDao.updateUser(existingAdmin.copy(role = "ADMIN", password = "Spike@6776"))
+      userDao.updateUser(existingAdmin.copy(role = "ADMIN", password = "Spike@6776", isPremium = true))
+    }
+
+    val existingAbebe = userDao.getUserByEmail("abebewottee@gmail.com")
+    if (existingAbebe == null) {
+      val abebeUser = UserEntity(
+        id = "admin_abebe",
+        name = "Abebe Wotte (Admin)",
+        email = "abebewottee@gmail.com",
+        password = "Admin@123",
+        studentId = "SYS-ADMIN-02",
+        department = "Academic Affairs",
+        role = "ADMIN",
+        avatarUrl = "avatar_admin",
+        streakDays = 15,
+        isPremium = true
+      )
+      userDao.insertUser(abebeUser)
+    } else if (existingAbebe.role != "ADMIN") {
+      userDao.updateUser(existingAbebe.copy(role = "ADMIN", isPremium = true))
     }
 
     val isDeviceUnlockedPref = prefDao.getPreference("device_academic_materials_unlocked") == "true"
@@ -130,6 +158,197 @@ class TtsRepository(private val database: AppDatabase) {
            clean.equals("abebewottee@gmail.com", ignoreCase = true)
   }
 
+  suspend fun getUserById(userId: String): UserEntity? = withContext(Dispatchers.IO) {
+    userDao.getUserById(userId)
+  }
+
+  suspend fun insertUserFromCloud(user: UserEntity) = withContext(Dispatchers.IO) {
+    userDao.insertUser(user)
+  }
+
+  suspend fun updateUserFromCloud(user: UserEntity) = withContext(Dispatchers.IO) {
+    userDao.updateUser(user)
+  }
+
+  suspend fun upsertAnnouncementsFromCloud(announcements: List<AnnouncementEntity>) = withContext(Dispatchers.IO) {
+    announcementDao.insertAnnouncements(announcements)
+  }
+
+  suspend fun upsertCoursesFromCloud(courses: List<CourseEntity>) = withContext(Dispatchers.IO) {
+    courseDao.insertCourses(courses)
+  }
+
+  suspend fun upsertQuestionsFromCloud(questions: List<QuestionEntity>) = withContext(Dispatchers.IO) {
+    questionDao.insertQuestions(questions)
+  }
+
+  suspend fun upsertNotesFromCloud(notes: List<NoteEntity>) = withContext(Dispatchers.IO) {
+    noteDao.insertNotes(notes)
+  }
+
+  suspend fun upsertPastExamsFromCloud(exams: List<PastExamEntity>) = withContext(Dispatchers.IO) {
+    pastExamDao.insertPastExams(exams)
+  }
+
+  suspend fun upsertAccessCodesFromCloud(codes: List<AccessCodeEntity>) = withContext(Dispatchers.IO) {
+    accessCodeDao.insertAccessCodes(codes)
+  }
+
+  fun startRealtimeCloudSync(scope: CoroutineScope) {
+    val fs = firestoreRepository ?: return
+
+    // 1. Live stream of all users from cloud Firestore to local Room
+    scope.launch(Dispatchers.IO) {
+      try {
+        fs.observeAllUsers().collect { cloudUsers ->
+          if (cloudUsers.isNotEmpty()) {
+            cloudUsers.forEach { profile ->
+              val cleanId = if (profile.userId.isNotBlank()) profile.userId else profile.id
+              if (cleanId.isNotBlank()) {
+                val existing = userDao.getUserById(cleanId)
+                if (existing == null) {
+                  userDao.insertUser(profile.toEntity())
+                } else {
+                  val updated = existing.copy(
+                    name = profile.name.ifBlank { existing.name },
+                    role = profile.role.ifBlank { existing.role },
+                    department = profile.department.ifBlank { existing.department },
+                    studentId = profile.studentId.ifBlank { existing.studentId },
+                    isPremium = existing.isPremium || profile.isPremium
+                  )
+                  userDao.updateUser(updated)
+                }
+              }
+            }
+          }
+        }
+      } catch (e: Exception) {
+        Log.e("TtsRepository", "Cloud users stream error", e)
+      }
+    }
+
+    // 2. Live stream of announcements from cloud Firestore to local Room
+    scope.launch(Dispatchers.IO) {
+      try {
+        fs.observeAnnouncements().collect { cloudAnnouncements ->
+          if (cloudAnnouncements.isNotEmpty()) {
+            val entities = cloudAnnouncements.map { it.toEntity() }
+            announcementDao.insertAnnouncements(entities)
+          }
+        }
+      } catch (e: Exception) {
+        Log.e("TtsRepository", "Cloud announcements stream error", e)
+      }
+    }
+
+    // 3. Live stream of courses from cloud Firestore to local Room
+    scope.launch(Dispatchers.IO) {
+      try {
+        fs.observeCourses().collect { cloudCourses ->
+          if (cloudCourses.isNotEmpty()) {
+            val entities = cloudCourses.map { it.toEntity() }
+            courseDao.insertCourses(entities)
+          }
+        }
+      } catch (e: Exception) {
+        Log.e("TtsRepository", "Cloud courses stream error", e)
+      }
+    }
+
+    // 4. Live stream of questions from cloud Firestore to local Room
+    scope.launch(Dispatchers.IO) {
+      try {
+        fs.observeQuestions().collect { cloudQuestions ->
+          if (cloudQuestions.isNotEmpty()) {
+            val entities = cloudQuestions.map { it.toEntity() }
+            questionDao.insertQuestions(entities)
+          }
+        }
+      } catch (e: Exception) {
+        Log.e("TtsRepository", "Cloud questions stream error", e)
+      }
+    }
+
+    // 5. Live stream of revision notes from cloud Firestore to local Room
+    scope.launch(Dispatchers.IO) {
+      try {
+        fs.observeNotes().collect { cloudNotes ->
+          if (cloudNotes.isNotEmpty()) {
+            val entities = cloudNotes.map { it.toEntity() }
+            noteDao.insertNotes(entities)
+          }
+        }
+      } catch (e: Exception) {
+        Log.e("TtsRepository", "Cloud notes stream error", e)
+      }
+    }
+
+    // 6. Live stream of past exams from cloud Firestore to local Room
+    scope.launch(Dispatchers.IO) {
+      try {
+        fs.observePastExams().collect { cloudExams ->
+          if (cloudExams.isNotEmpty()) {
+            val entities = cloudExams.map { it.toEntity() }
+            pastExamDao.insertPastExams(entities)
+          }
+        }
+      } catch (e: Exception) {
+        Log.e("TtsRepository", "Cloud past exams stream error", e)
+      }
+    }
+
+    // 7. Live stream of access codes from cloud Firestore to local Room
+    scope.launch(Dispatchers.IO) {
+      try {
+        fs.observeAccessCodes().collect { cloudCodes ->
+          if (cloudCodes.isNotEmpty()) {
+            val entities = cloudCodes.map { it.toEntity() }
+            accessCodeDao.insertAccessCodes(entities)
+          }
+        }
+      } catch (e: Exception) {
+        Log.e("TtsRepository", "Cloud access codes stream error", e)
+      }
+    }
+
+    // 8. One-time upload of seed curriculum if cloud Firestore is empty
+    scope.launch(Dispatchers.IO) {
+      try {
+        if (fs.isCloudDatabaseEmpty()) {
+          seedDatabaseToCloud(fs)
+        }
+      } catch (e: Exception) {
+        Log.e("TtsRepository", "Cloud seed check error", e)
+      }
+    }
+  }
+
+  suspend fun seedDatabaseToCloud(fs: FirestoreRepository) = withContext(Dispatchers.IO) {
+    try {
+      val courses = courseDao.getAllCourses()
+      courses.forEach { fs.saveCourse(it) }
+
+      val questions = questionDao.getAllQuestions()
+      questions.forEach { fs.saveQuestion(it) }
+
+      SeedData.getNotes().forEach { fs.saveNote(it) }
+      SeedData.getPastExams().forEach { fs.savePastExam(it) }
+      SeedData.getAccessCodes().forEach { fs.saveAccessCode(it) }
+
+      val welcomeAnn = AnnouncementEntity(
+        id = "ann_freshman_welcome",
+        title = "Welcome to Freshman Year 2026/27",
+        message = "All digitized past exams, practice quizzes, and lecture revision notes are officially available on TTS Academy. Prepare early for your midterm and final exams!",
+        category = "ACADEMIC",
+        isUrgent = false,
+        isPublished = true
+      )
+      fs.saveAnnouncement(welcomeAnn)
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Error seeding database to cloud", e)
+    }
+  }
+
   // --- Auth & Users ---
   fun getAllUsersFlow(): Flow<List<UserEntity>> = userDao.getAllUsersFlow()
 
@@ -156,6 +375,9 @@ class TtsRepository(private val database: AppDatabase) {
         }
         _currentUser.value = updatedUser
         prefDao.setPreference(UserPreferenceEntity("active_user_id", updatedUser.id))
+        try {
+          firestoreRepository?.syncUserToCloud(updatedUser)
+        } catch (_: Exception) {}
         Result.success(updatedUser)
       } else {
         Result.failure(Exception("Incorrect password. Please try again."))
@@ -163,11 +385,11 @@ class TtsRepository(private val database: AppDatabase) {
     } else if (isAdminEmail && (cleanPassword == "Spike@6776" || cleanPassword == "Admin@123" || cleanPassword.isNotBlank())) {
       // Ensure primary administrator account exists
       val adminUser = UserEntity(
-        id = if (cleanEmail.startsWith("spike", ignoreCase = true)) "admin_1" else "admin_" + UUID.randomUUID().toString().take(6),
-        name = if (cleanEmail.startsWith("spike", ignoreCase = true)) "System Administrator" else "Administrator",
+        id = if (cleanEmail.startsWith("spike", ignoreCase = true)) "admin_1" else "admin_abebe",
+        name = if (cleanEmail.startsWith("spike", ignoreCase = true)) "System Administrator" else "Abebe Wotte (Admin)",
         email = cleanEmail,
         password = cleanPassword.ifBlank { "Spike@6776" },
-        studentId = "SYS-ADMIN-01",
+        studentId = if (cleanEmail.startsWith("spike", ignoreCase = true)) "SYS-ADMIN-01" else "SYS-ADMIN-02",
         department = "Academic Affairs",
         role = "ADMIN",
         avatarUrl = "avatar_admin",
@@ -177,9 +399,26 @@ class TtsRepository(private val database: AppDatabase) {
       userDao.insertUser(adminUser)
       _currentUser.value = adminUser
       prefDao.setPreference(UserPreferenceEntity("active_user_id", adminUser.id))
+      try {
+        firestoreRepository?.syncUserToCloud(adminUser)
+      } catch (_: Exception) {}
       Result.success(adminUser)
     } else {
-      Result.failure(Exception("Account with this email not found. Please register."))
+      // Try resolving user from cloud Firestore if registered on another device
+      val cloudResult = firestoreRepository?.getUserByEmail(cleanEmail)
+      val cloudProfile = cloudResult?.getOrNull()
+      if (cloudProfile != null) {
+        val entity = cloudProfile.toEntity().copy(password = cleanPassword)
+        userDao.insertUser(entity)
+        val isDeviceUnlocked = prefDao.getPreference("device_academic_materials_unlocked") == "true" || entity.role == "ADMIN"
+        _isDeviceUnlocked.value = isDeviceUnlocked
+        val finalUser = entity.copy(isPremium = if (entity.role == "ADMIN") true else isDeviceUnlocked)
+        _currentUser.value = finalUser
+        prefDao.setPreference(UserPreferenceEntity("active_user_id", finalUser.id))
+        Result.success(finalUser)
+      } else {
+        Result.failure(Exception("Account with this email not found. Please register."))
+      }
     }
   }
 
@@ -201,8 +440,11 @@ class TtsRepository(private val database: AppDatabase) {
     val existing = userDao.getUserByEmail(cleanEmail)
     if (existing != null) {
       userDao.updateUserRole(existing.id, "ADMIN")
-      val updated = existing.copy(role = "ADMIN")
+      val updated = existing.copy(role = "ADMIN", isPremium = true)
       userDao.updateUser(updated)
+      try {
+        firestoreRepository?.syncUserToCloud(updated)
+      } catch (_: Exception) {}
       return@withContext Result.success(updated)
     }
 
@@ -217,9 +459,13 @@ class TtsRepository(private val database: AppDatabase) {
       avatarUrl = "avatar_admin",
       streakDays = 1,
       questionsAnsweredCount = 0,
-      correctAnswersCount = 0
+      correctAnswersCount = 0,
+      isPremium = true
     )
     userDao.insertUser(newAdmin)
+    try {
+      firestoreRepository?.syncUserToCloud(newAdmin)
+    } catch (_: Exception) {}
     Result.success(newAdmin)
   }
 
@@ -228,8 +474,11 @@ class TtsRepository(private val database: AppDatabase) {
     val existing = userDao.getUserByEmail(cleanEmail)
     if (existing != null) {
       userDao.updateUserRole(existing.id, "ADMIN")
-      val updated = existing.copy(role = "ADMIN")
+      val updated = existing.copy(role = "ADMIN", isPremium = true)
       userDao.updateUser(updated)
+      try {
+        firestoreRepository?.syncUserToCloud(updated)
+      } catch (_: Exception) {}
       Result.success(updated)
     } else {
       createAdminAccount(
@@ -264,11 +513,15 @@ class TtsRepository(private val database: AppDatabase) {
         userDao.updateUserRole(existing.id, "ADMIN")
         val updated = existing.copy(
           role = "ADMIN",
-          password = cleanPassword.ifBlank { "Spike@6776" }
+          password = cleanPassword.ifBlank { "Spike@6776" },
+          isPremium = true
         )
         userDao.updateUser(updated)
         _currentUser.value = updated
         prefDao.setPreference(UserPreferenceEntity("active_user_id", updated.id))
+        try {
+          firestoreRepository?.syncUserToCloud(updated)
+        } catch (_: Exception) {}
         return@withContext Result.success(updated)
       }
       return@withContext Result.failure(Exception("An account with this email already exists."))
@@ -278,7 +531,7 @@ class TtsRepository(private val database: AppDatabase) {
     _isDeviceUnlocked.value = isDeviceUnlocked
 
     val newUser = UserEntity(
-      id = if (isAdminEmail) "admin_1" else "user_" + UUID.randomUUID().toString().take(8),
+      id = if (isAdminEmail) (if (cleanEmail.startsWith("spike", ignoreCase = true)) "admin_1" else "admin_abebe") else "user_" + UUID.randomUUID().toString().take(8),
       name = cleanName.ifBlank { if (isAdminEmail) "System Administrator" else "TTS Student" },
       email = cleanEmail,
       password = cleanPassword.ifBlank { if (isAdminEmail) "Spike@6776" else "student123" },
@@ -294,6 +547,11 @@ class TtsRepository(private val database: AppDatabase) {
     userDao.insertUser(newUser)
     _currentUser.value = newUser
     prefDao.setPreference(UserPreferenceEntity("active_user_id", newUser.id))
+    try {
+      firestoreRepository?.syncUserToCloud(newUser)
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Cloud sync on register failed", e)
+    }
     Result.success(newUser)
   }
 
@@ -398,6 +656,9 @@ class TtsRepository(private val database: AppDatabase) {
 
   suspend fun saveCourse(course: CourseEntity) = withContext(Dispatchers.IO) {
     courseDao.insertCourse(course)
+    try {
+      firestoreRepository?.saveCourse(course)
+    } catch (_: Exception) {}
   }
 
   suspend fun deleteCourse(courseId: String) = withContext(Dispatchers.IO) {
@@ -406,6 +667,9 @@ class TtsRepository(private val database: AppDatabase) {
     noteDao.deleteNotesForCourse(courseId)
     topicDao.deleteTopicsForCourse(courseId)
     pastExamDao.deletePastExamsForCourse(courseId)
+    try {
+      firestoreRepository?.deleteCourse(courseId)
+    } catch (_: Exception) {}
   }
 
   suspend fun saveTopic(topic: TopicEntity) = withContext(Dispatchers.IO) {
@@ -442,6 +706,9 @@ class TtsRepository(private val database: AppDatabase) {
   suspend fun saveQuestion(question: QuestionEntity) = withContext(Dispatchers.IO) {
     questionDao.insertQuestion(question)
     courseDao.recalculateCounts(question.courseId)
+    try {
+      firestoreRepository?.saveQuestion(question)
+    } catch (_: Exception) {}
   }
 
   suspend fun deleteQuestion(questionId: String, courseId: String? = null) = withContext(Dispatchers.IO) {
@@ -451,6 +718,9 @@ class TtsRepository(private val database: AppDatabase) {
     if (targetCourseId != null) {
       courseDao.recalculateCounts(targetCourseId)
     }
+    try {
+      firestoreRepository?.deleteQuestion(questionId)
+    } catch (_: Exception) {}
   }
 
   // --- Notes ---
@@ -469,6 +739,9 @@ class TtsRepository(private val database: AppDatabase) {
   suspend fun saveNote(note: NoteEntity) = withContext(Dispatchers.IO) {
     noteDao.insertNote(note)
     courseDao.recalculateCounts(note.courseId)
+    try {
+      firestoreRepository?.saveNote(note)
+    } catch (_: Exception) {}
   }
 
   suspend fun deleteNote(noteId: String, courseId: String? = null) = withContext(Dispatchers.IO) {
@@ -478,6 +751,9 @@ class TtsRepository(private val database: AppDatabase) {
     if (targetCourseId != null) {
       courseDao.recalculateCounts(targetCourseId)
     }
+    try {
+      firestoreRepository?.deleteNote(noteId)
+    } catch (_: Exception) {}
   }
 
   // --- Past Exams ---
@@ -491,10 +767,16 @@ class TtsRepository(private val database: AppDatabase) {
 
   suspend fun savePastExam(exam: PastExamEntity) = withContext(Dispatchers.IO) {
     pastExamDao.insertPastExam(exam)
+    try {
+      firestoreRepository?.savePastExam(exam)
+    } catch (_: Exception) {}
   }
 
   suspend fun deletePastExam(examId: String) = withContext(Dispatchers.IO) {
     pastExamDao.deletePastExam(examId)
+    try {
+      firestoreRepository?.deletePastExam(examId)
+    } catch (_: Exception) {}
   }
 
   // --- Quiz Attempts & Analytics ---
@@ -583,10 +865,20 @@ class TtsRepository(private val database: AppDatabase) {
 
   suspend fun saveAnnouncement(announcement: AnnouncementEntity) = withContext(Dispatchers.IO) {
     announcementDao.insertAnnouncement(announcement)
+    try {
+      firestoreRepository?.saveAnnouncement(announcement)
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Failed to save announcement to cloud", e)
+    }
   }
 
   suspend fun deleteAnnouncement(id: String) = withContext(Dispatchers.IO) {
     announcementDao.deleteAnnouncement(id)
+    try {
+      firestoreRepository?.deleteAnnouncement(id)
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Failed to delete announcement from cloud", e)
+    }
   }
 
   // --- Access Codes & Premium Pass Management ---
@@ -614,6 +906,11 @@ class TtsRepository(private val database: AppDatabase) {
       note = note.ifBlank { "Permanent Academic Access Pass" }
     )
     accessCodeDao.insertAccessCode(entity)
+    try {
+      firestoreRepository?.saveAccessCode(entity)
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Failed to save access code to cloud", e)
+    }
     entity
   }
 

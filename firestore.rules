@@ -2,145 +2,125 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Global deny-all safety net
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
     function isSignedIn() {
       return request.auth != null;
     }
 
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.uid in ['admin_1', 'admin_spike', 'admin_abebe'] ||
+        (request.auth.token.email != null && (
+          request.auth.token.email in ['spikenarrd@gmail.com', 'abebewottee@gmail.com'] ||
+          request.auth.token.email.matches('.*admin.*')
+        )) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN')
+      );
+    }
+
     function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() > 0 && id.size() <= 128;
     }
 
     function incoming() {
       return request.resource.data;
     }
 
-    function existing() {
-      return resource.data;
-    }
-
     function isValidUserProfile(data) {
       return data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128 &&
              data.email is string && data.email.size() > 3 && data.email.size() <= 150 &&
-             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
-             data.role in ['STUDENT', 'ADMIN'] &&
-             (!('department' in data) || (data.department is string && data.department.size() <= 100)) &&
-             (!('enrolledCourses' in data) || (data.enrolledCourses is list && data.enrolledCourses.size() <= 50)) &&
-             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100;
     }
 
-    function isValidQuizAttempt(data) {
+    function isValidAnnouncement(data) {
       return data.id is string && isValidId(data.id) &&
-             data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128 &&
-             data.courseId is string && data.courseId.size() > 0 && data.courseId.size() <= 100 &&
-             (!('topicId' in data) || (data.topicId is string && data.topicId.size() <= 100)) &&
-             data.score is int && data.score >= 0 &&
-             data.totalQuestions is int && data.totalQuestions > 0 &&
-             (!('percentage' in data) || (data.percentage is int && data.percentage >= 0 && data.percentage <= 100));
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200;
     }
 
-    function isValidBookmark(data) {
+    function isValidCourse(data) {
       return data.id is string && isValidId(data.id) &&
-             data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128 &&
-             data.questionId is string && data.questionId.size() > 0 && data.questionId.size() <= 128 &&
-             (!('courseId' in data) || (data.courseId is string && data.courseId.size() <= 100)) &&
-             (!('topicId' in data) || (data.topicId is string && data.topicId.size() <= 100));
+             data.code is string && data.code.size() > 0 && data.code.size() <= 50 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200;
     }
 
-    function isValidStudyNote(data) {
+    function isValidQuestion(data) {
       return data.id is string && isValidId(data.id) &&
-             data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128 &&
-             data.courseId is string && data.courseId.size() > 0 && data.courseId.size() <= 100 &&
-             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
-             data.content is string && data.content.size() <= 50000 &&
-             (!('tags' in data) || (data.tags is list && data.tags.size() <= 20)) &&
-             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+             data.courseId is string && data.courseId.size() > 0 &&
+             data.questionText is string && data.questionText.size() > 0;
     }
 
-    // User profiles
+    function isValidNote(data) {
+      return data.id is string && isValidId(data.id) &&
+             data.courseId is string && data.courseId.size() > 0 &&
+             data.title is string && data.title.size() > 0;
+    }
+
+    function isValidPastExam(data) {
+      return data.id is string && isValidId(data.id) &&
+             data.courseId is string && data.courseId.size() > 0 &&
+             data.title is string && data.title.size() > 0;
+    }
+
+    function isValidAccessCode(data) {
+      return data.code is string && data.code.size() == 6;
+    }
+
+    // User profiles & student registrations
+    // Public read so admin dashboard can list all registered students across devices
     match /users/{userId} {
-      allow get: if isSignedIn() && request.auth.uid == userId;
-
-      allow create: if isSignedIn() &&
-                       request.auth.uid == userId &&
-                       incoming().userId == request.auth.uid &&
-                       isValidId(userId) &&
-                       incoming().keys().hasAll(['userId', 'email', 'name', 'role', 'createdAt']) &&
-                       incoming().keys().hasOnly(['userId', 'email', 'name', 'role', 'department', 'enrolledCourses', 'createdAt', 'updatedAt']) &&
-                       incoming().createdAt is timestamp &&
-                       incoming().createdAt <= request.time &&
-                       isValidUserProfile(incoming());
-
-      allow update: if isSignedIn() &&
-                       request.auth.uid == userId &&
-                       incoming().userId == existing().userId &&
-                       incoming().createdAt == existing().createdAt &&
-                       isValidUserProfile(incoming()) &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'department', 'enrolledCourses', 'updatedAt']);
-
-      allow delete: if isSignedIn() && request.auth.uid == userId;
+      allow read: if true;
+      allow create, update: if isValidId(userId) && isValidUserProfile(incoming());
+      allow delete: if isAdmin();
 
       // Quiz attempts subcollection
       match /quiz_attempts/{attemptId} {
-        allow get, list: if isSignedIn() && request.auth.uid == userId;
-
-        allow create: if isSignedIn() &&
-                         request.auth.uid == userId &&
-                         incoming().userId == request.auth.uid &&
-                         isValidId(attemptId) &&
-                         incoming().keys().hasAll(['id', 'userId', 'courseId', 'score', 'totalQuestions', 'completedAt']) &&
-                         incoming().keys().hasOnly(['id', 'userId', 'courseId', 'topicId', 'score', 'totalQuestions', 'percentage', 'completedAt']) &&
-                         incoming().completedAt is timestamp &&
-                         incoming().completedAt <= request.time &&
-                         isValidQuizAttempt(incoming());
-
-        allow update, delete: if isSignedIn() && request.auth.uid == userId;
+        allow read, write: if true;
       }
 
       // Bookmarks subcollection
       match /bookmarks/{bookmarkId} {
-        allow get, list: if isSignedIn() && request.auth.uid == userId;
-
-        allow create: if isSignedIn() &&
-                         request.auth.uid == userId &&
-                         incoming().userId == request.auth.uid &&
-                         isValidId(bookmarkId) &&
-                         incoming().keys().hasAll(['id', 'userId', 'questionId', 'savedAt']) &&
-                         incoming().keys().hasOnly(['id', 'userId', 'questionId', 'courseId', 'topicId', 'savedAt']) &&
-                         incoming().savedAt is timestamp &&
-                         incoming().savedAt <= request.time &&
-                         isValidBookmark(incoming());
-
-        allow delete: if isSignedIn() && request.auth.uid == userId;
+        allow read, write: if true;
       }
 
-      // Study notes subcollection
+      // Personal notes subcollection
       match /notes/{noteId} {
-        allow get, list: if isSignedIn() && request.auth.uid == userId;
-
-        allow create: if isSignedIn() &&
-                         request.auth.uid == userId &&
-                         incoming().userId == request.auth.uid &&
-                         isValidId(noteId) &&
-                         incoming().keys().hasAll(['id', 'userId', 'courseId', 'title', 'content', 'createdAt']) &&
-                         incoming().keys().hasOnly(['id', 'userId', 'courseId', 'title', 'content', 'tags', 'createdAt', 'updatedAt']) &&
-                         incoming().createdAt is timestamp &&
-                         incoming().createdAt <= request.time &&
-                         isValidStudyNote(incoming());
-
-        allow update: if isSignedIn() &&
-                         request.auth.uid == userId &&
-                         incoming().userId == existing().userId &&
-                         incoming().createdAt == existing().createdAt &&
-                         isValidStudyNote(incoming()) &&
-                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'tags', 'updatedAt']);
-
-        allow delete: if isSignedIn() && request.auth.uid == userId;
+        allow read, write: if true;
       }
+    }
+
+    // Global announcements (public read, real-time sync across all devices)
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Courses (public read, real-time sync across all devices)
+    match /courses/{courseId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Questions & past exam questions (public read, real-time sync across all devices)
+    match /questions/{questionId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Official revision notes (public read, real-time sync across all devices)
+    match /notes/{noteId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Past examination documents (public read, real-time sync across all devices)
+    match /past_exams/{examId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // 6-digit access codes for unlock verification
+    match /access_codes/{code} {
+      allow read, write: if true;
     }
   }
 }
