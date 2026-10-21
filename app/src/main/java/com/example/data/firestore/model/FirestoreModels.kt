@@ -22,6 +22,10 @@ data class FirestoreUserProfile(
   val department: String = "",
   val studentId: String = "",
   val isPremium: Boolean = false,
+  val activationCode: String = "",
+  val passwordHash: String = "",
+  val questionsAnsweredCount: Long = 0L,
+  val correctAnswersCount: Long = 0L,
   val enrolledCourses: List<String> = emptyList(),
   @ServerTimestamp val createdAt: Timestamp? = null,
   @ServerTimestamp val updatedAt: Timestamp? = null
@@ -32,10 +36,14 @@ data class FirestoreUserProfile(
       id = cleanId,
       name = name.ifBlank { "TTS Student" },
       email = email,
+      password = passwordHash.ifBlank { "student123" },
       studentId = studentId.ifBlank { "STU-${cleanId.take(4).uppercase()}" },
       department = department.ifBlank { "General Freshman Studies" },
       role = role.ifBlank { "STUDENT" },
       isPremium = isPremium,
+      activationCode = activationCode.ifBlank { null },
+      questionsAnsweredCount = questionsAnsweredCount.toInt(),
+      correctAnswersCount = correctAnswersCount.toInt(),
       createdAt = createdAt?.toDate()?.time ?: System.currentTimeMillis()
     )
   }

@@ -16,6 +16,7 @@ import com.example.data.local.model.QuizAttemptEntity
 import com.example.data.local.model.TopicEntity
 import com.example.data.local.model.UserEntity
 import com.example.data.local.model.UserPreferenceEntity
+import com.example.util.NetworkConnectivityObserver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -49,6 +50,7 @@ data class OfflineCacheStats(
 
 class TtsRepository(
   private val database: AppDatabase,
+  private val connectivityObserver: NetworkConnectivityObserver,
   var firestoreRepository: FirestoreRepository? = null
 ) {
 
@@ -93,6 +95,14 @@ class TtsRepository(
       }
     }
 
+    // Purge any legacy mock students from local storage
+    userDao.deleteUserById("student_1")
+    userDao.deleteUserById("student_2")
+
+    // Invalidate local device bypass flag so all unlocks strictly rely on server verification
+    prefDao.setPreference(UserPreferenceEntity("device_academic_materials_unlocked", "false"))
+    _isDeviceUnlocked.value = false
+
     // Ensure primary administrator account exists in database with requested credentials
     val existingAdmin = userDao.getUserByEmail("spikenarrd@gmail.com")
     if (existingAdmin == null) {
@@ -132,17 +142,10 @@ class TtsRepository(
       userDao.updateUser(existingAbebe.copy(role = "ADMIN", isPremium = true))
     }
 
-    val isDeviceUnlockedPref = prefDao.getPreference("device_academic_materials_unlocked") == "true"
-    _isDeviceUnlocked.value = isDeviceUnlockedPref
-
     val activeId = prefDao.getPreference("active_user_id")
     val user = if (!activeId.isNullOrBlank()) userDao.getUserById(activeId) else null
     val effectiveUser = if (user != null) {
-      val userUnlocked = user.role == "ADMIN" || isDeviceUnlockedPref
-      if (isDeviceUnlockedPref && !user.isPremium) {
-        userDao.updateUserPremium(user.id, true, user.activationCode ?: "PERMANENT_DEVICE", user.activatedAt ?: System.currentTimeMillis())
-      }
-      user.copy(isPremium = userUnlocked)
+      user.copy(isPremium = user.role == "ADMIN" || user.isPremium)
     } else {
       null
     }
@@ -353,37 +356,22 @@ class TtsRepository(
   fun getAllUsersFlow(): Flow<List<UserEntity>> = userDao.getAllUsersFlow()
 
   suspend fun login(email: String, password: String): Result<UserEntity> = withContext(Dispatchers.IO) {
+    if (!connectivityObserver.isCurrentlyConnected()) {
+      return@withContext Result.failure(Exception("Active internet connection required to sign in. Please connect to the internet."))
+    }
+
     val cleanEmail = email.trim()
     val cleanPassword = password.trim()
     val isAdminEmail = isSystemAdminEmail(cleanEmail)
 
-    val user = userDao.getUserByEmail(cleanEmail)
-    if (user != null) {
-      val isPasswordValid = user.password == cleanPassword ||
-        (isAdminEmail && (cleanPassword == "Spike@6776" || cleanPassword == "Admin@123" || user.password == cleanPassword))
-
-      if (isPasswordValid) {
-        val isDeviceUnlocked = prefDao.getPreference("device_academic_materials_unlocked") == "true" || isAdminEmail
-        _isDeviceUnlocked.value = isDeviceUnlocked
-
-        val updatedUser = user.copy(
-          role = if (isAdminEmail) "ADMIN" else user.role,
-          isPremium = if (isAdminEmail) true else isDeviceUnlocked
-        )
-        if (isAdminEmail && user.role != "ADMIN") {
-          userDao.updateUserRole(user.id, "ADMIN")
+    if (isAdminEmail) {
+      val isPasswordValid = cleanPassword == "Spike@6776" || cleanPassword == "Admin@123"
+      if (!isPasswordValid) {
+        val existing = userDao.getUserByEmail(cleanEmail)
+        if (existing == null || existing.password != cleanPassword) {
+          return@withContext Result.failure(Exception("Incorrect administrator password."))
         }
-        _currentUser.value = updatedUser
-        prefDao.setPreference(UserPreferenceEntity("active_user_id", updatedUser.id))
-        try {
-          firestoreRepository?.syncUserToCloud(updatedUser)
-        } catch (_: Exception) {}
-        Result.success(updatedUser)
-      } else {
-        Result.failure(Exception("Incorrect password. Please try again."))
       }
-    } else if (isAdminEmail && (cleanPassword == "Spike@6776" || cleanPassword == "Admin@123" || cleanPassword.isNotBlank())) {
-      // Ensure primary administrator account exists
       val adminUser = UserEntity(
         id = if (cleanEmail.startsWith("spike", ignoreCase = true)) "admin_1" else "admin_abebe",
         name = if (cleanEmail.startsWith("spike", ignoreCase = true)) "System Administrator" else "Abebe Wotte (Admin)",
@@ -393,7 +381,7 @@ class TtsRepository(
         department = "Academic Affairs",
         role = "ADMIN",
         avatarUrl = "avatar_admin",
-        streakDays = 12,
+        streakDays = 15,
         isPremium = true
       )
       userDao.insertUser(adminUser)
@@ -402,24 +390,27 @@ class TtsRepository(
       try {
         firestoreRepository?.syncUserToCloud(adminUser)
       } catch (_: Exception) {}
-      Result.success(adminUser)
-    } else {
-      // Try resolving user from cloud Firestore if registered on another device
-      val cloudResult = firestoreRepository?.getUserByEmail(cleanEmail)
-      val cloudProfile = cloudResult?.getOrNull()
-      if (cloudProfile != null) {
-        val entity = cloudProfile.toEntity().copy(password = cleanPassword)
-        userDao.insertUser(entity)
-        val isDeviceUnlocked = prefDao.getPreference("device_academic_materials_unlocked") == "true" || entity.role == "ADMIN"
-        _isDeviceUnlocked.value = isDeviceUnlocked
-        val finalUser = entity.copy(isPremium = if (entity.role == "ADMIN") true else isDeviceUnlocked)
-        _currentUser.value = finalUser
-        prefDao.setPreference(UserPreferenceEntity("active_user_id", finalUser.id))
-        Result.success(finalUser)
-      } else {
-        Result.failure(Exception("Account with this email not found. Please register."))
-      }
+      return@withContext Result.success(adminUser)
     }
+
+    // Require shared backend verification for all registered students
+    val fs = firestoreRepository ?: return@withContext Result.failure(Exception("Cloud service unavailable."))
+    val cloudResult = fs.getUserByEmail(cleanEmail)
+    if (cloudResult.isFailure) {
+      return@withContext Result.failure(Exception("Server verification failed. Please check your internet connection."))
+    }
+    val cloudProfile = cloudResult.getOrNull()
+      ?: return@withContext Result.failure(Exception("Account with this email not found. Please register first."))
+
+    if (cloudProfile.passwordHash.isNotBlank() && cloudProfile.passwordHash != cleanPassword) {
+      return@withContext Result.failure(Exception("Incorrect password. Please try again."))
+    }
+
+    val entity = cloudProfile.toEntity().copy(password = cleanPassword)
+    userDao.insertUser(entity)
+    _currentUser.value = entity
+    prefDao.setPreference(UserPreferenceEntity("active_user_id", entity.id))
+    Result.success(entity)
   }
 
   suspend fun setUserRole(userId: String, newRole: String) = withContext(Dispatchers.IO) {
@@ -498,6 +489,11 @@ class TtsRepository(
     department: String,
     role: String = "STUDENT"
   ): Result<UserEntity> = withContext(Dispatchers.IO) {
+    if (!connectivityObserver.isCurrentlyConnected()) {
+      return@withContext Result.failure(Exception("Active internet connection required to register. Please connect to the internet."))
+    }
+    val fs = firestoreRepository ?: return@withContext Result.failure(Exception("Cloud service unavailable. Please check your connection."))
+
     val cleanEmail = email.trim()
     val cleanPassword = password.trim()
     val cleanName = name.trim()
@@ -507,31 +503,16 @@ class TtsRepository(
     val isAdminEmail = isSystemAdminEmail(cleanEmail)
     val assignedRole = if (isAdminEmail) "ADMIN" else role
 
-    val existing = userDao.getUserByEmail(cleanEmail)
-    if (existing != null) {
-      if (isAdminEmail) {
-        userDao.updateUserRole(existing.id, "ADMIN")
-        val updated = existing.copy(
-          role = "ADMIN",
-          password = cleanPassword.ifBlank { "Spike@6776" },
-          isPremium = true
-        )
-        userDao.updateUser(updated)
-        _currentUser.value = updated
-        prefDao.setPreference(UserPreferenceEntity("active_user_id", updated.id))
-        try {
-          firestoreRepository?.syncUserToCloud(updated)
-        } catch (_: Exception) {}
-        return@withContext Result.success(updated)
+    // Prevent duplicate registrations by querying shared cloud backend
+    val existingCloud = fs.getUserByEmail(cleanEmail).getOrNull()
+    if (existingCloud != null) {
+      if (!isAdminEmail) {
+        return@withContext Result.failure(Exception("An account with this email already exists. Please sign in."))
       }
-      return@withContext Result.failure(Exception("An account with this email already exists."))
     }
 
-    val isDeviceUnlocked = prefDao.getPreference("device_academic_materials_unlocked") == "true" || (assignedRole == "ADMIN")
-    _isDeviceUnlocked.value = isDeviceUnlocked
-
     val newUser = UserEntity(
-      id = if (isAdminEmail) (if (cleanEmail.startsWith("spike", ignoreCase = true)) "admin_1" else "admin_abebe") else "user_" + UUID.randomUUID().toString().take(8),
+      id = if (isAdminEmail) (if (cleanEmail.startsWith("spike", ignoreCase = true)) "admin_1" else "admin_abebe") else "user_" + UUID.randomUUID().toString().replace("-", "").take(10),
       name = cleanName.ifBlank { if (isAdminEmail) "System Administrator" else "TTS Student" },
       email = cleanEmail,
       password = cleanPassword.ifBlank { if (isAdminEmail) "Spike@6776" else "student123" },
@@ -542,32 +523,32 @@ class TtsRepository(
       streakDays = 1,
       questionsAnsweredCount = 0,
       correctAnswersCount = 0,
-      isPremium = isDeviceUnlocked
+      isPremium = (assignedRole == "ADMIN")
     )
+
+    // Verify and save to Firestore cloud first!
+    val syncRes = fs.syncUserToCloud(newUser)
+    if (syncRes.isFailure) {
+      return@withContext Result.failure(Exception("Server registration failed. Please check your internet connection and try again."))
+    }
+
+    // Save locally only after cloud write succeeds
     userDao.insertUser(newUser)
     _currentUser.value = newUser
     prefDao.setPreference(UserPreferenceEntity("active_user_id", newUser.id))
-    try {
-      firestoreRepository?.syncUserToCloud(newUser)
-    } catch (e: Exception) {
-      Log.e("TtsRepository", "Cloud sync on register failed", e)
-    }
     Result.success(newUser)
   }
 
   suspend fun signOut() = withContext(Dispatchers.IO) {
     _currentUser.value = null
     prefDao.setPreference(UserPreferenceEntity("active_user_id", ""))
-    // Note: Do NOT clear device_academic_materials_unlocked so that when logging back in,
-    // this device remains permanently unlocked forever!
+    _isDeviceUnlocked.value = false
   }
 
   suspend fun switchUser(userId: String) = withContext(Dispatchers.IO) {
     val user = userDao.getUserById(userId)
     if (user != null) {
-      val isDeviceUnlocked = prefDao.getPreference("device_academic_materials_unlocked") == "true" || user.role == "ADMIN"
-      _isDeviceUnlocked.value = isDeviceUnlocked
-      _currentUser.value = user.copy(isPremium = if (user.role == "ADMIN") true else isDeviceUnlocked)
+      _currentUser.value = user
       prefDao.setPreference(UserPreferenceEntity("active_user_id", user.id))
     }
   }
@@ -585,16 +566,13 @@ class TtsRepository(
     val isAdminEmail = isSystemAdminEmail(cleanEmail)
     val effectiveRole = if (isAdminEmail) "ADMIN" else role
 
-    val isDeviceUnlocked = prefDao.getPreference("device_academic_materials_unlocked") == "true" || isAdminEmail
-    _isDeviceUnlocked.value = isDeviceUnlocked
-
     val existing = userDao.getUserById(uid)
     val user = if (existing != null) {
       val updated = existing.copy(
         name = name.ifBlank { existing.name },
         email = cleanEmail.ifBlank { existing.email },
         role = if (isAdminEmail) "ADMIN" else existing.role,
-        isPremium = if (isAdminEmail) true else isDeviceUnlocked
+        isPremium = if (isAdminEmail) true else existing.isPremium
       )
       userDao.updateUser(updated)
       updated
@@ -611,7 +589,7 @@ class TtsRepository(
         streakDays = 1,
         questionsAnsweredCount = 0,
         correctAnswersCount = 0,
-        isPremium = isDeviceUnlocked || (effectiveRole == "ADMIN")
+        isPremium = (effectiveRole == "ADMIN")
       )
       userDao.insertUser(newUser)
       newUser
@@ -790,6 +768,12 @@ class TtsRepository(
     if (_currentUser.value?.id == attempt.userId) {
       _currentUser.value = updatedUser
     }
+    // Update live student statistics in cloud Firestore
+    try {
+      firestoreRepository?.updateUserStats(attempt.userId, attempt.totalQuestions, attempt.correctCount)
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Failed to sync user stats to cloud", e)
+    }
   }
 
   suspend fun getWeakTopics(userId: String): List<WeakTopicSummary> = withContext(Dispatchers.IO) {
@@ -890,6 +874,14 @@ class TtsRepository(
     format: String = "NUMERIC",
     customCode: String? = null
   ): AccessCodeEntity = withContext(Dispatchers.IO) {
+    if (!connectivityObserver.isCurrentlyConnected()) {
+      throw IllegalStateException("Active internet connection required to generate access codes.")
+    }
+    val admin = _currentUser.value
+    if (admin?.role != "ADMIN") {
+      throw IllegalStateException("Unauthorized: Only system administrators can generate access codes.")
+    }
+
     val finalCode = if (!customCode.isNullOrBlank()) {
       customCode.trim().take(6).uppercase()
     } else {
@@ -905,12 +897,13 @@ class TtsRepository(
       isRedeemed = false,
       note = note.ifBlank { "Permanent Academic Access Pass" }
     )
-    accessCodeDao.insertAccessCode(entity)
-    try {
-      firestoreRepository?.saveAccessCode(entity)
-    } catch (e: Exception) {
-      Log.e("TtsRepository", "Failed to save access code to cloud", e)
+
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val saveRes = fs.saveAccessCode(entity)
+    if (saveRes.isFailure) {
+      throw saveRes.exceptionOrNull() ?: Exception("Failed to publish access code to cloud database.")
     }
+    accessCodeDao.insertAccessCode(entity)
     entity
   }
 
@@ -930,89 +923,73 @@ class TtsRepository(
   }
 
   suspend fun redeemAccessCode(userId: String, userEmail: String, rawCode: String): Result<Boolean> = withContext(Dispatchers.IO) {
+    if (!connectivityObserver.isCurrentlyConnected()) {
+      return@withContext Result.failure(Exception("Active internet connection required to validate access code. Please connect to the internet."))
+    }
     val cleanCode = rawCode.trim().uppercase()
     if (cleanCode.length != 6) {
       return@withContext Result.failure(Exception("Access code must be exactly 6 characters."))
     }
-    val existing = accessCodeDao.getAccessCode(cleanCode)
-      ?: return@withContext Result.failure(Exception("Invalid 6-digit access code. Please check your code or request a new one from your admin."))
+    val fs = firestoreRepository ?: return@withContext Result.failure(Exception("Backend service unavailable. Please check your connection."))
 
-    if (existing.isRedeemed) {
-      return@withContext Result.failure(Exception("This access code has already been redeemed for single-use access."))
+    // Atomic server verification in Firestore
+    val cloudResult = fs.redeemCloudAccessCode(cleanCode, userId, userEmail)
+    if (cloudResult.isFailure) {
+      val err = cloudResult.exceptionOrNull()
+      return@withContext Result.failure(err ?: Exception("Access code validation failed on server."))
     }
 
     val now = System.currentTimeMillis()
-    if (now > existing.expiresAt) {
-      return@withContext Result.failure(Exception("This 6-digit access code has expired. Please ask your administrator for a fresh code."))
+    userDao.updateUserPremium(userId, true, cleanCode, now)
+    val localCode = accessCodeDao.getAccessCode(cleanCode)
+    if (localCode != null) {
+      accessCodeDao.updateAccessCode(
+        localCode.copy(
+          isRedeemed = true,
+          redeemedByUserId = userId,
+          redeemedByEmail = userEmail,
+          redeemedAt = now
+        )
+      )
     }
 
-    val updatedCode = existing.copy(
-      isRedeemed = true,
-      redeemedByUserId = userId,
-      redeemedByEmail = userEmail,
-      redeemedAt = now
-    )
-    accessCodeDao.updateAccessCode(updatedCode)
-    userDao.updateUserPremium(userId, true, cleanCode, now)
-
-    // Store permanent device-level unlock flag so materials remain unlocked forever on this device
-    prefDao.setPreference(UserPreferenceEntity("device_academic_materials_unlocked", "true"))
-    prefDao.setPreference(UserPreferenceEntity("device_unlocked_user_$userId", "true"))
-    _isDeviceUnlocked.value = true
-
-    // Update active user in memory
+    // Update active user in memory - now unlocks across all devices where this account is used
     _currentUser.value = _currentUser.value?.copy(isPremium = true, activationCode = cleanCode, activatedAt = now)
     Result.success(true)
   }
 
   suspend fun loginWithAccessCode(rawCode: String): Result<UserEntity> = withContext(Dispatchers.IO) {
+    if (!connectivityObserver.isCurrentlyConnected()) {
+      return@withContext Result.failure(Exception("Active internet connection required to validate access code. Please connect to the internet."))
+    }
     val cleanCode = rawCode.trim().uppercase()
     if (cleanCode.length != 6) {
       return@withContext Result.failure(Exception("Access code must be exactly 6 characters."))
     }
-    val existing = accessCodeDao.getAccessCode(cleanCode)
-      ?: return@withContext Result.failure(Exception("Invalid 6-digit access code. Please check your code or request one from your administrator."))
+    val fs = firestoreRepository ?: return@withContext Result.failure(Exception("Backend service unavailable. Please check your connection."))
 
-    if (existing.isRedeemed) {
-      return@withContext Result.failure(Exception("This 6-digit code has already been redeemed. Each passcode works for one-time login only."))
+    val tempUserId = "student_code_" + UUID.randomUUID().toString().replace("-", "").take(8)
+    val tempEmail = "passcode_$cleanCode@ttsacademy.edu"
+    val cloudResult = fs.redeemCloudAccessCode(cleanCode, tempUserId, tempEmail)
+    if (cloudResult.isFailure) {
+      val err = cloudResult.exceptionOrNull()
+      return@withContext Result.failure(err ?: Exception("Access code validation failed on server."))
     }
 
     val now = System.currentTimeMillis()
-    if (now > existing.expiresAt) {
-      val expiredAgoMins = ((now - existing.expiresAt) / 60000).coerceAtLeast(1)
-      return@withContext Result.failure(Exception("This 6-digit access code expired $expiredAgoMins min(s) ago (1-hour validity limit). Please request a fresh code from your administrator."))
-    }
-
-    var student = userDao.getUserByEmail("student@ttsacademy.edu")
-    if (student == null) {
-      student = UserEntity(
-        id = "student_code_" + UUID.randomUUID().toString().take(6),
-        name = "Freshman Scholar",
-        email = "student@ttsacademy.edu",
-        studentId = "TTS-" + cleanCode,
-        department = "Computer Science & Engineering",
-        role = "STUDENT",
-        isPremium = true,
-        activationCode = cleanCode,
-        activatedAt = now
-      )
-      userDao.insertUser(student)
-    } else {
-      userDao.updateUserPremium(student.id, true, cleanCode, now)
-      student = student.copy(isPremium = true, activationCode = cleanCode, activatedAt = now)
-    }
-
-    val updatedCode = existing.copy(
-      isRedeemed = true,
-      redeemedByUserId = student.id,
-      redeemedByEmail = student.email,
-      redeemedAt = now
+    val student = UserEntity(
+      id = tempUserId,
+      name = "Freshman Scholar",
+      email = tempEmail,
+      studentId = "TTS-" + cleanCode,
+      department = "General Freshman Studies",
+      role = "STUDENT",
+      isPremium = true,
+      activationCode = cleanCode,
+      activatedAt = now
     )
-    accessCodeDao.updateAccessCode(updatedCode)
-
-    // Mark device unlocked forever
-    prefDao.setPreference(UserPreferenceEntity("device_academic_materials_unlocked", "true"))
-    _isDeviceUnlocked.value = true
+    userDao.insertUser(student)
+    fs.syncUserToCloud(student)
 
     _currentUser.value = student
     prefDao.setPreference(UserPreferenceEntity("active_user_id", student.id))
@@ -1020,11 +997,11 @@ class TtsRepository(
   }
 
   suspend fun unlockDeviceMaterials() = withContext(Dispatchers.IO) {
-    prefDao.setPreference(UserPreferenceEntity("device_academic_materials_unlocked", "true"))
-    _isDeviceUnlocked.value = true
+    // Only premium users can unlock materials
     _currentUser.value?.let { user ->
-      userDao.updateUserPremium(user.id, true, "PERMANENT_DEVICE", System.currentTimeMillis())
-      _currentUser.value = user.copy(isPremium = true)
+      if (user.isPremium || user.role == "ADMIN") {
+        _isDeviceUnlocked.value = true
+      }
     }
   }
 

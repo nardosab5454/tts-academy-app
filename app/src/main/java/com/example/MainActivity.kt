@@ -146,13 +146,17 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
   val context = LocalContext.current
   val snackbarHostState = remember { SnackbarHostState() }
 
-  // Permanent unlock on this device; requires code when accessing from a new device
-  val isUnlocked = currentUser?.role == "ADMIN" || isDeviceUnlocked
+  // Access verified through server account status
+  val isUnlocked = currentUser?.role == "ADMIN" || currentUser?.isPremium == true
   var showUnlockDialog by remember { mutableStateOf(false) }
   var pendingUnlockAction by remember { mutableStateOf<(() -> Unit)?>(null) }
   var pendingTargetTitle by remember { mutableStateOf<String?>(null) }
 
   fun performLockedAction(targetTitle: String, action: () -> Unit) {
+    if (!isOnline) {
+      viewModel.showMessage("Active internet connection required to access academic resources. Please connect to the internet.")
+      return
+    }
     if (isUnlocked) {
       action()
     } else {
@@ -626,7 +630,11 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
         },
         targetTitle = pendingTargetTitle,
         onUnlockWithCode = { code, onResult ->
-          viewModel.redeemAccessCode(code, onResult)
+          if (!isOnline) {
+            onResult(false, "Active internet connection required to validate access code. Please connect to the internet.")
+          } else {
+            viewModel.redeemAccessCode(code, onResult)
+          }
         },
         onUnlockSuccess = {
           showUnlockDialog = false
@@ -634,7 +642,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
           pendingUnlockAction = null
           pendingTargetTitle = null
           action?.invoke()
-          viewModel.showMessage("🎉 Academic materials unlocked forever on this device!")
+          viewModel.showMessage("🎉 Academic materials unlocked for your account!")
         }
       )
     }

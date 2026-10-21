@@ -82,13 +82,13 @@ data class ActiveQuizState(
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-  private val database = AppDatabase.getDatabase(application, viewModelScope)
-  val repository = TtsRepository(database)
-  val firestoreRepository = FirestoreRepository(application)
-
   private val connectivityObserver = NetworkConnectivityObserver(application)
   val isOnline: StateFlow<Boolean> = connectivityObserver.observe()
     .stateIn(viewModelScope, SharingStarted.Eagerly, connectivityObserver.isCurrentlyConnected())
+
+  val firestoreRepository = FirestoreRepository(application)
+  private val database = AppDatabase.getDatabase(application, viewModelScope)
+  val repository = TtsRepository(database, connectivityObserver, firestoreRepository)
 
   private val _offlineCacheStats = MutableStateFlow(
     OfflineCacheStats(
@@ -819,6 +819,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   // --- Admin operations ---
   fun adminSaveCourse(course: CourseEntity) {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
     viewModelScope.launch {
       repository.saveCourse(course)
       showMessage("Course '${course.title}' saved successfully.")
@@ -826,6 +830,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminDeleteCourse(courseId: String) {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
     viewModelScope.launch {
       repository.deleteCourse(courseId)
       showMessage("Course removed.")
@@ -833,6 +841,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminSaveQuestion(question: QuestionEntity) {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
     viewModelScope.launch {
       repository.saveQuestion(question)
       showMessage("Question saved successfully.")
@@ -840,6 +852,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminDeleteQuestion(questionId: String) {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
     viewModelScope.launch {
       repository.deleteQuestion(questionId)
       showMessage("Question deleted.")
@@ -847,6 +863,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminSaveNote(note: NoteEntity) {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
     viewModelScope.launch {
       repository.saveNote(note)
       showMessage("Revision note '${note.title}' saved.")
@@ -854,6 +874,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminDeleteNote(noteId: String) {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
     viewModelScope.launch {
       repository.deleteNote(noteId)
       showMessage("Note deleted.")
@@ -861,6 +885,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminSavePastExam(exam: PastExamEntity) {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
     viewModelScope.launch {
       repository.savePastExam(exam)
       showMessage("Past exam '${exam.title}' published.")
@@ -868,6 +896,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminDeletePastExam(examId: String) {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
     viewModelScope.launch {
       repository.deletePastExam(examId)
       showMessage("Past exam removed.")
@@ -875,6 +907,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminPublishAnnouncement(title: String, message: String, category: String, isUrgent: Boolean) {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
     viewModelScope.launch {
       val ann = AnnouncementEntity(
         id = "ann_" + UUID.randomUUID().toString().take(8),
@@ -889,6 +925,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminDeleteAnnouncement(id: String) {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
     viewModelScope.launch {
       repository.deleteAnnouncement(id)
       showMessage("Announcement removed.")
@@ -896,6 +936,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminResetData() {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
     viewModelScope.launch {
       repository.resetDatabase()
       loadUserData()

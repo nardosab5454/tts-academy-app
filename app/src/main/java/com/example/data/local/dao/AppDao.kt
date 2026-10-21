@@ -49,6 +49,9 @@ interface UserDao {
 
   @Query("UPDATE users SET department = :department, studyGoalMinutesPerDay = :dailyGoalMinutes WHERE id = :userId")
   suspend fun updateUserDepartmentAndGoal(userId: String, department: String, dailyGoalMinutes: Int)
+
+  @Query("DELETE FROM users WHERE id = :userId")
+  suspend fun deleteUserById(userId: String)
 }
 
 @Dao

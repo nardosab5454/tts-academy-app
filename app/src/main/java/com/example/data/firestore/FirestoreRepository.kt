@@ -108,6 +108,10 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         "department" to user.department,
         "studentId" to user.studentId,
         "isPremium" to user.isPremium,
+        "activationCode" to (user.activationCode ?: ""),
+        "passwordHash" to user.password,
+        "questionsAnsweredCount" to user.questionsAnsweredCount.toLong(),
+        "correctAnswersCount" to user.correctAnswersCount.toLong(),
         "createdAt" to FieldValue.serverTimestamp(),
         "updatedAt" to FieldValue.serverTimestamp()
       )
@@ -117,6 +121,24 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
       throw e
     } catch (e: Exception) {
       handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      Result.failure(e)
+    }
+  }
+
+  suspend fun updateUserStats(userId: String, questionsDelta: Int, correctDelta: Int): Result<Unit> = withContext(Dispatchers.IO) {
+    val docRef = db.collection("users").document(userId)
+    try {
+      val payload = hashMapOf<String, Any>(
+        "questionsAnsweredCount" to FieldValue.increment(questionsDelta.toLong()),
+        "correctAnswersCount" to FieldValue.increment(correctDelta.toLong()),
+        "updatedAt" to FieldValue.serverTimestamp()
+      )
+      docRef.set(payload, SetOptions.merge()).await()
+      Result.success(Unit)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.UPDATE, docRef.path)
       Result.failure(e)
     }
   }
@@ -440,7 +462,8 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         "redeemedByUserId" to (code.redeemedByUserId ?: ""),
         "redeemedByEmail" to (code.redeemedByEmail ?: ""),
         "note" to code.note,
-        "createdAt" to FieldValue.serverTimestamp()
+        "createdAt" to FieldValue.serverTimestamp(),
+        "expiresAt" to com.google.firebase.Timestamp(java.util.Date(code.expiresAt))
       )
       docRef.set(payload, SetOptions.merge()).await()
       Result.success(Unit)
@@ -454,29 +477,46 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
 
   suspend fun redeemCloudAccessCode(code: String, userId: String, userEmail: String): Result<Boolean> = withContext(Dispatchers.IO) {
     val clean = code.trim().uppercase()
-    val docRef = db.collection("access_codes").document(clean)
+    val codeDocRef = db.collection("access_codes").document(clean)
+    val userDocRef = db.collection("users").document(userId)
+
     try {
-      val snapshot = docRef.get().await()
-      if (snapshot.exists()) {
+      db.runTransaction { transaction ->
+        val snapshot = transaction.get(codeDocRef)
+        if (!snapshot.exists()) {
+          throw IllegalStateException("Invalid 6-digit access code. Please check your code or request a new one from your administrator.")
+        }
         val isRedeemed = snapshot.getBoolean("isRedeemed") ?: false
         if (isRedeemed) {
-          return@withContext Result.failure(Exception("This access code has already been redeemed."))
+          throw IllegalStateException("This 6-digit access code has already been redeemed for single-use access.")
         }
-        val updatePayload = hashMapOf<String, Any>(
+        val expiresAt = snapshot.getTimestamp("expiresAt")?.toDate()?.time
+        if (expiresAt != null && System.currentTimeMillis() > expiresAt) {
+          throw IllegalStateException("This 6-digit access code has expired. Please request a new code from your administrator.")
+        }
+
+        val codeUpdates = hashMapOf<String, Any>(
           "isRedeemed" to true,
           "redeemedByUserId" to userId,
           "redeemedByEmail" to userEmail,
           "redeemedAt" to FieldValue.serverTimestamp()
         )
-        docRef.update(updatePayload).await()
-        Result.success(true)
-      } else {
-        Result.failure(Exception("Code not found in cloud database."))
-      }
+        transaction.update(codeDocRef, codeUpdates)
+
+        val userUpdates = hashMapOf<String, Any>(
+          "isPremium" to true,
+          "activationCode" to clean,
+          "updatedAt" to FieldValue.serverTimestamp()
+        )
+        transaction.set(userDocRef, userUpdates, SetOptions.merge())
+        true
+      }.await()
+
+      Result.success(true)
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+      handleFirestoreError(e, OperationType.UPDATE, codeDocRef.path)
       Result.failure(e)
     }
   }
