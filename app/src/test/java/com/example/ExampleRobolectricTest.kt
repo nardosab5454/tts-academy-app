@@ -106,4 +106,62 @@ class ExampleRobolectricTest {
 
     db.close()
   }
+
+  @Test
+  fun `verify offline access requires resource to be downloaded`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = androidx.room.Room.inMemoryDatabaseBuilder(context, com.example.data.local.AppDatabase::class.java)
+      .allowMainThreadQueries()
+      .build()
+    com.example.data.local.AppDatabase.populateDatabase(db)
+    val repo = com.example.data.repository.TtsRepository(db)
+    repo.initialize()
+
+    val testStudentId = "test_student_123"
+
+    // 1. Before downloading, resource is not downloaded
+    val beforeDownload = repo.isResourceDownloaded(testStudentId, "NOTE", "note_math_01", "math101")
+    org.junit.Assert.assertFalse("Resource must NOT be marked downloaded initially", beforeDownload)
+
+    // 2. Mark specific note as downloaded (simulating online first-time access or download)
+    repo.markResourceDownloaded(testStudentId, "NOTE", "note_math_01")
+    val afterDownload = repo.isResourceDownloaded(testStudentId, "NOTE", "note_math_01")
+    assertTrue("Specific note must now be marked downloaded", afterDownload)
+
+    // Other notes remain un-downloaded
+    val otherNote = repo.isResourceDownloaded(testStudentId, "NOTE", "note_phys_01")
+    org.junit.Assert.assertFalse("Other note should remain un-downloaded", otherNote)
+
+    // 3. Mark course as downloaded
+    repo.markResourceDownloaded(testStudentId, "COURSE", "phys101", "phys101")
+    val courseItem = repo.isResourceDownloaded(testStudentId, "NOTE", "note_phys_01", "phys101")
+    assertTrue("Item belonging to downloaded course must be accessible offline", courseItem)
+
+    db.close()
+  }
+
+  @Test
+  fun `verify login and access code require active internet connection`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = androidx.room.Room.inMemoryDatabaseBuilder(context, com.example.data.local.AppDatabase::class.java)
+      .allowMainThreadQueries()
+      .build()
+    com.example.data.local.AppDatabase.populateDatabase(db)
+    val repo = com.example.data.repository.TtsRepository(db)
+    repo.initialize()
+
+    // Offline login should fail with explicit internet requirement message
+    val loginRes = repo.login("student@ttsacademy.edu", "student123")
+    assertTrue("Login while offline must fail", loginRes.isFailure)
+    assertTrue("Error message must state internet is required",
+      loginRes.exceptionOrNull()?.message?.contains("internet", ignoreCase = true) == true)
+
+    // Offline code redemption must fail
+    val redeemRes = repo.redeemAccessCode("stu_1", "stu_1@tts.edu", "739104")
+    assertTrue("Code redemption while offline must fail", redeemRes.isFailure)
+    assertTrue("Error message must state internet is required",
+      redeemRes.exceptionOrNull()?.message?.contains("internet", ignoreCase = true) == true)
+
+    db.close()
+  }
 }

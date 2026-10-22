@@ -249,6 +249,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private val _message = MutableStateFlow<String?>(null)
   val message: StateFlow<String?> = _message.asStateFlow()
 
+  // Offline Download Tracking
+  private val _downloadedKeys = MutableStateFlow<Set<String>>(emptySet())
+  val downloadedKeys: StateFlow<Set<String>> = _downloadedKeys.asStateFlow()
+
+  private val _isDownloading = MutableStateFlow(false)
+  val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
+
   init {
     repository.firestoreRepository = firestoreRepository
     viewModelScope.launch {
@@ -265,7 +272,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           _userAttempts.value = emptyList()
           _userBookmarks.value = emptyList()
           _weakTopics.value = emptyList()
+          _downloadedKeys.value = emptySet()
           _offlineCacheStats.value = repository.getOfflineCacheStats(null)
+        }
+      }
+    }
+    viewModelScope.launch {
+      isOnline.collect { online ->
+        if (online) {
+          repository.syncFromCloudNow()
         }
       }
     }
@@ -530,6 +545,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   private var userAttemptsJob: Job? = null
   private var userBookmarksJob: Job? = null
+  private var userDownloadsJob: Job? = null
 
   private fun loadUserData(userId: String? = null) {
     val uid = userId ?: currentUser.value?.id ?: return
@@ -544,6 +560,138 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     userBookmarksJob = viewModelScope.launch {
       repository.getBookmarksForUserFlow(uid).collect { bms ->
         _userBookmarks.value = bms
+      }
+    }
+    userDownloadsJob?.cancel()
+    userDownloadsJob = viewModelScope.launch {
+      repository.getDownloadedKeysFlow(uid).collect { keys ->
+        _downloadedKeys.value = keys.toSet()
+      }
+    }
+  }
+
+  fun isDownloaded(resourceType: String, resourceId: String, courseId: String? = null): Boolean {
+    if (currentUser.value?.role == "ADMIN") return true
+    val uid = currentUser.value?.id ?: return false
+    val keys = _downloadedKeys.value
+    if ("dl_${uid}_${resourceType}_${resourceId}" in keys) return true
+    if (courseId != null && courseId.isNotBlank() && "dl_${uid}_COURSE_${courseId}" in keys) return true
+    return false
+  }
+
+  fun markDownloaded(resourceType: String, resourceId: String, courseId: String? = null) {
+    val uid = currentUser.value?.id ?: return
+    viewModelScope.launch {
+      repository.markResourceDownloaded(uid, resourceType, resourceId, courseId)
+      val newKeys = mutableSetOf("dl_${uid}_${resourceType}_${resourceId}")
+      if (courseId != null && courseId.isNotBlank()) {
+        newKeys.add("dl_${uid}_COURSE_${courseId}")
+      }
+      _downloadedKeys.value = _downloadedKeys.value + newKeys
+    }
+  }
+
+  fun downloadCourse(course: CourseEntity, onComplete: ((Boolean) -> Unit)? = null) {
+    val user = currentUser.value
+    if (user == null) {
+      showMessage("Please sign in to download course materials.")
+      onComplete?.invoke(false)
+      return
+    }
+    if (!isOnline.value) {
+      showMessage("Active internet connection required to download courses for offline study.")
+      onComplete?.invoke(false)
+      return
+    }
+
+    _isDownloading.value = true
+    viewModelScope.launch {
+      val res = repository.downloadCourseForOffline(user.id, course.id)
+      _isDownloading.value = false
+      res.onSuccess { count ->
+        showMessage("Course '${course.title}' downloaded successfully for offline study ($count items saved).")
+        onComplete?.invoke(true)
+      }.onFailure { err ->
+        showMessage("Download failed: ${err.message}")
+        onComplete?.invoke(false)
+      }
+    }
+  }
+
+  fun downloadNote(note: NoteEntity, course: CourseEntity? = null, onComplete: ((Boolean) -> Unit)? = null) {
+    val user = currentUser.value
+    if (user == null) {
+      showMessage("Please sign in to download notes.")
+      onComplete?.invoke(false)
+      return
+    }
+    if (!isOnline.value) {
+      showMessage("Active internet connection required to download lecture notes.")
+      onComplete?.invoke(false)
+      return
+    }
+    _isDownloading.value = true
+    viewModelScope.launch {
+      val res = repository.downloadNoteForOffline(user.id, note.id, course?.id)
+      _isDownloading.value = false
+      res.onSuccess {
+        showMessage("Lecture note '${note.title}' downloaded for offline study.")
+        onComplete?.invoke(true)
+      }.onFailure { err ->
+        showMessage("Download failed: ${err.message}")
+        onComplete?.invoke(false)
+      }
+    }
+  }
+
+  fun downloadPastExam(exam: PastExamEntity, course: CourseEntity? = null, onComplete: ((Boolean) -> Unit)? = null) {
+    val user = currentUser.value
+    if (user == null) {
+      showMessage("Please sign in to download past exams.")
+      onComplete?.invoke(false)
+      return
+    }
+    if (!isOnline.value) {
+      showMessage("Active internet connection required to download past examinations.")
+      onComplete?.invoke(false)
+      return
+    }
+    _isDownloading.value = true
+    viewModelScope.launch {
+      val res = repository.downloadPastExamForOffline(user.id, exam.id, course?.id)
+      _isDownloading.value = false
+      res.onSuccess {
+        showMessage("Exam paper '${exam.title}' downloaded for offline study.")
+        onComplete?.invoke(true)
+      }.onFailure { err ->
+        showMessage("Download failed: ${err.message}")
+        onComplete?.invoke(false)
+      }
+    }
+  }
+
+  fun downloadQuiz(quizId: String, courseId: String? = null, onComplete: ((Boolean) -> Unit)? = null) {
+    val user = currentUser.value
+    if (user == null) {
+      showMessage("Please sign in to download quizzes.")
+      onComplete?.invoke(false)
+      return
+    }
+    if (!isOnline.value) {
+      showMessage("Active internet connection required to download quizzes.")
+      onComplete?.invoke(false)
+      return
+    }
+    _isDownloading.value = true
+    viewModelScope.launch {
+      val res = repository.downloadQuizForOffline(user.id, quizId, courseId)
+      _isDownloading.value = false
+      res.onSuccess {
+        showMessage("Practice quiz downloaded for offline study.")
+        onComplete?.invoke(true)
+      }.onFailure { err ->
+        showMessage("Download failed: ${err.message}")
+        onComplete?.invoke(false)
       }
     }
   }

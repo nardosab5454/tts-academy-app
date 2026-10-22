@@ -65,6 +65,7 @@ fun PastExamsScreen(
   onDownloadExam: ((PastExamEntity) -> Unit)? = null,
   isUnlocked: Boolean = true,
   onUnlockClick: () -> Unit = {},
+  isExamDownloaded: ((PastExamEntity) -> Boolean)? = null,
   modifier: Modifier = Modifier
 ) {
   var selectedYear by remember { mutableStateOf("All") }
@@ -163,10 +164,12 @@ fun PastExamsScreen(
       ) {
         items(filteredExams) { exam ->
           val course = courseMap[exam.courseId]
+          val downloaded = isExamDownloaded?.invoke(exam) == true
           PastExamCard(
             exam = exam,
             courseCode = course?.code ?: "COURSE",
             isUnlocked = isUnlocked,
+            isDownloaded = downloaded,
             onClick = { onExamClick(exam) },
             onDownload = onDownloadExam?.let { { it(exam) } }
           )
@@ -181,6 +184,7 @@ private fun PastExamCard(
   exam: PastExamEntity,
   courseCode: String,
   isUnlocked: Boolean = true,
+  isDownloaded: Boolean = false,
   onClick: () -> Unit,
   onDownload: (() -> Unit)? = null
 ) {
@@ -199,7 +203,7 @@ private fun PastExamCard(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
           Surface(
             color = MaterialTheme.colorScheme.primaryContainer,
             shape = RoundedCornerShape(4.dp)
@@ -223,6 +227,26 @@ private fun PastExamCard(
               modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
             )
           }
+
+          if (isDownloaded) {
+            Surface(
+              color = SuccessGreen.copy(alpha = 0.15f),
+              shape = RoundedCornerShape(4.dp)
+            ) {
+              Row(
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(Icons.Default.Verified, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(10.dp))
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                  text = "Offline Ready",
+                  style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                  color = SuccessGreen
+                )
+              }
+            }
+          }
         }
 
         if (!isUnlocked) {
@@ -243,7 +267,7 @@ private fun PastExamCard(
               )
             }
           }
-        } else if (exam.isVerified) {
+        } else if (exam.isVerified && !isDownloaded) {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
               imageVector = Icons.Default.Verified,

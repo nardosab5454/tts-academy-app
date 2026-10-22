@@ -50,9 +50,11 @@ data class OfflineCacheStats(
 
 class TtsRepository(
   private val database: AppDatabase,
-  private val connectivityObserver: NetworkConnectivityObserver,
+  val connectivityObserver: NetworkConnectivityObserver? = null,
   var firestoreRepository: FirestoreRepository? = null
 ) {
+
+  fun isNetworkConnected(): Boolean = connectivityObserver?.isCurrentlyConnected() ?: false
 
   private val userDao = database.userDao()
   private val courseDao = database.courseDao()
@@ -237,6 +239,7 @@ class TtsRepository(
           if (cloudAnnouncements.isNotEmpty()) {
             val entities = cloudAnnouncements.map { it.toEntity() }
             announcementDao.insertAnnouncements(entities)
+            announcementDao.deleteAnnouncementsNotIn(entities.map { it.id })
           }
         }
       } catch (e: Exception) {
@@ -251,6 +254,7 @@ class TtsRepository(
           if (cloudCourses.isNotEmpty()) {
             val entities = cloudCourses.map { it.toEntity() }
             courseDao.insertCourses(entities)
+            courseDao.deleteCoursesNotIn(entities.map { it.id })
           }
         }
       } catch (e: Exception) {
@@ -265,6 +269,10 @@ class TtsRepository(
           if (cloudQuestions.isNotEmpty()) {
             val entities = cloudQuestions.map { it.toEntity() }
             questionDao.insertQuestions(entities)
+            questionDao.deleteQuestionsNotIn(entities.map { it.id })
+            entities.map { it.courseId }.distinct().forEach { cId ->
+              courseDao.recalculateCounts(cId)
+            }
           }
         }
       } catch (e: Exception) {
@@ -279,6 +287,10 @@ class TtsRepository(
           if (cloudNotes.isNotEmpty()) {
             val entities = cloudNotes.map { it.toEntity() }
             noteDao.insertNotes(entities)
+            noteDao.deleteNotesNotIn(entities.map { it.id })
+            entities.map { it.courseId }.distinct().forEach { cId ->
+              courseDao.recalculateCounts(cId)
+            }
           }
         }
       } catch (e: Exception) {
@@ -293,6 +305,7 @@ class TtsRepository(
           if (cloudExams.isNotEmpty()) {
             val entities = cloudExams.map { it.toEntity() }
             pastExamDao.insertPastExams(entities)
+            pastExamDao.deletePastExamsNotIn(entities.map { it.id })
           }
         }
       } catch (e: Exception) {
@@ -307,6 +320,7 @@ class TtsRepository(
           if (cloudCodes.isNotEmpty()) {
             val entities = cloudCodes.map { it.toEntity() }
             accessCodeDao.insertAccessCodes(entities)
+            accessCodeDao.deleteAccessCodesNotIn(entities.map { it.code })
           }
         }
       } catch (e: Exception) {
@@ -323,6 +337,51 @@ class TtsRepository(
       } catch (e: Exception) {
         Log.e("TtsRepository", "Cloud seed check error", e)
       }
+    }
+  }
+
+  suspend fun syncFromCloudNow() = withContext(Dispatchers.IO) {
+    val fs = firestoreRepository ?: return@withContext
+    if (!isNetworkConnected()) return@withContext
+    try {
+      val courses = fs.fetchLatestCourses().getOrNull()
+      if (!courses.isNullOrEmpty()) {
+        val entities = courses.map { it.toEntity() }
+        courseDao.insertCourses(entities)
+        courseDao.deleteCoursesNotIn(entities.map { it.id })
+      }
+      val questions = fs.fetchLatestQuestions().getOrNull()
+      if (!questions.isNullOrEmpty()) {
+        val entities = questions.map { it.toEntity() }
+        questionDao.insertQuestions(entities)
+        questionDao.deleteQuestionsNotIn(entities.map { it.id })
+        entities.map { it.courseId }.distinct().forEach { cId ->
+          courseDao.recalculateCounts(cId)
+        }
+      }
+      val notes = fs.fetchLatestNotes().getOrNull()
+      if (!notes.isNullOrEmpty()) {
+        val entities = notes.map { it.toEntity() }
+        noteDao.insertNotes(entities)
+        noteDao.deleteNotesNotIn(entities.map { it.id })
+        entities.map { it.courseId }.distinct().forEach { cId ->
+          courseDao.recalculateCounts(cId)
+        }
+      }
+      val exams = fs.fetchLatestPastExams().getOrNull()
+      if (!exams.isNullOrEmpty()) {
+        val entities = exams.map { it.toEntity() }
+        pastExamDao.insertPastExams(entities)
+        pastExamDao.deletePastExamsNotIn(entities.map { it.id })
+      }
+      val announcements = fs.fetchLatestAnnouncements().getOrNull()
+      if (!announcements.isNullOrEmpty()) {
+        val entities = announcements.map { it.toEntity() }
+        announcementDao.insertAnnouncements(entities)
+        announcementDao.deleteAnnouncementsNotIn(entities.map { it.id })
+      }
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Failed explicit cloud sync", e)
     }
   }
 
@@ -356,7 +415,7 @@ class TtsRepository(
   fun getAllUsersFlow(): Flow<List<UserEntity>> = userDao.getAllUsersFlow()
 
   suspend fun login(email: String, password: String): Result<UserEntity> = withContext(Dispatchers.IO) {
-    if (!connectivityObserver.isCurrentlyConnected()) {
+    if (!isNetworkConnected()) {
       return@withContext Result.failure(Exception("Active internet connection required to sign in. Please connect to the internet."))
     }
 
@@ -489,7 +548,7 @@ class TtsRepository(
     department: String,
     role: String = "STUDENT"
   ): Result<UserEntity> = withContext(Dispatchers.IO) {
-    if (!connectivityObserver.isCurrentlyConnected()) {
+    if (!isNetworkConnected()) {
       return@withContext Result.failure(Exception("Active internet connection required to register. Please connect to the internet."))
     }
     val fs = firestoreRepository ?: return@withContext Result.failure(Exception("Cloud service unavailable. Please check your connection."))
@@ -633,21 +692,27 @@ class TtsRepository(
   }
 
   suspend fun saveCourse(course: CourseEntity) = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      throw IllegalStateException("Active internet connection required to save courses to central database.")
+    }
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val res = fs.saveCourse(course)
+    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to save course to cloud database.")
     courseDao.insertCourse(course)
-    try {
-      firestoreRepository?.saveCourse(course)
-    } catch (_: Exception) {}
   }
 
   suspend fun deleteCourse(courseId: String) = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      throw IllegalStateException("Active internet connection required to delete courses from central database.")
+    }
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val res = fs.deleteCourse(courseId)
+    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete course from cloud database.")
     courseDao.deleteCourse(courseId)
     questionDao.deleteQuestionsForCourse(courseId)
     noteDao.deleteNotesForCourse(courseId)
     topicDao.deleteTopicsForCourse(courseId)
     pastExamDao.deletePastExamsForCourse(courseId)
-    try {
-      firestoreRepository?.deleteCourse(courseId)
-    } catch (_: Exception) {}
   }
 
   suspend fun saveTopic(topic: TopicEntity) = withContext(Dispatchers.IO) {
@@ -682,23 +747,29 @@ class TtsRepository(
   }
 
   suspend fun saveQuestion(question: QuestionEntity) = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      throw IllegalStateException("Active internet connection required to save questions to central database.")
+    }
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val res = fs.saveQuestion(question)
+    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to save question to central database.")
     questionDao.insertQuestion(question)
     courseDao.recalculateCounts(question.courseId)
-    try {
-      firestoreRepository?.saveQuestion(question)
-    } catch (_: Exception) {}
   }
 
   suspend fun deleteQuestion(questionId: String, courseId: String? = null) = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      throw IllegalStateException("Active internet connection required to delete questions from central database.")
+    }
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val res = fs.deleteQuestion(questionId)
+    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete question from central database.")
     val q = if (courseId == null) questionDao.getQuestionById(questionId) else null
     val targetCourseId = courseId ?: q?.courseId
     questionDao.deleteQuestion(questionId)
     if (targetCourseId != null) {
       courseDao.recalculateCounts(targetCourseId)
     }
-    try {
-      firestoreRepository?.deleteQuestion(questionId)
-    } catch (_: Exception) {}
   }
 
   // --- Notes ---
@@ -715,23 +786,29 @@ class TtsRepository(
   }
 
   suspend fun saveNote(note: NoteEntity) = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      throw IllegalStateException("Active internet connection required to save notes to central database.")
+    }
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val res = fs.saveNote(note)
+    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to save revision note to central database.")
     noteDao.insertNote(note)
     courseDao.recalculateCounts(note.courseId)
-    try {
-      firestoreRepository?.saveNote(note)
-    } catch (_: Exception) {}
   }
 
   suspend fun deleteNote(noteId: String, courseId: String? = null) = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      throw IllegalStateException("Active internet connection required to delete notes from central database.")
+    }
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val res = fs.deleteNote(noteId)
+    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete note from central database.")
     val n = if (courseId == null) noteDao.getNoteById(noteId) else null
     val targetCourseId = courseId ?: n?.courseId
     noteDao.deleteNote(noteId)
     if (targetCourseId != null) {
       courseDao.recalculateCounts(targetCourseId)
     }
-    try {
-      firestoreRepository?.deleteNote(noteId)
-    } catch (_: Exception) {}
   }
 
   // --- Past Exams ---
@@ -744,17 +821,23 @@ class TtsRepository(
   }
 
   suspend fun savePastExam(exam: PastExamEntity) = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      throw IllegalStateException("Active internet connection required to publish past exams to central database.")
+    }
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val res = fs.savePastExam(exam)
+    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to save past exam to central database.")
     pastExamDao.insertPastExam(exam)
-    try {
-      firestoreRepository?.savePastExam(exam)
-    } catch (_: Exception) {}
   }
 
   suspend fun deletePastExam(examId: String) = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      throw IllegalStateException("Active internet connection required to delete past exams from central database.")
+    }
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val res = fs.deletePastExam(examId)
+    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete past exam from central database.")
     pastExamDao.deletePastExam(examId)
-    try {
-      firestoreRepository?.deletePastExam(examId)
-    } catch (_: Exception) {}
   }
 
   // --- Quiz Attempts & Analytics ---
@@ -848,21 +931,23 @@ class TtsRepository(
   fun getAllAnnouncementsFlow(): Flow<List<AnnouncementEntity>> = announcementDao.getAllAnnouncementsFlow()
 
   suspend fun saveAnnouncement(announcement: AnnouncementEntity) = withContext(Dispatchers.IO) {
-    announcementDao.insertAnnouncement(announcement)
-    try {
-      firestoreRepository?.saveAnnouncement(announcement)
-    } catch (e: Exception) {
-      Log.e("TtsRepository", "Failed to save announcement to cloud", e)
+    if (!isNetworkConnected()) {
+      throw IllegalStateException("Active internet connection required to broadcast announcements.")
     }
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val res = fs.saveAnnouncement(announcement)
+    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to save announcement to cloud database.")
+    announcementDao.insertAnnouncement(announcement)
   }
 
   suspend fun deleteAnnouncement(id: String) = withContext(Dispatchers.IO) {
-    announcementDao.deleteAnnouncement(id)
-    try {
-      firestoreRepository?.deleteAnnouncement(id)
-    } catch (e: Exception) {
-      Log.e("TtsRepository", "Failed to delete announcement from cloud", e)
+    if (!isNetworkConnected()) {
+      throw IllegalStateException("Active internet connection required to delete announcements.")
     }
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val res = fs.deleteAnnouncement(id)
+    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete announcement from cloud database.")
+    announcementDao.deleteAnnouncement(id)
   }
 
   // --- Access Codes & Premium Pass Management ---
@@ -874,7 +959,7 @@ class TtsRepository(
     format: String = "NUMERIC",
     customCode: String? = null
   ): AccessCodeEntity = withContext(Dispatchers.IO) {
-    if (!connectivityObserver.isCurrentlyConnected()) {
+    if (!isNetworkConnected()) {
       throw IllegalStateException("Active internet connection required to generate access codes.")
     }
     val admin = _currentUser.value
@@ -923,7 +1008,7 @@ class TtsRepository(
   }
 
   suspend fun redeemAccessCode(userId: String, userEmail: String, rawCode: String): Result<Boolean> = withContext(Dispatchers.IO) {
-    if (!connectivityObserver.isCurrentlyConnected()) {
+    if (!isNetworkConnected()) {
       return@withContext Result.failure(Exception("Active internet connection required to validate access code. Please connect to the internet."))
     }
     val cleanCode = rawCode.trim().uppercase()
@@ -959,7 +1044,7 @@ class TtsRepository(
   }
 
   suspend fun loginWithAccessCode(rawCode: String): Result<UserEntity> = withContext(Dispatchers.IO) {
-    if (!connectivityObserver.isCurrentlyConnected()) {
+    if (!isNetworkConnected()) {
       return@withContext Result.failure(Exception("Active internet connection required to validate access code. Please connect to the internet."))
     }
     val cleanCode = rawCode.trim().uppercase()
@@ -1007,6 +1092,112 @@ class TtsRepository(
 
   suspend fun deleteAccessCode(code: String) = withContext(Dispatchers.IO) {
     accessCodeDao.deleteAccessCode(code)
+  }
+
+  // --- Download & Offline Access System ---
+  fun getDownloadedKeysFlow(userId: String): Flow<List<String>> = prefDao.getDownloadedKeysFlow(userId)
+  fun getAllDownloadedKeysFlow(): Flow<List<String>> = prefDao.getAllDownloadedKeysFlow()
+
+  suspend fun markResourceDownloaded(
+    userId: String,
+    resourceType: String,
+    resourceId: String,
+    courseId: String? = null
+  ) = withContext(Dispatchers.IO) {
+    if (userId.isBlank()) return@withContext
+    prefDao.setPreference(UserPreferenceEntity("dl_${userId}_${resourceType}_${resourceId}", "true"))
+    if (courseId != null && courseId.isNotBlank()) {
+      prefDao.setPreference(UserPreferenceEntity("dl_${userId}_COURSE_${courseId}", "true"))
+    }
+  }
+
+  suspend fun isResourceDownloaded(
+    userId: String,
+    resourceType: String,
+    resourceId: String,
+    courseId: String? = null
+  ): Boolean = withContext(Dispatchers.IO) {
+    if (userId.isBlank()) return@withContext false
+    if (_currentUser.value?.role == "ADMIN") return@withContext true
+    val itemDownloaded = prefDao.getPreference("dl_${userId}_${resourceType}_${resourceId}") == "true"
+    if (itemDownloaded) return@withContext true
+    if (courseId != null && courseId.isNotBlank()) {
+      val courseDownloaded = prefDao.getPreference("dl_${userId}_COURSE_${courseId}") == "true"
+      if (courseDownloaded) return@withContext true
+    }
+    false
+  }
+
+  suspend fun downloadCourseForOffline(userId: String, courseId: String): Result<Int> = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      return@withContext Result.failure(Exception("Active internet connection required to download courses for offline study."))
+    }
+    if (userId.isBlank()) {
+      return@withContext Result.failure(Exception("User must be signed in to download content."))
+    }
+
+    prefDao.setPreference(UserPreferenceEntity("dl_${userId}_COURSE_${courseId}", "true"))
+
+    val notes = noteDao.getNotesForCourse(courseId)
+    notes.forEach { note ->
+      prefDao.setPreference(UserPreferenceEntity("dl_${userId}_NOTE_${note.id}", "true"))
+    }
+
+    val exams = pastExamDao.getPastExamsForCourse(courseId)
+    exams.forEach { exam ->
+      prefDao.setPreference(UserPreferenceEntity("dl_${userId}_EXAM_${exam.id}", "true"))
+    }
+
+    prefDao.setPreference(UserPreferenceEntity("dl_${userId}_QUIZ_${courseId}", "true"))
+    val topics = topicDao.getTopicsForCourse(courseId)
+    topics.forEach { topic ->
+      prefDao.setPreference(UserPreferenceEntity("dl_${userId}_QUIZ_${topic.id}", "true"))
+    }
+
+    val totalCount = 1 + notes.size + exams.size + topics.size
+    Result.success(totalCount)
+  }
+
+  suspend fun downloadNoteForOffline(userId: String, noteId: String, courseId: String? = null): Result<Boolean> = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      return@withContext Result.failure(Exception("Active internet connection required to download lecture notes."))
+    }
+    if (userId.isBlank()) {
+      return@withContext Result.failure(Exception("User must be signed in to download content."))
+    }
+    prefDao.setPreference(UserPreferenceEntity("dl_${userId}_NOTE_${noteId}", "true"))
+    if (courseId != null && courseId.isNotBlank()) {
+      prefDao.setPreference(UserPreferenceEntity("dl_${userId}_COURSE_${courseId}", "true"))
+    }
+    Result.success(true)
+  }
+
+  suspend fun downloadPastExamForOffline(userId: String, examId: String, courseId: String? = null): Result<Boolean> = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      return@withContext Result.failure(Exception("Active internet connection required to download past examination papers."))
+    }
+    if (userId.isBlank()) {
+      return@withContext Result.failure(Exception("User must be signed in to download content."))
+    }
+    prefDao.setPreference(UserPreferenceEntity("dl_${userId}_EXAM_${examId}", "true"))
+    if (courseId != null && courseId.isNotBlank()) {
+      prefDao.setPreference(UserPreferenceEntity("dl_${userId}_COURSE_${courseId}", "true"))
+    }
+    Result.success(true)
+  }
+
+  suspend fun downloadQuizForOffline(userId: String, quizId: String, courseId: String? = null): Result<Boolean> = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      return@withContext Result.failure(Exception("Active internet connection required to download quizzes."))
+    }
+    if (userId.isBlank()) {
+      return@withContext Result.failure(Exception("User must be signed in to download content."))
+    }
+    prefDao.setPreference(UserPreferenceEntity("dl_${userId}_QUIZ_${quizId}", "true"))
+    if (courseId != null && courseId.isNotBlank()) {
+      prefDao.setPreference(UserPreferenceEntity("dl_${userId}_COURSE_${courseId}", "true"))
+    }
+    Result.success(true)
   }
 
   // --- Reset to Factory Seed ---

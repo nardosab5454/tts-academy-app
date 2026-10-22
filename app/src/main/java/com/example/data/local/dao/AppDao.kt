@@ -80,6 +80,9 @@ interface CourseDao {
   @Query("DELETE FROM courses WHERE id = :courseId")
   suspend fun deleteCourse(courseId: String)
 
+  @Query("DELETE FROM courses WHERE id NOT IN (:validIds)")
+  suspend fun deleteCoursesNotIn(validIds: List<String>)
+
   @Query("UPDATE courses SET totalQuestions = (SELECT COUNT(*) FROM questions WHERE courseId = :courseId), totalNotes = (SELECT COUNT(*) FROM notes WHERE courseId = :courseId) WHERE id = :courseId")
   suspend fun recalculateCounts(courseId: String)
 
@@ -149,6 +152,9 @@ interface QuestionDao {
   @Query("DELETE FROM questions WHERE id = :questionId")
   suspend fun deleteQuestion(questionId: String)
 
+  @Query("DELETE FROM questions WHERE id NOT IN (:validIds)")
+  suspend fun deleteQuestionsNotIn(validIds: List<String>)
+
   @Query("DELETE FROM questions WHERE courseId = :courseId")
   suspend fun deleteQuestionsForCourse(courseId: String)
 
@@ -173,6 +179,9 @@ interface NoteDao {
   @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
   suspend fun getNoteById(id: String): NoteEntity?
 
+  @Query("SELECT * FROM notes WHERE courseId = :courseId")
+  suspend fun getNotesForCourse(courseId: String): List<NoteEntity>
+
   @Query("SELECT * FROM notes WHERE title LIKE '%' || :query || '%' OR contentMarkdown LIKE '%' || :query || '%' OR summary LIKE '%' || :query || '%'")
   suspend fun searchNotes(query: String): List<NoteEntity>
 
@@ -187,6 +196,9 @@ interface NoteDao {
 
   @Query("DELETE FROM notes WHERE id = :noteId")
   suspend fun deleteNote(noteId: String)
+
+  @Query("DELETE FROM notes WHERE id NOT IN (:validIds)")
+  suspend fun deleteNotesNotIn(validIds: List<String>)
 
   @Query("DELETE FROM notes WHERE courseId = :courseId")
   suspend fun deleteNotesForCourse(courseId: String)
@@ -212,6 +224,9 @@ interface PastExamDao {
   @Query("SELECT * FROM past_exams WHERE id = :id LIMIT 1")
   suspend fun getPastExamById(id: String): PastExamEntity?
 
+  @Query("SELECT * FROM past_exams WHERE courseId = :courseId")
+  suspend fun getPastExamsForCourse(courseId: String): List<PastExamEntity>
+
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertPastExams(exams: List<PastExamEntity>)
 
@@ -223,6 +238,9 @@ interface PastExamDao {
 
   @Query("DELETE FROM past_exams WHERE id = :examId")
   suspend fun deletePastExam(examId: String)
+
+  @Query("DELETE FROM past_exams WHERE id NOT IN (:validIds)")
+  suspend fun deletePastExamsNotIn(validIds: List<String>)
 
   @Query("DELETE FROM past_exams WHERE courseId = :courseId")
   suspend fun deletePastExamsForCourse(courseId: String)
@@ -283,6 +301,9 @@ interface AnnouncementDao {
 
   @Query("DELETE FROM announcements WHERE id = :id")
   suspend fun deleteAnnouncement(id: String)
+
+  @Query("DELETE FROM announcements WHERE id NOT IN (:validIds)")
+  suspend fun deleteAnnouncementsNotIn(validIds: List<String>)
 }
 
 @Dao
@@ -292,6 +313,15 @@ interface UserPreferenceDao {
 
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun setPreference(pref: UserPreferenceEntity)
+
+  @Query("SELECT `key` FROM user_preferences WHERE `key` LIKE 'dl_' || :userId || '_%' AND value = 'true'")
+  fun getDownloadedKeysFlow(userId: String): Flow<List<String>>
+
+  @Query("SELECT `key` FROM user_preferences WHERE `key` LIKE 'dl_%' AND value = 'true'")
+  fun getAllDownloadedKeysFlow(): Flow<List<String>>
+
+  @Query("DELETE FROM user_preferences WHERE `key` = :key")
+  suspend fun deletePreference(key: String)
 }
 
 @Dao
@@ -313,5 +343,8 @@ interface AccessCodeDao {
 
   @Query("DELETE FROM access_codes WHERE code = :code")
   suspend fun deleteAccessCode(code: String)
+
+  @Query("DELETE FROM access_codes WHERE code NOT IN (:validCodes)")
+  suspend fun deleteAccessCodesNotIn(validCodes: List<String>)
 }
 

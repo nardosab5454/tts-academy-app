@@ -52,10 +52,13 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.model.CourseEntity
 import com.example.data.local.model.NoteEntity
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.ButtonDefaults
 import com.example.ui.components.DetailTopBar
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
+import com.example.ui.theme.SuccessGreen
 
 @Composable
 fun NotesScreen(
@@ -64,6 +67,8 @@ fun NotesScreen(
   onNoteClick: (NoteEntity) -> Unit,
   isUnlocked: Boolean = true,
   onUnlockClick: () -> Unit = {},
+  isNoteDownloaded: ((NoteEntity) -> Boolean)? = null,
+  onDownloadNote: ((NoteEntity) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   var searchQuery by remember { mutableStateOf("") }
@@ -169,10 +174,13 @@ fun NotesScreen(
       ) {
         items(filteredNotes) { note ->
           val course = courseMap[note.courseId]
+          val downloaded = isNoteDownloaded?.invoke(note) == true
           NoteCardItem(
             note = note,
             courseCode = course?.code ?: "COURSE",
             isUnlocked = isUnlocked,
+            isDownloaded = downloaded,
+            onDownload = if (!downloaded && isUnlocked && onDownloadNote != null) { { onDownloadNote(note) } } else null,
             onClick = { onNoteClick(note) }
           )
         }
@@ -186,6 +194,8 @@ private fun NoteCardItem(
   note: NoteEntity,
   courseCode: String,
   isUnlocked: Boolean = true,
+  isDownloaded: Boolean = false,
+  onDownload: (() -> Unit)? = null,
   onClick: () -> Unit
 ) {
   Card(
@@ -237,13 +247,47 @@ private fun NoteCardItem(
                 )
               }
             }
+          } else if (isDownloaded) {
+            Surface(
+              color = SuccessGreen.copy(alpha = 0.15f),
+              shape = RoundedCornerShape(4.dp)
+            ) {
+              Row(
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(10.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                  text = "Offline Ready",
+                  style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                  color = SuccessGreen
+                )
+              }
+            }
           }
         }
-        Text(
-          text = "${note.readTimeMinutes} min read",
-          style = MaterialTheme.typography.labelSmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          if (onDownload != null) {
+            IconButton(
+              onClick = onDownload,
+              modifier = Modifier.size(28.dp)
+            ) {
+              Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = "Download note for offline study",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+              )
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+          }
+          Text(
+            text = "${note.readTimeMinutes} min read",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+        }
       }
 
       Spacer(modifier = Modifier.height(10.dp))

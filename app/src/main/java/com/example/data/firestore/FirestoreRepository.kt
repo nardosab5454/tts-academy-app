@@ -561,15 +561,40 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     }
   }
 
-  fun observeUserQuizAttempts(userId: String): Flow<List<FirestoreQuizAttempt>> = flow {
+  fun observeUserQuizAttempts(userId: String): Flow<List<FirestoreQuizAttempt>> {
     val docRef = db.collection("users").document(userId).collection("quiz_attempts")
-    val snapshotsFlow = docRef.snapshots().map { snapshot ->
+    return docRef.snapshots().map { snapshot ->
       snapshot.toObjects(FirestoreQuizAttempt::class.java)
     }.catch { error ->
       if (error is Exception) handleFirestoreError(error, OperationType.LIST, docRef.path)
       throw error
     }
-    emitAll(snapshotsFlow)
+  }
+
+  fun observeQuizAttempts(userId: String): Flow<List<FirestoreQuizAttempt>> = observeUserQuizAttempts(userId)
+
+  suspend fun createStudyNote(note: FirestoreStudyNote): Result<String> = withContext(Dispatchers.IO) {
+    val uid = requireUserId()
+    val noteId = note.id.ifBlank { "note_${UUID.randomUUID().toString().replace("-", "")}" }
+    val docRef = db.collection("users").document(uid).collection("notes").document(noteId)
+    try {
+      val payload = hashMapOf(
+        "id" to noteId,
+        "userId" to uid,
+        "courseId" to note.courseId,
+        "title" to note.title,
+        "content" to note.content,
+        "tags" to note.tags,
+        "createdAt" to FieldValue.serverTimestamp()
+      )
+      docRef.set(payload).await()
+      Result.success(noteId)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.CREATE, docRef.path)
+      Result.failure(e)
+    }
   }
 
   suspend fun addBookmark(bookmark: FirestoreBookmark): Result<Unit> = withContext(Dispatchers.IO) {
@@ -604,6 +629,51 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
       throw e
     } catch (e: Exception) {
       handleFirestoreError(e, OperationType.DELETE, docRef.path)
+      Result.failure(e)
+    }
+  }
+
+  suspend fun fetchLatestCourses(): Result<List<FirestoreCourse>> = withContext(Dispatchers.IO) {
+    try {
+      val snap = db.collection("courses").get().await()
+      Result.success(snap.toObjects(FirestoreCourse::class.java))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun fetchLatestQuestions(): Result<List<FirestoreQuestion>> = withContext(Dispatchers.IO) {
+    try {
+      val snap = db.collection("questions").get().await()
+      Result.success(snap.toObjects(FirestoreQuestion::class.java))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun fetchLatestNotes(): Result<List<FirestoreNote>> = withContext(Dispatchers.IO) {
+    try {
+      val snap = db.collection("notes").get().await()
+      Result.success(snap.toObjects(FirestoreNote::class.java))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun fetchLatestPastExams(): Result<List<FirestorePastExam>> = withContext(Dispatchers.IO) {
+    try {
+      val snap = db.collection("past_exams").get().await()
+      Result.success(snap.toObjects(FirestorePastExam::class.java))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun fetchLatestAnnouncements(): Result<List<FirestoreAnnouncement>> = withContext(Dispatchers.IO) {
+    try {
+      val snap = db.collection("announcements").get().await()
+      Result.success(snap.toObjects(FirestoreAnnouncement::class.java))
+    } catch (e: Exception) {
       Result.failure(e)
     }
   }

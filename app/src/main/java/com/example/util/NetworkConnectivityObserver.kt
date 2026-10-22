@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 class NetworkConnectivityObserver(context: Context) {
   private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+  var overrideConnected: Boolean? = null
 
   fun observe(): Flow<Boolean> = callbackFlow {
     val initialOnline = isCurrentlyConnected()
@@ -50,6 +51,7 @@ class NetworkConnectivityObserver(context: Context) {
   }.distinctUntilChanged()
 
   fun isCurrentlyConnected(): Boolean {
+    overrideConnected?.let { return it }
     return try {
       val activeNetwork = connectivityManager.activeNetwork ?: return false
       val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false

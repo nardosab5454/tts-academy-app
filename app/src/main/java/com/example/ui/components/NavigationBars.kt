@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -189,6 +190,32 @@ fun AppHeader(
             text = user?.name?.firstOrNull()?.uppercase() ?: "S",
             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
             color = MaterialTheme.colorScheme.onPrimaryContainer
+          )
+        }
+      }
+    }
+    if (!isOnline) {
+      Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth().testTag("offline_warning_banner")
+      ) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Icon(
+            imageVector = Icons.Default.CloudOff,
+            contentDescription = "Offline indicator",
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(16.dp)
+          )
+          Spacer(modifier = Modifier.width(8.dp))
+          Text(
+            text = "Offline Mode: Active internet connection required to access protected academic materials.",
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onErrorContainer
           )
         }
       }

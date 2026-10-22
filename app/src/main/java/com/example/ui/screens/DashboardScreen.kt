@@ -83,6 +83,7 @@ fun DashboardScreen(
   isUnlocked: Boolean = true,
   onUnlockClick: () -> Unit = {},
   isOnline: Boolean = true,
+  isCourseDownloaded: ((CourseEntity) -> Boolean)? = null,
   modifier: Modifier = Modifier
 ) {
   val totalFromAttempts = attempts.sumOf { it.totalQuestions }
@@ -470,11 +471,31 @@ fun DashboardScreen(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                   )
                 }
-                Text(
-                  text = "${recentCourse.category} • Freshmen",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (isCourseDownloaded?.invoke(recentCourse) == true) {
+                  Surface(
+                    color = SuccessGreen.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(6.dp)
+                  ) {
+                    Row(
+                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
+                      Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(10.dp))
+                      Spacer(modifier = Modifier.width(3.dp))
+                      Text(
+                        text = "Offline Ready",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = SuccessGreen
+                      )
+                    }
+                  }
+                } else {
+                  Text(
+                    text = "${recentCourse.category} • Freshmen",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                }
               }
 
               Spacer(modifier = Modifier.height(10.dp))

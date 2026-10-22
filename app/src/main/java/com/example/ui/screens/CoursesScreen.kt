@@ -64,6 +64,10 @@ import com.example.data.local.model.TopicEntity
 import com.example.ui.components.DetailTopBar
 import com.example.ui.theme.AcademicGold
 import com.example.ui.theme.SuccessGreen
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.IconButton
 
 @Composable
 fun CoursesScreen(
@@ -267,6 +271,13 @@ fun CourseDetailScreen(
   onStartCoursePractice: (CourseEntity, Boolean) -> Unit,
   onNoteClick: (NoteEntity) -> Unit,
   onPastExamClick: (PastExamEntity) -> Unit,
+  isCourseDownloaded: Boolean = false,
+  isDownloading: Boolean = false,
+  onDownloadCourse: () -> Unit = {},
+  isNoteDownloaded: ((NoteEntity) -> Boolean)? = null,
+  isExamDownloaded: ((PastExamEntity) -> Boolean)? = null,
+  onDownloadNote: ((NoteEntity) -> Unit)? = null,
+  onDownloadExam: ((PastExamEntity) -> Unit)? = null,
   modifier: Modifier = Modifier
 ) {
   var selectedTab by remember { mutableIntStateOf(0) }
@@ -317,6 +328,45 @@ fun CourseDetailScreen(
             Text("Exam Mode")
           }
         }
+
+        Spacer(modifier = Modifier.height(10.dp))
+        if (isCourseDownloaded) {
+          Surface(
+            color = SuccessGreen.copy(alpha = 0.15f),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(Icons.Default.CloudDone, contentDescription = "Downloaded", tint = SuccessGreen, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = "Offline Ready • Course and materials saved to this device",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = SuccessGreen
+              )
+            }
+          }
+        } else {
+          Button(
+            onClick = onDownloadCourse,
+            enabled = !isDownloading,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+          ) {
+            if (isDownloading) {
+              CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onSecondary, strokeWidth = 2.dp)
+              Spacer(modifier = Modifier.width(8.dp))
+              Text("Downloading Course Materials...")
+            } else {
+              Icon(Icons.Default.Download, contentDescription = "Download Course", modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(8.dp))
+              Text("Download Course for Offline Study")
+            }
+          }
+        }
       }
     }
 
@@ -332,8 +382,8 @@ fun CourseDetailScreen(
 
     when (selectedTab) {
       0 -> TopicsTabContent(topics, onStartTopicPractice)
-      1 -> NotesTabContent(notes, onNoteClick)
-      2 -> PastExamsTabContent(pastExams, onPastExamClick)
+      1 -> NotesTabContent(notes, onNoteClick, isCourseDownloaded, isNoteDownloaded, onDownloadNote)
+      2 -> PastExamsTabContent(pastExams, onPastExamClick, isCourseDownloaded, isExamDownloaded, onDownloadExam)
     }
   }
 }
@@ -406,7 +456,10 @@ private fun TopicsTabContent(
 @Composable
 private fun NotesTabContent(
   notes: List<NoteEntity>,
-  onNoteClick: (NoteEntity) -> Unit
+  onNoteClick: (NoteEntity) -> Unit,
+  isCourseDownloaded: Boolean = false,
+  isNoteDownloaded: ((NoteEntity) -> Boolean)? = null,
+  onDownloadNote: ((NoteEntity) -> Unit)? = null
 ) {
   if (notes.isEmpty()) {
     EmptyStateView("No revision notes available for this course yet.")
@@ -419,6 +472,7 @@ private fun NotesTabContent(
     verticalArrangement = Arrangement.spacedBy(12.dp)
   ) {
     items(notes) { note ->
+      val downloaded = isCourseDownloaded || (isNoteDownloaded?.invoke(note) == true)
       Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -430,19 +484,46 @@ private fun NotesTabContent(
         Column(modifier = Modifier.padding(16.dp)) {
           Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
           ) {
             Text(
               text = "${note.readTimeMinutes} min read",
               style = MaterialTheme.typography.labelSmall,
               color = MaterialTheme.colorScheme.primary
             )
-            Icon(
-              imageVector = Icons.AutoMirrored.Filled.MenuBook,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.primary,
-              modifier = Modifier.size(16.dp)
-            )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              if (downloaded) {
+                Surface(
+                  color = SuccessGreen.copy(alpha = 0.15f),
+                  shape = RoundedCornerShape(4.dp)
+                ) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = "Offline Ready", tint = SuccessGreen, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Offline Ready", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = SuccessGreen)
+                  }
+                }
+              } else if (onDownloadNote != null) {
+                IconButton(
+                  onClick = { onDownloadNote(note) },
+                  modifier = Modifier.size(28.dp)
+                ) {
+                  Icon(Icons.Default.Download, contentDescription = "Download note", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                }
+              }
+              Spacer(modifier = Modifier.width(6.dp))
+              Icon(
+                imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+              )
+            }
           }
           Spacer(modifier = Modifier.height(6.dp))
           Text(
@@ -466,7 +547,10 @@ private fun NotesTabContent(
 @Composable
 private fun PastExamsTabContent(
   exams: List<PastExamEntity>,
-  onPastExamClick: (PastExamEntity) -> Unit
+  onPastExamClick: (PastExamEntity) -> Unit,
+  isCourseDownloaded: Boolean = false,
+  isExamDownloaded: ((PastExamEntity) -> Boolean)? = null,
+  onDownloadExam: ((PastExamEntity) -> Unit)? = null
 ) {
   if (exams.isEmpty()) {
     EmptyStateView("No past examinations uploaded for this course yet.")
@@ -479,6 +563,7 @@ private fun PastExamsTabContent(
     verticalArrangement = Arrangement.spacedBy(12.dp)
   ) {
     items(exams) { exam ->
+      val downloaded = isCourseDownloaded || (isExamDownloaded?.invoke(exam) == true)
       Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -493,19 +578,37 @@ private fun PastExamsTabContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
           ) {
-            Surface(
-              color = MaterialTheme.colorScheme.tertiaryContainer,
-              shape = RoundedCornerShape(4.dp)
-            ) {
-              Text(
-                text = "${exam.academicYear} • ${exam.examType}",
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-              )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+              Surface(
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                shape = RoundedCornerShape(4.dp)
+              ) {
+                Text(
+                  text = "${exam.academicYear} • ${exam.examType}",
+                  style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                  color = MaterialTheme.colorScheme.onTertiaryContainer,
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+              }
+              if (downloaded) {
+                Surface(
+                  color = SuccessGreen.copy(alpha = 0.15f),
+                  shape = RoundedCornerShape(4.dp)
+                ) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = "Offline Ready", tint = SuccessGreen, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Offline Ready", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = SuccessGreen)
+                  }
+                }
+              }
             }
-            if (exam.isVerified) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              if (exam.isVerified) {
                 Icon(
                   imageVector = Icons.Default.Verified,
                   contentDescription = "Verified",
@@ -514,10 +617,19 @@ private fun PastExamsTabContent(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                  text = "Official Answer Key",
+                  text = "Official Key",
                   style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                   color = SuccessGreen
                 )
+                Spacer(modifier = Modifier.width(6.dp))
+              }
+              if (!downloaded && onDownloadExam != null) {
+                IconButton(
+                  onClick = { onDownloadExam(exam) },
+                  modifier = Modifier.size(28.dp)
+                ) {
+                  Icon(Icons.Default.Download, contentDescription = "Download Exam", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                }
               }
             }
           }

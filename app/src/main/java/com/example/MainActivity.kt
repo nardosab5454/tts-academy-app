@@ -142,6 +142,8 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
   val isDeviceUnlocked by viewModel.isDeviceUnlocked.collectAsStateWithLifecycle()
   val allQuestions by viewModel.allQuestions.collectAsStateWithLifecycle()
   val allNotes by viewModel.allNotes.collectAsStateWithLifecycle()
+  val downloadedKeys by viewModel.downloadedKeys.collectAsStateWithLifecycle()
+  val isDownloading by viewModel.isDownloading.collectAsStateWithLifecycle()
 
   val context = LocalContext.current
   val snackbarHostState = remember { SnackbarHostState() }
@@ -152,17 +154,39 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
   var pendingUnlockAction by remember { mutableStateOf<(() -> Unit)?>(null) }
   var pendingTargetTitle by remember { mutableStateOf<String?>(null) }
 
-  fun performLockedAction(targetTitle: String, action: () -> Unit) {
-    if (!isOnline) {
-      viewModel.showMessage("Active internet connection required to access academic resources. Please connect to the internet.")
+  fun performLockedAction(
+    targetTitle: String,
+    resourceType: String = "GENERAL",
+    resourceId: String = "",
+    courseId: String? = null,
+    action: () -> Unit
+  ) {
+    if (!isUnlocked) {
+      if (!isOnline) {
+        viewModel.showMessage("Active internet connection required to validate access code. Please connect to the internet.")
+      } else {
+        pendingTargetTitle = targetTitle
+        pendingUnlockAction = action
+        showUnlockDialog = true
+      }
       return
     }
-    if (isUnlocked) {
+
+    val isDownloaded = viewModel.isDownloaded(resourceType, resourceId, courseId)
+
+    if (isOnline) {
+      // While online, automatically mark as downloaded for future offline use
+      if (resourceId.isNotBlank()) {
+        viewModel.markDownloaded(resourceType, resourceId, courseId)
+      }
       action()
     } else {
-      pendingTargetTitle = targetTitle
-      pendingUnlockAction = action
-      showUnlockDialog = true
+      // Offline mode: allowed if downloaded, if user is admin, or if general screen transition
+      if (isDownloaded || currentUser?.role == "ADMIN" || resourceType == "GENERAL") {
+        action()
+      } else {
+        viewModel.showMessage("'$targetTitle' has not been downloaded for offline study yet. Please connect to the internet to download it.")
+      }
     }
   }
 
@@ -240,13 +264,13 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               performLockedAction("Academic Materials") {}
             },
             onCourseClick = { course ->
-              performLockedAction(course.title) {
+              performLockedAction(course.title, "COURSE", course.id, course.id) {
                 viewModel.selectCourse(course)
               }
             },
             onNavigate = { viewModel.navigateTo(it) },
             onStartQuickPractice = { course ->
-              performLockedAction("${course.title} Practice Quiz") {
+              performLockedAction("${course.title} Practice Quiz", "QUIZ", course.id, course.id) {
                 viewModel.startCoursePractice(course, false)
               }
             },
@@ -254,7 +278,10 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               viewModel.markAnnouncementsAsViewed()
               viewModel.navigateTo(Screen.ANNOUNCEMENTS)
             },
-            isOnline = isOnline
+            isOnline = isOnline,
+            isCourseDownloaded = { course ->
+              viewModel.isDownloaded("COURSE", course.id, course.id)
+            }
           )
         }
 
@@ -262,7 +289,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
           CoursesScreen(
             courses = publishedCourses,
             onCourseClick = { course ->
-              performLockedAction(course.title) {
+              performLockedAction(course.title, "COURSE", course.id, course.id) {
                 viewModel.selectCourse(course)
               }
             }
@@ -271,6 +298,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
 
         Screen.COURSE_DETAIL -> {
           selectedCourse?.let { course ->
+            val isCourseDownloaded = viewModel.isDownloaded("COURSE", course.id, course.id)
             CourseDetailScreen(
               course = course,
               topics = courseTopics,
@@ -278,24 +306,41 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               pastExams = coursePastExams,
               onBackClick = { viewModel.navigateBack() },
               onStartTopicPractice = { topic, isExamMode ->
-                performLockedAction(topic.title) {
+                performLockedAction(topic.title, "QUIZ", topic.id, course.id) {
                   viewModel.startTopicQuiz(topic, course, isExamMode)
                 }
               },
               onStartCoursePractice = { crs, isExamMode ->
-                performLockedAction(crs.title) {
+                performLockedAction(crs.title, "QUIZ", crs.id, crs.id) {
                   viewModel.startCoursePractice(crs, isExamMode)
                 }
               },
               onNoteClick = { note ->
-                performLockedAction(note.title) {
+                performLockedAction(note.title, "NOTE", note.id, note.courseId) {
                   viewModel.selectNote(note)
                 }
               },
               onPastExamClick = { exam ->
-                performLockedAction(exam.title) {
+                performLockedAction(exam.title, "EXAM", exam.id, exam.courseId) {
                   viewModel.selectPastExam(exam)
                 }
+              },
+              isCourseDownloaded = isCourseDownloaded,
+              isDownloading = isDownloading,
+              onDownloadCourse = {
+                viewModel.downloadCourse(course)
+              },
+              isNoteDownloaded = { note ->
+                viewModel.isDownloaded("NOTE", note.id, note.courseId)
+              },
+              isExamDownloaded = { exam ->
+                viewModel.isDownloaded("EXAM", exam.id, exam.courseId)
+              },
+              onDownloadNote = { note ->
+                viewModel.downloadNote(note, course)
+              },
+              onDownloadExam = { exam ->
+                viewModel.downloadPastExam(exam, course)
               }
             )
           }
@@ -372,15 +417,18 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               performLockedAction("Past Examination Papers") {}
             },
             onExamClick = { exam ->
-              performLockedAction(exam.title) {
+              performLockedAction(exam.title, "EXAM", exam.id, exam.courseId) {
                 viewModel.selectPastExam(exam)
               }
             },
             onDownloadExam = { exam ->
-              performLockedAction(exam.title) {
+              performLockedAction(exam.title, "EXAM", exam.id, exam.courseId) {
                 val course = publishedCourses.find { it.id == exam.courseId }
-                viewModel.downloadExamPdf(context, exam, course)
+                viewModel.downloadPastExam(exam, course)
               }
+            },
+            isExamDownloaded = { exam ->
+              viewModel.isDownloaded("EXAM", exam.id, exam.courseId)
             }
           )
         }
@@ -393,12 +441,12 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               course = course,
               onBackClick = { viewModel.navigateBack() },
               onStartExam = { ex, crs ->
-                performLockedAction(ex.title) {
+                performLockedAction(ex.title, "EXAM", ex.id, crs.id) {
                   viewModel.startExamQuiz(ex, crs)
                 }
               },
               onDownloadPaper = {
-                performLockedAction(exam.title) {
+                performLockedAction(exam.title, "EXAM", exam.id, course?.id) {
                   viewModel.downloadExamPdf(context, exam, course)
                 }
               }
@@ -415,9 +463,16 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               performLockedAction("Lecture Notes & Formulas") {}
             },
             onNoteClick = { note ->
-              performLockedAction(note.title) {
+              performLockedAction(note.title, "NOTE", note.id, note.courseId) {
                 viewModel.selectNote(note)
               }
+            },
+            isNoteDownloaded = { note ->
+              viewModel.isDownloaded("NOTE", note.id, note.courseId)
+            },
+            onDownloadNote = { note ->
+              val course = publishedCourses.find { it.id == note.courseId }
+              viewModel.downloadNote(note, course)
             }
           )
         }
