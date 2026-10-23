@@ -22,12 +22,14 @@ import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -66,6 +68,8 @@ fun PastExamsScreen(
   isUnlocked: Boolean = true,
   onUnlockClick: () -> Unit = {},
   isExamDownloaded: ((PastExamEntity) -> Boolean)? = null,
+  onRefreshCloud: (() -> Unit)? = null,
+  isRefreshing: Boolean = false,
   modifier: Modifier = Modifier
 ) {
   var selectedYear by remember { mutableStateOf("All") }
@@ -87,17 +91,44 @@ fun PastExamsScreen(
       color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
       modifier = Modifier.fillMaxWidth()
     ) {
-      Column(modifier = Modifier.padding(16.dp)) {
-        Text(
-          text = "Past-Year Examination Archive",
-          style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-          color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-          text = "Official university midterm & final examinations with verified answer keys and digitized test practice.",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+      Row(
+        modifier = Modifier.padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = "Past-Year Examination Archive",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSurface
+          )
+          Text(
+            text = "Official university midterm & final examinations with verified answer keys and digitized test practice.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+        }
+        if (onRefreshCloud != null) {
+          Spacer(modifier = Modifier.width(8.dp))
+          IconButton(
+            onClick = onRefreshCloud,
+            enabled = !isRefreshing,
+            modifier = Modifier.testTag("past_exams_refresh_button")
+          ) {
+            if (isRefreshing) {
+              CircularProgressIndicator(
+                modifier = Modifier.size(22.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary
+              )
+            } else {
+              Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Sync Exams from Cloud",
+                tint = MaterialTheme.colorScheme.primary
+              )
+            }
+          }
+        }
       }
     }
 

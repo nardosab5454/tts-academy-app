@@ -67,12 +67,15 @@ import com.example.ui.theme.SuccessGreen
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.IconButton
 
 @Composable
 fun CoursesScreen(
   courses: List<CourseEntity>,
   onCourseClick: (CourseEntity) -> Unit,
+  onRefreshCloud: () -> Unit = {},
+  isRefreshing: Boolean = false,
   modifier: Modifier = Modifier
 ) {
   var selectedCategory by remember { mutableStateOf("All") }
@@ -139,6 +142,41 @@ fun CoursesScreen(
             selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
           )
         )
+      }
+    }
+
+    // Courses Header with Sync Indicator
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 4.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Text(
+        text = "Available Courses (${filteredCourses.size})",
+        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+        color = MaterialTheme.colorScheme.onSurface
+      )
+      IconButton(
+        onClick = onRefreshCloud,
+        enabled = !isRefreshing,
+        modifier = Modifier.size(36.dp).testTag("refresh_courses_button")
+      ) {
+        if (isRefreshing) {
+          CircularProgressIndicator(
+            modifier = Modifier.size(18.dp),
+            strokeWidth = 2.dp,
+            color = MaterialTheme.colorScheme.primary
+          )
+        } else {
+          Icon(
+            imageVector = Icons.Default.Refresh,
+            contentDescription = "Sync from Cloud",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+          )
+        }
       }
     }
 

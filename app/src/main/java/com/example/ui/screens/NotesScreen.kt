@@ -24,10 +24,12 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -69,6 +71,8 @@ fun NotesScreen(
   onUnlockClick: () -> Unit = {},
   isNoteDownloaded: ((NoteEntity) -> Boolean)? = null,
   onDownloadNote: ((NoteEntity) -> Unit)? = null,
+  onRefreshCloud: (() -> Unit)? = null,
+  isRefreshing: Boolean = false,
   modifier: Modifier = Modifier
 ) {
   var searchQuery by remember { mutableStateOf("") }
@@ -128,19 +132,48 @@ fun NotesScreen(
       }
     }
 
-    // Search Bar
-    OutlinedTextField(
-      value = searchQuery,
-      onValueChange = { searchQuery = it },
-      placeholder = { Text("Search notes, definitions, formulas...") },
-      leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-      singleLine = true,
-      shape = RoundedCornerShape(12.dp),
+    // Search Bar with Cloud Sync Refresh Action
+    Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 16.dp, vertical = 8.dp)
-        .testTag("notes_search_input")
-    )
+        .padding(horizontal = 16.dp, vertical = 8.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      OutlinedTextField(
+        value = searchQuery,
+        onValueChange = { searchQuery = it },
+        placeholder = { Text("Search notes, definitions, formulas...") },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+          .weight(1f)
+          .testTag("notes_search_input")
+      )
+
+      if (onRefreshCloud != null) {
+        Spacer(modifier = Modifier.width(8.dp))
+        IconButton(
+          onClick = onRefreshCloud,
+          enabled = !isRefreshing,
+          modifier = Modifier.testTag("notes_refresh_button")
+        ) {
+          if (isRefreshing) {
+            CircularProgressIndicator(
+              modifier = Modifier.size(22.dp),
+              strokeWidth = 2.dp,
+              color = MaterialTheme.colorScheme.primary
+            )
+          } else {
+            Icon(
+              imageVector = Icons.Default.Refresh,
+              contentDescription = "Sync Notes from Cloud",
+              tint = MaterialTheme.colorScheme.primary
+            )
+          }
+        }
+      }
+    }
 
     // Course Filter Chips
     LazyRow(

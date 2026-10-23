@@ -33,8 +33,10 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -231,6 +233,8 @@ fun DetailTopBar(
   onBackClick: () -> Unit,
   isBookmarked: Boolean = false,
   onBookmarkClick: (() -> Unit)? = null,
+  onRefreshClick: (() -> Unit)? = null,
+  isRefreshing: Boolean = false,
   modifier: Modifier = Modifier
 ) {
   Surface(
@@ -276,6 +280,28 @@ fun DetailTopBar(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
           )
+        }
+      }
+
+      if (onRefreshClick != null) {
+        IconButton(
+          onClick = onRefreshClick,
+          enabled = !isRefreshing,
+          modifier = Modifier.testTag("detail_refresh_button")
+        ) {
+          if (isRefreshing) {
+            CircularProgressIndicator(
+              modifier = Modifier.size(20.dp),
+              strokeWidth = 2.dp,
+              color = MaterialTheme.colorScheme.primary
+            )
+          } else {
+            Icon(
+              imageVector = Icons.Default.Refresh,
+              contentDescription = "Sync from Cloud",
+              tint = MaterialTheme.colorScheme.primary
+            )
+          }
         }
       }
 

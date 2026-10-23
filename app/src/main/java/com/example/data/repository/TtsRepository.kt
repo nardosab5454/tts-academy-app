@@ -353,11 +353,33 @@ class TtsRepository(
         Log.e("TtsRepository", "Cloud seed check error", e)
       }
     }
+
+    // 9. Periodic cloud pull to ensure updates propagate even if background socket connection paused
+    scope.launch(Dispatchers.IO) {
+      while (true) {
+        kotlinx.coroutines.delay(20000L) // every 20 seconds
+        try {
+          syncFromCloudNow()
+        } catch (_: Exception) {}
+      }
+    }
   }
 
   suspend fun syncFromCloudNow() = withContext(Dispatchers.IO) {
     val fs = firestoreRepository ?: return@withContext
-    if (!isNetworkConnected()) return@withContext
+    // Sync Announcements
+    try {
+      val announcements = fs.fetchLatestAnnouncements().getOrNull()
+      if (!announcements.isNullOrEmpty()) {
+        val entities = announcements.map { it.toEntity() }
+        announcementDao.insertAnnouncements(entities)
+        announcementDao.deleteAnnouncementsNotIn(entities.map { it.id })
+      }
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Announcements sync error", e)
+    }
+
+    // Sync Courses
     try {
       val courses = fs.fetchLatestCourses().getOrNull()
       if (!courses.isNullOrEmpty()) {
@@ -365,12 +387,24 @@ class TtsRepository(
         courseDao.insertCourses(entities)
         courseDao.deleteCoursesNotIn(entities.map { it.id })
       }
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Courses sync error", e)
+    }
+
+    // Sync Sections / Topics
+    try {
       val topics = fs.fetchLatestTopics().getOrNull()
       if (!topics.isNullOrEmpty()) {
         val entities = topics.map { it.toEntity() }
         topicDao.insertTopics(entities)
         topicDao.deleteTopicsNotIn(entities.map { it.id })
       }
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Topics sync error", e)
+    }
+
+    // Sync Questions
+    try {
       val questions = fs.fetchLatestQuestions().getOrNull()
       if (!questions.isNullOrEmpty()) {
         val entities = questions.map { it.toEntity() }
@@ -380,6 +414,12 @@ class TtsRepository(
           courseDao.recalculateCounts(cId)
         }
       }
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Questions sync error", e)
+    }
+
+    // Sync Revision Notes
+    try {
       val notes = fs.fetchLatestNotes().getOrNull()
       if (!notes.isNullOrEmpty()) {
         val entities = notes.map { it.toEntity() }
@@ -389,20 +429,20 @@ class TtsRepository(
           courseDao.recalculateCounts(cId)
         }
       }
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Notes sync error", e)
+    }
+
+    // Sync Past Exams
+    try {
       val exams = fs.fetchLatestPastExams().getOrNull()
       if (!exams.isNullOrEmpty()) {
         val entities = exams.map { it.toEntity() }
         pastExamDao.insertPastExams(entities)
         pastExamDao.deletePastExamsNotIn(entities.map { it.id })
       }
-      val announcements = fs.fetchLatestAnnouncements().getOrNull()
-      if (!announcements.isNullOrEmpty()) {
-        val entities = announcements.map { it.toEntity() }
-        announcementDao.insertAnnouncements(entities)
-        announcementDao.deleteAnnouncementsNotIn(entities.map { it.id })
-      }
     } catch (e: Exception) {
-      Log.e("TtsRepository", "Failed explicit cloud sync", e)
+      Log.e("TtsRepository", "Past exams sync error", e)
     }
   }
 
@@ -717,25 +757,27 @@ class TtsRepository(
   }
 
   suspend fun saveCourse(course: CourseEntity) = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to save courses to central database.")
+    firestoreRepository?.let { fs ->
+      val res = fs.saveCourse(course)
+      if (res.isFailure) {
+        val err = res.exceptionOrNull()?.message ?: "Unknown cloud write failure"
+        throw IllegalStateException("Failed to publish course to central database: $err")
+      }
     }
-    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
-    val res = fs.saveCourse(course)
-    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to save course to cloud database.")
     courseDao.insertCourse(course)
   }
 
   suspend fun deleteCourse(courseId: String) = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to delete courses from central database.")
-    }
-    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
-    val res = fs.deleteCourse(courseId)
-    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete course from cloud database.")
-    val courseTopics = topicDao.getTopicsForCourse(courseId)
-    courseTopics.forEach { topic ->
-      try { fs.deleteTopic(topic.id) } catch (_: Exception) {}
+    firestoreRepository?.let { fs ->
+      val res = fs.deleteCourse(courseId)
+      if (res.isFailure) {
+        val err = res.exceptionOrNull()?.message ?: "Unknown cloud error"
+        throw IllegalStateException("Failed to delete course from central database: $err")
+      }
+      val courseTopics = topicDao.getTopicsForCourse(courseId)
+      courseTopics.forEach { topic ->
+        try { fs.deleteTopic(topic.id) } catch (_: Exception) {}
+      }
     }
     courseDao.deleteCourse(courseId)
     questionDao.deleteQuestionsForCourse(courseId)
@@ -747,22 +789,24 @@ class TtsRepository(
   fun getAllTopicsFlow(): Flow<List<TopicEntity>> = topicDao.getAllTopicsFlow()
 
   suspend fun saveTopic(topic: TopicEntity) = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to save sections to central database.")
+    firestoreRepository?.let { fs ->
+      val res = fs.saveTopic(topic)
+      if (res.isFailure) {
+        val err = res.exceptionOrNull()?.message ?: "Unknown cloud write failure"
+        throw IllegalStateException("Failed to publish section to central database: $err")
+      }
     }
-    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
-    val res = fs.saveTopic(topic)
-    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to save section to central database.")
     topicDao.insertTopic(topic)
   }
 
   suspend fun deleteTopic(topicId: String) = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to delete sections from central database.")
+    firestoreRepository?.let { fs ->
+      val res = fs.deleteTopic(topicId)
+      if (res.isFailure) {
+        val err = res.exceptionOrNull()?.message ?: "Unknown cloud error"
+        throw IllegalStateException("Failed to delete section from central database: $err")
+      }
     }
-    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
-    val res = fs.deleteTopic(topicId)
-    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete section from central database.")
     topicDao.deleteTopic(topicId)
   }
 
@@ -790,23 +834,25 @@ class TtsRepository(
   }
 
   suspend fun saveQuestion(question: QuestionEntity) = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to save questions to central database.")
+    firestoreRepository?.let { fs ->
+      val res = fs.saveQuestion(question)
+      if (res.isFailure) {
+        val err = res.exceptionOrNull()?.message ?: "Unknown cloud write failure"
+        throw IllegalStateException("Failed to publish question to central database: $err")
+      }
     }
-    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
-    val res = fs.saveQuestion(question)
-    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to save question to central database.")
     questionDao.insertQuestion(question)
     courseDao.recalculateCounts(question.courseId)
   }
 
   suspend fun deleteQuestion(questionId: String, courseId: String? = null) = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to delete questions from central database.")
+    firestoreRepository?.let { fs ->
+      val res = fs.deleteQuestion(questionId)
+      if (res.isFailure) {
+        val err = res.exceptionOrNull()?.message ?: "Unknown cloud error"
+        throw IllegalStateException("Failed to delete question from central database: $err")
+      }
     }
-    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
-    val res = fs.deleteQuestion(questionId)
-    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete question from central database.")
     val q = if (courseId == null) questionDao.getQuestionById(questionId) else null
     val targetCourseId = courseId ?: q?.courseId
     questionDao.deleteQuestion(questionId)
@@ -824,28 +870,34 @@ class TtsRepository(
     noteDao.getNoteById(id)
   }
 
+  suspend fun getNotesForCourse(courseId: String): List<NoteEntity> = withContext(Dispatchers.IO) {
+    noteDao.getNotesForCourse(courseId)
+  }
+
   suspend fun searchNotes(query: String): List<NoteEntity> = withContext(Dispatchers.IO) {
     noteDao.searchNotes(query)
   }
 
   suspend fun saveNote(note: NoteEntity) = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to save notes to central database.")
+    firestoreRepository?.let { fs ->
+      val res = fs.saveNote(note)
+      if (res.isFailure) {
+        val err = res.exceptionOrNull()?.message ?: "Unknown cloud write failure"
+        throw IllegalStateException("Failed to publish revision note to central database: $err")
+      }
     }
-    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
-    val res = fs.saveNote(note)
-    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to save revision note to central database.")
     noteDao.insertNote(note)
     courseDao.recalculateCounts(note.courseId)
   }
 
   suspend fun deleteNote(noteId: String, courseId: String? = null) = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to delete notes from central database.")
+    firestoreRepository?.let { fs ->
+      val res = fs.deleteNote(noteId)
+      if (res.isFailure) {
+        val err = res.exceptionOrNull()?.message ?: "Unknown cloud error"
+        throw IllegalStateException("Failed to delete revision note from central database: $err")
+      }
     }
-    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
-    val res = fs.deleteNote(noteId)
-    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete note from central database.")
     val n = if (courseId == null) noteDao.getNoteById(noteId) else null
     val targetCourseId = courseId ?: n?.courseId
     noteDao.deleteNote(noteId)
@@ -864,22 +916,24 @@ class TtsRepository(
   }
 
   suspend fun savePastExam(exam: PastExamEntity) = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to publish past exams to central database.")
+    firestoreRepository?.let { fs ->
+      val res = fs.savePastExam(exam)
+      if (res.isFailure) {
+        val err = res.exceptionOrNull()?.message ?: "Unknown cloud write failure"
+        throw IllegalStateException("Failed to publish past exam to central database: $err")
+      }
     }
-    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
-    val res = fs.savePastExam(exam)
-    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to save past exam to central database.")
     pastExamDao.insertPastExam(exam)
   }
 
   suspend fun deletePastExam(examId: String) = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to delete past exams from central database.")
+    firestoreRepository?.let { fs ->
+      val res = fs.deletePastExam(examId)
+      if (res.isFailure) {
+        val err = res.exceptionOrNull()?.message ?: "Unknown cloud error"
+        throw IllegalStateException("Failed to delete past exam from central database: $err")
+      }
     }
-    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
-    val res = fs.deletePastExam(examId)
-    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete past exam from central database.")
     pastExamDao.deletePastExam(examId)
   }
 
@@ -974,22 +1028,24 @@ class TtsRepository(
   fun getAllAnnouncementsFlow(): Flow<List<AnnouncementEntity>> = announcementDao.getAllAnnouncementsFlow()
 
   suspend fun saveAnnouncement(announcement: AnnouncementEntity) = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to broadcast announcements.")
+    firestoreRepository?.let { fs ->
+      val res = fs.saveAnnouncement(announcement)
+      if (res.isFailure) {
+        val err = res.exceptionOrNull()?.message ?: "Unknown cloud write failure"
+        throw IllegalStateException("Failed to broadcast announcement to central cloud database: $err")
+      }
     }
-    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
-    val res = fs.saveAnnouncement(announcement)
-    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to save announcement to cloud database.")
     announcementDao.insertAnnouncement(announcement)
   }
 
   suspend fun deleteAnnouncement(id: String) = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to delete announcements.")
+    firestoreRepository?.let { fs ->
+      val res = fs.deleteAnnouncement(id)
+      if (res.isFailure) {
+        val err = res.exceptionOrNull()?.message ?: "Unknown cloud delete failure"
+        throw IllegalStateException("Failed to delete announcement from central cloud database: $err")
+      }
     }
-    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
-    val res = fs.deleteAnnouncement(id)
-    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete announcement from cloud database.")
     announcementDao.deleteAnnouncement(id)
   }
 
@@ -1247,6 +1303,7 @@ class TtsRepository(
   suspend fun resetDatabase() = withContext(Dispatchers.IO) {
     AppDatabase.populateDatabase(database)
     initialize()
+    firestoreRepository?.let { seedDatabaseToCloud(it) }
   }
 
   // --- Offline Persistence & Cache Diagnostics ---

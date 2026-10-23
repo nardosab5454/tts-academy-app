@@ -230,6 +230,8 @@ fun SearchScreen(
 fun AnnouncementsScreen(
   announcements: List<AnnouncementEntity>,
   onBackClick: () -> Unit,
+  onRefreshCloud: () -> Unit = {},
+  isRefreshing: Boolean = false,
   modifier: Modifier = Modifier
 ) {
   Column(
@@ -240,7 +242,9 @@ fun AnnouncementsScreen(
     DetailTopBar(
       title = "Academic Announcements",
       subtitle = "Official Freshman Updates",
-      onBackClick = onBackClick
+      onBackClick = onBackClick,
+      onRefreshClick = onRefreshCloud,
+      isRefreshing = isRefreshing
     )
 
     if (announcements.isEmpty()) {

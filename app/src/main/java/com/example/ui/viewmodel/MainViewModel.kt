@@ -259,6 +259,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private val _isDownloading = MutableStateFlow(false)
   val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
 
+  private val _isSyncing = MutableStateFlow(false)
+  val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+  fun syncNow() {
+    viewModelScope.launch {
+      _isSyncing.value = true
+      try {
+        repository.syncFromCloudNow()
+        val qCount = allQuestions.value.size
+        val cCount = allCourses.value.size
+        showMessage("Synchronized with cloud database: $qCount questions, $cCount courses.")
+      } catch (e: Exception) {
+        showMessage("Sync failed: ${e.message}")
+      } finally {
+        _isSyncing.value = false
+      }
+    }
+  }
+
   init {
     repository.firestoreRepository = firestoreRepository
     viewModelScope.launch {
@@ -301,6 +320,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     if (_currentScreen.value != screen) {
       screenBackStack.add(_currentScreen.value)
       _currentScreen.value = screen
+      if (screen in listOf(Screen.ANNOUNCEMENTS, Screen.NOTES, Screen.COURSES, Screen.DASHBOARD, Screen.PAST_EXAMS)) {
+        viewModelScope.launch {
+          try {
+            repository.syncFromCloudNow()
+          } catch (_: Exception) {}
+        }
+      }
     }
   }
 
@@ -985,8 +1011,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       return
     }
     viewModelScope.launch {
-      repository.saveCourse(course)
-      showMessage("Course '${course.title}' saved successfully.")
+      try {
+        repository.saveCourse(course)
+        showMessage("Course '${course.title}' published to central cloud database.")
+      } catch (e: Exception) {
+        showMessage("Failed to save course: ${e.message}")
+      }
     }
   }
 
@@ -998,7 +1028,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deleteCourse(courseId)
-        showMessage("Course removed.")
+        showMessage("Course removed from central cloud database.")
       } catch (e: Exception) {
         showMessage("Failed to delete course: ${e.message}")
       }
@@ -1013,7 +1043,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.saveTopic(topic)
-        showMessage("Section '${topic.title}' saved successfully.")
+        showMessage("Section '${topic.title}' published to central cloud database.")
       } catch (e: Exception) {
         showMessage("Failed to save section: ${e.message}")
       }
@@ -1028,7 +1058,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deleteTopic(topicId)
-        showMessage("Section removed.")
+        showMessage("Section removed from central cloud database.")
       } catch (e: Exception) {
         showMessage("Failed to delete section: ${e.message}")
       }
@@ -1041,8 +1071,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       return
     }
     viewModelScope.launch {
-      repository.saveQuestion(question)
-      showMessage("Question saved successfully.")
+      try {
+        repository.saveQuestion(question)
+        showMessage("Question published to central cloud database & synced.")
+      } catch (e: Exception) {
+        showMessage("Failed to save question: ${e.message}")
+      }
     }
   }
 
@@ -1052,8 +1086,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       return
     }
     viewModelScope.launch {
-      repository.deleteQuestion(questionId)
-      showMessage("Question deleted.")
+      try {
+        repository.deleteQuestion(questionId)
+        showMessage("Question deleted from central cloud database.")
+      } catch (e: Exception) {
+        showMessage("Failed to delete question: ${e.message}")
+      }
     }
   }
 
@@ -1063,8 +1101,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       return
     }
     viewModelScope.launch {
-      repository.saveNote(note)
-      showMessage("Revision note '${note.title}' saved.")
+      try {
+        repository.saveNote(note)
+        showMessage("Revision note '${note.title}' published to central cloud database.")
+      } catch (e: Exception) {
+        showMessage("Failed to save note: ${e.message}")
+      }
     }
   }
 
@@ -1074,8 +1116,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       return
     }
     viewModelScope.launch {
-      repository.deleteNote(noteId)
-      showMessage("Note deleted.")
+      try {
+        repository.deleteNote(noteId)
+        showMessage("Note deleted from central cloud database.")
+      } catch (e: Exception) {
+        showMessage("Failed to delete note: ${e.message}")
+      }
     }
   }
 
@@ -1085,8 +1131,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       return
     }
     viewModelScope.launch {
-      repository.savePastExam(exam)
-      showMessage("Past exam '${exam.title}' published.")
+      try {
+        repository.savePastExam(exam)
+        showMessage("Past exam '${exam.title}' published to central cloud database.")
+      } catch (e: Exception) {
+        showMessage("Failed to publish past exam: ${e.message}")
+      }
     }
   }
 
@@ -1096,8 +1146,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       return
     }
     viewModelScope.launch {
-      repository.deletePastExam(examId)
-      showMessage("Past exam removed.")
+      try {
+        repository.deletePastExam(examId)
+        showMessage("Past exam removed from central cloud database.")
+      } catch (e: Exception) {
+        showMessage("Failed to delete past exam: ${e.message}")
+      }
     }
   }
 
@@ -1107,15 +1161,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       return
     }
     viewModelScope.launch {
-      val ann = AnnouncementEntity(
-        id = "ann_" + UUID.randomUUID().toString().take(8),
-        title = title.trim(),
-        message = message.trim(),
-        category = category,
-        isUrgent = isUrgent
-      )
-      repository.saveAnnouncement(ann)
-      showMessage("Announcement broadcasted to all students.")
+      try {
+        val ann = AnnouncementEntity(
+          id = "ann_" + UUID.randomUUID().toString().take(8),
+          title = title.trim(),
+          message = message.trim(),
+          category = category,
+          isUrgent = isUrgent
+        )
+        repository.saveAnnouncement(ann)
+        repository.syncFromCloudNow()
+        showMessage("Announcement broadcasted to all students & central cloud.")
+      } catch (e: Exception) {
+        showMessage("Failed to broadcast announcement: ${e.message}")
+      }
     }
   }
 
@@ -1125,8 +1184,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       return
     }
     viewModelScope.launch {
-      repository.deleteAnnouncement(id)
-      showMessage("Announcement removed.")
+      try {
+        repository.deleteAnnouncement(id)
+        repository.syncFromCloudNow()
+        showMessage("Announcement removed from central cloud database.")
+      } catch (e: Exception) {
+        showMessage("Failed to remove announcement: ${e.message}")
+      }
     }
   }
 

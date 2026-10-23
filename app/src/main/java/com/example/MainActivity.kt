@@ -145,6 +145,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
   val allTopics by viewModel.allTopics.collectAsStateWithLifecycle()
   val downloadedKeys by viewModel.downloadedKeys.collectAsStateWithLifecycle()
   val isDownloading by viewModel.isDownloading.collectAsStateWithLifecycle()
+  val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
 
   val context = LocalContext.current
   val snackbarHostState = remember { SnackbarHostState() }
@@ -293,7 +294,9 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               performLockedAction(course.title, "COURSE", course.id, course.id) {
                 viewModel.selectCourse(course)
               }
-            }
+            },
+            onRefreshCloud = { viewModel.syncNow() },
+            isRefreshing = isSyncing
           )
         }
 
@@ -430,7 +433,9 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             },
             isExamDownloaded = { exam ->
               viewModel.isDownloaded("EXAM", exam.id, exam.courseId)
-            }
+            },
+            onRefreshCloud = { viewModel.syncNow() },
+            isRefreshing = isSyncing
           )
         }
 
@@ -474,7 +479,9 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             onDownloadNote = { note ->
               val course = publishedCourses.find { it.id == note.courseId }
               viewModel.downloadNote(note, course)
-            }
+            },
+            onRefreshCloud = { viewModel.syncNow() },
+            isRefreshing = isSyncing
           )
         }
 
@@ -575,7 +582,9 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
         Screen.ANNOUNCEMENTS -> {
           AnnouncementsScreen(
             announcements = announcements,
-            onBackClick = { viewModel.navigateBack() }
+            onBackClick = { viewModel.navigateBack() },
+            onRefreshCloud = { viewModel.syncNow() },
+            isRefreshing = isSyncing
           )
         }
 
@@ -630,7 +639,9 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               onGenerateCode = { note, format, customCode, onResult ->
                 viewModel.generateAccessCode(note, format, customCode, onResult)
               },
-              onDeleteCode = { code -> viewModel.deleteAccessCode(code) }
+              onDeleteCode = { code -> viewModel.deleteAccessCode(code) },
+              onSyncCloud = { viewModel.syncNow() },
+              isSyncing = isSyncing
             )
           } else {
             LaunchedEffect(Unit) {

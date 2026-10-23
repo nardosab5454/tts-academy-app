@@ -15,7 +15,7 @@ import com.google.firebase.firestore.ServerTimestamp
 
 @IgnoreExtraProperties
 data class FirestoreUserProfile(
-  @DocumentId val id: String = "",
+  val id: String = "",
   val userId: String = "",
   val email: String = "",
   val name: String = "",
@@ -52,7 +52,7 @@ data class FirestoreUserProfile(
 
 @IgnoreExtraProperties
 data class FirestoreAnnouncement(
-  @DocumentId val id: String = "",
+  val id: String = "",
   val title: String = "",
   val content: String = "",
   val category: String = "GENERAL",
@@ -76,7 +76,7 @@ data class FirestoreAnnouncement(
 
 @IgnoreExtraProperties
 data class FirestoreCourse(
-  @DocumentId val id: String = "",
+  val id: String = "",
   val code: String = "",
   val title: String = "",
   val description: String = "",
@@ -107,7 +107,7 @@ data class FirestoreCourse(
 
 @IgnoreExtraProperties
 data class FirestoreTopic(
-  @DocumentId val id: String = "",
+  val id: String = "",
   val courseId: String = "",
   val title: String = "",
   val description: String = "",
@@ -138,7 +138,7 @@ fun TopicEntity.toFirestore(): FirestoreTopic {
 
 @IgnoreExtraProperties
 data class FirestoreQuestion(
-  @DocumentId val id: String = "",
+  val id: String = "",
   val courseId: String = "",
   val topicId: String = "T_GEN",
   val questionText: String = "",
@@ -188,7 +188,7 @@ data class FirestoreQuestion(
 
 @IgnoreExtraProperties
 data class FirestoreNote(
-  @DocumentId val id: String = "",
+  val id: String = "",
   val courseId: String = "",
   val topicId: String = "T_GEN",
   val title: String = "",
@@ -215,7 +215,7 @@ data class FirestoreNote(
 
 @IgnoreExtraProperties
 data class FirestorePastExam(
-  @DocumentId val id: String = "",
+  val id: String = "",
   val courseId: String = "",
   val academicYear: String = "",
   val semester: String = "Semester 1",
@@ -251,7 +251,7 @@ data class FirestorePastExam(
 
 @IgnoreExtraProperties
 data class FirestoreAccessCode(
-  @DocumentId val code: String = "",
+  val code: String = "",
   val createdByAdminId: String = "admin_1",
   val isRedeemed: Boolean = false,
   val redeemedByUserId: String = "",
@@ -276,7 +276,7 @@ data class FirestoreAccessCode(
 
 @IgnoreExtraProperties
 data class FirestoreQuizAttempt(
-  @DocumentId val id: String = "",
+  val id: String = "",
   val userId: String = "",
   val courseId: String = "",
   val topicId: String = "",
@@ -288,7 +288,7 @@ data class FirestoreQuizAttempt(
 
 @IgnoreExtraProperties
 data class FirestoreBookmark(
-  @DocumentId val id: String = "",
+  val id: String = "",
   val userId: String = "",
   val questionId: String = "",
   val courseId: String = "",
@@ -298,7 +298,7 @@ data class FirestoreBookmark(
 
 @IgnoreExtraProperties
 data class FirestoreStudyNote(
-  @DocumentId val id: String = "",
+  val id: String = "",
   val userId: String = "",
   val courseId: String = "",
   val title: String = "",

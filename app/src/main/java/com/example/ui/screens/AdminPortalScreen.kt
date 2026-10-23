@@ -33,6 +33,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -109,6 +110,8 @@ fun AdminPortalScreen(
   onDeleteAnnouncement: (String) -> Unit = {},
   onGenerateCode: (String, String, String?, (String) -> Unit) -> Unit = { _, _, _, _ -> },
   onDeleteCode: (String) -> Unit = {},
+  onSyncCloud: () -> Unit = {},
+  isSyncing: Boolean = false,
   modifier: Modifier = Modifier
 ) {
   var selectedTab by remember { mutableIntStateOf(0) }
@@ -142,7 +145,9 @@ fun AdminPortalScreen(
     DetailTopBar(
       title = "Administrator Portal",
       subtitle = "Curriculum, Content & Roles Management",
-      onBackClick = onBackClick
+      onBackClick = onBackClick,
+      onRefreshClick = onSyncCloud,
+      isRefreshing = isSyncing
     )
 
     ScrollableTabRow(
@@ -159,7 +164,7 @@ fun AdminPortalScreen(
     }
 
     when (selectedTab) {
-      0 -> AdminOverviewTab(courses, allUsers, announcements, accessCodes, onResetSeedData)
+      0 -> AdminOverviewTab(courses, allUsers, announcements, accessCodes, onResetSeedData, onSyncCloud, isSyncing)
       1 -> AdminCoursesTab(
         courses = courses,
         questions = questions,
@@ -415,7 +420,9 @@ private fun AdminOverviewTab(
   users: List<UserEntity>,
   announcements: List<AnnouncementEntity>,
   accessCodes: List<AccessCodeEntity> = emptyList(),
-  onResetSeedData: () -> Unit
+  onResetSeedData: () -> Unit,
+  onSyncCloud: () -> Unit = {},
+  isSyncing: Boolean = false
 ) {
   var showResetConfirm by remember { mutableStateOf(false) }
   val studentUsers = users.filter { it.role == "STUDENT" }
@@ -454,15 +461,67 @@ private fun AdminOverviewTab(
     item {
       Card(
         shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)),
+        elevation = CardDefaults.cardElevation(2.dp),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            Icon(
+              imageVector = Icons.Default.Refresh,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary
+            )
+            Text(
+              "Central Cloud Database (Multi-Device)",
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+            )
+          }
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(
+            text = "Changes made here (new courses, questions, notes, and past exams) persist directly to Firestore cloud database and sync in real time across all user devices (PC, Android phones, and tablets).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+          Spacer(modifier = Modifier.height(14.dp))
+          Button(
+            onClick = onSyncCloud,
+            enabled = !isSyncing,
+            modifier = Modifier.testTag("admin_sync_cloud_button")
+          ) {
+            if (isSyncing) {
+              CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.onPrimary
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text("Synchronizing with Cloud...")
+            } else {
+              Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Synchronize with Central Cloud")
+            }
+          }
+        }
+      }
+    }
+
+    item {
+      Card(
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(2.dp),
         modifier = Modifier.fillMaxWidth()
       ) {
         Column(modifier = Modifier.padding(18.dp)) {
-          Text("Academic Database Management", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+          Text("Academic Factory Data Management", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
           Spacer(modifier = Modifier.height(8.dp))
           Text(
-            text = "The TTS Academy curriculum database contains 12 freshman university courses, pre-seeded past exams, and question banks. Administrators can add new courses, questions with explanations, revision notes, and past exams at any time without updating the app.",
+            text = "The TTS Academy factory curriculum contains 12 freshman university courses, pre-seeded past exams, and question banks. Resetting re-populates the cloud and local databases with fresh baseline data.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
