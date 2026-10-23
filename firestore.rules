@@ -100,6 +100,12 @@ service cloud.firestore {
       allow create, update, delete: if true;
     }
 
+    // Course Sections / Topics (public read, real-time sync across all devices)
+    match /topics/{topicId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
     // Questions & past exam questions (public read, real-time sync across all devices)
     match /questions/{questionId} {
       allow read: if true;

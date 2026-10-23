@@ -6,6 +6,7 @@ import com.example.data.local.model.CourseEntity
 import com.example.data.local.model.NoteEntity
 import com.example.data.local.model.PastExamEntity
 import com.example.data.local.model.QuestionEntity
+import com.example.data.local.model.TopicEntity
 import com.example.data.local.model.UserEntity
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
@@ -105,6 +106,37 @@ data class FirestoreCourse(
 }
 
 @IgnoreExtraProperties
+data class FirestoreTopic(
+  @DocumentId val id: String = "",
+  val courseId: String = "",
+  val title: String = "",
+  val description: String = "",
+  val orderIndex: Long = 0L,
+  @ServerTimestamp val createdAt: Timestamp? = null,
+  @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+  fun toEntity(): TopicEntity {
+    return TopicEntity(
+      id = id,
+      courseId = courseId,
+      title = title,
+      description = description,
+      orderIndex = orderIndex.toInt()
+    )
+  }
+}
+
+fun TopicEntity.toFirestore(): FirestoreTopic {
+  return FirestoreTopic(
+    id = id,
+    courseId = courseId,
+    title = title,
+    description = description,
+    orderIndex = orderIndex.toLong()
+  )
+}
+
+@IgnoreExtraProperties
 data class FirestoreQuestion(
   @DocumentId val id: String = "",
   val courseId: String = "",
@@ -158,6 +190,7 @@ data class FirestoreQuestion(
 data class FirestoreNote(
   @DocumentId val id: String = "",
   val courseId: String = "",
+  val topicId: String = "T_GEN",
   val title: String = "",
   val summary: String = "",
   val keyFormulas: String = "",
@@ -170,7 +203,7 @@ data class FirestoreNote(
     return NoteEntity(
       id = id,
       courseId = courseId,
-      topicId = "T_GEN",
+      topicId = topicId.ifBlank { "T_GEN" },
       title = title,
       summary = summary,
       keyFormulas = keyFormulas,

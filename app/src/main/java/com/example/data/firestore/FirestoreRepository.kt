@@ -12,6 +12,7 @@ import com.example.data.firestore.model.FirestorePastExam
 import com.example.data.firestore.model.FirestoreQuestion
 import com.example.data.firestore.model.FirestoreQuizAttempt
 import com.example.data.firestore.model.FirestoreStudyNote
+import com.example.data.firestore.model.FirestoreTopic
 import com.example.data.firestore.model.FirestoreUserProfile
 import com.example.data.local.model.AccessCodeEntity
 import com.example.data.local.model.AnnouncementEntity
@@ -19,6 +20,7 @@ import com.example.data.local.model.CourseEntity
 import com.example.data.local.model.NoteEntity
 import com.example.data.local.model.PastExamEntity
 import com.example.data.local.model.QuestionEntity
+import com.example.data.local.model.TopicEntity
 import com.example.data.local.model.UserEntity
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
@@ -277,6 +279,62 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     }
   }
 
+  // --- Sections / Topics Sync ---
+
+  fun observeTopics(): Flow<List<FirestoreTopic>> {
+    val colRef = db.collection("topics")
+    return colRef.snapshots().map { snapshot ->
+      snapshot.toObjects(FirestoreTopic::class.java)
+    }.catch { error ->
+      if (error is Exception) handleFirestoreError(error, OperationType.LIST, colRef.path)
+      emit(emptyList())
+    }
+  }
+
+  fun observeTopicsForCourse(courseId: String): Flow<List<FirestoreTopic>> {
+    val colRef = db.collection("topics")
+    return colRef.whereEqualTo("courseId", courseId).snapshots().map { snapshot ->
+      snapshot.toObjects(FirestoreTopic::class.java)
+    }.catch { error ->
+      if (error is Exception) handleFirestoreError(error, OperationType.LIST, colRef.path)
+      emit(emptyList())
+    }
+  }
+
+  suspend fun saveTopic(topic: TopicEntity): Result<Unit> = withContext(Dispatchers.IO) {
+    val docRef = db.collection("topics").document(topic.id)
+    try {
+      val payload = hashMapOf<String, Any>(
+        "id" to topic.id,
+        "courseId" to topic.courseId,
+        "title" to topic.title,
+        "description" to topic.description,
+        "orderIndex" to topic.orderIndex.toLong(),
+        "updatedAt" to FieldValue.serverTimestamp()
+      )
+      docRef.set(payload, SetOptions.merge()).await()
+      Result.success(Unit)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      Result.failure(e)
+    }
+  }
+
+  suspend fun deleteTopic(id: String): Result<Unit> = withContext(Dispatchers.IO) {
+    val docRef = db.collection("topics").document(id)
+    try {
+      docRef.delete().await()
+      Result.success(Unit)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.DELETE, docRef.path)
+      Result.failure(e)
+    }
+  }
+
   // --- Questions Sync ---
 
   fun observeQuestions(): Flow<List<FirestoreQuestion>> {
@@ -356,6 +414,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
       val payload = hashMapOf<String, Any>(
         "id" to note.id,
         "courseId" to note.courseId,
+        "topicId" to note.topicId,
         "title" to note.title,
         "summary" to note.summary,
         "keyFormulas" to note.keyFormulas,
@@ -664,6 +723,15 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     try {
       val snap = db.collection("past_exams").get().await()
       Result.success(snap.toObjects(FirestorePastExam::class.java))
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun fetchLatestTopics(): Result<List<FirestoreTopic>> = withContext(Dispatchers.IO) {
+    try {
+      val snap = db.collection("topics").get().await()
+      Result.success(snap.toObjects(FirestoreTopic::class.java))
     } catch (e: Exception) {
       Result.failure(e)
     }

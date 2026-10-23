@@ -262,6 +262,21 @@ class TtsRepository(
       }
     }
 
+    // 3b. Live stream of course sections/topics from cloud Firestore to local Room
+    scope.launch(Dispatchers.IO) {
+      try {
+        fs.observeTopics().collect { cloudTopics ->
+          if (cloudTopics.isNotEmpty()) {
+            val entities = cloudTopics.map { it.toEntity() }
+            topicDao.insertTopics(entities)
+            topicDao.deleteTopicsNotIn(entities.map { it.id })
+          }
+        }
+      } catch (e: Exception) {
+        Log.e("TtsRepository", "Cloud topics stream error", e)
+      }
+    }
+
     // 4. Live stream of questions from cloud Firestore to local Room
     scope.launch(Dispatchers.IO) {
       try {
@@ -350,6 +365,12 @@ class TtsRepository(
         courseDao.insertCourses(entities)
         courseDao.deleteCoursesNotIn(entities.map { it.id })
       }
+      val topics = fs.fetchLatestTopics().getOrNull()
+      if (!topics.isNullOrEmpty()) {
+        val entities = topics.map { it.toEntity() }
+        topicDao.insertTopics(entities)
+        topicDao.deleteTopicsNotIn(entities.map { it.id })
+      }
       val questions = fs.fetchLatestQuestions().getOrNull()
       if (!questions.isNullOrEmpty()) {
         val entities = questions.map { it.toEntity() }
@@ -389,6 +410,10 @@ class TtsRepository(
     try {
       val courses = courseDao.getAllCourses()
       courses.forEach { fs.saveCourse(it) }
+
+      val topics = topicDao.getAllTopics()
+      val effectiveTopics = if (topics.isNotEmpty()) topics else SeedData.getTopics()
+      effectiveTopics.forEach { fs.saveTopic(it) }
 
       val questions = questionDao.getAllQuestions()
       questions.forEach { fs.saveQuestion(it) }
@@ -708,6 +733,10 @@ class TtsRepository(
     val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
     val res = fs.deleteCourse(courseId)
     if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete course from cloud database.")
+    val courseTopics = topicDao.getTopicsForCourse(courseId)
+    courseTopics.forEach { topic ->
+      try { fs.deleteTopic(topic.id) } catch (_: Exception) {}
+    }
     courseDao.deleteCourse(courseId)
     questionDao.deleteQuestionsForCourse(courseId)
     noteDao.deleteNotesForCourse(courseId)
@@ -715,11 +744,25 @@ class TtsRepository(
     pastExamDao.deletePastExamsForCourse(courseId)
   }
 
+  fun getAllTopicsFlow(): Flow<List<TopicEntity>> = topicDao.getAllTopicsFlow()
+
   suspend fun saveTopic(topic: TopicEntity) = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      throw IllegalStateException("Active internet connection required to save sections to central database.")
+    }
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val res = fs.saveTopic(topic)
+    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to save section to central database.")
     topicDao.insertTopic(topic)
   }
 
   suspend fun deleteTopic(topicId: String) = withContext(Dispatchers.IO) {
+    if (!isNetworkConnected()) {
+      throw IllegalStateException("Active internet connection required to delete sections from central database.")
+    }
+    val fs = firestoreRepository ?: throw IllegalStateException("Cloud repository unavailable.")
+    val res = fs.deleteTopic(topicId)
+    if (res.isFailure) throw res.exceptionOrNull() ?: Exception("Failed to delete section from central database.")
     topicDao.deleteTopic(topicId)
   }
 

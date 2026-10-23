@@ -68,6 +68,7 @@ import com.example.data.local.model.CourseEntity
 import com.example.data.local.model.NoteEntity
 import com.example.data.local.model.PastExamEntity
 import com.example.data.local.model.QuestionEntity
+import com.example.data.local.model.TopicEntity
 import com.example.ui.theme.AcademicBluePrimary
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
@@ -184,6 +185,389 @@ fun AdminCourseSelector(
       }
     }
   }
+}
+
+/**
+ * Universal Section (Topic) Selector Dropdown for Admin Panel.
+ * Allows administrators to assign questions and notes to specific sections within a course.
+ */
+@Composable
+fun AdminSectionSelector(
+  sections: List<TopicEntity>,
+  selectedSectionId: String,
+  onSectionSelected: (String) -> Unit,
+  onAddNewSection: (() -> Unit)? = null,
+  modifier: Modifier = Modifier
+) {
+  var isExpanded by remember { mutableStateOf(false) }
+  val currentSection = sections.firstOrNull { it.id == selectedSectionId } ?: sections.firstOrNull()
+
+  Card(
+    shape = RoundedCornerShape(12.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+    modifier = modifier.fillMaxWidth()
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(10.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Column(modifier = Modifier.weight(1f)) {
+        Text(
+          "TARGET SECTION / TOPIC",
+          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+          color = AcademicCobalt
+        )
+        Text(
+          text = currentSection?.title ?: if (sections.isEmpty()) "No Sections Created Yet" else "Select Section",
+          style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+          color = MaterialTheme.colorScheme.onSurface
+        )
+      }
+
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (onAddNewSection != null) {
+          OutlinedButton(
+            onClick = onAddNewSection,
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+          ) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("+ Section", style = MaterialTheme.typography.labelSmall)
+          }
+        }
+
+        if (sections.isNotEmpty()) {
+          Box {
+            OutlinedButton(
+              onClick = { isExpanded = true },
+              shape = RoundedCornerShape(8.dp),
+              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+              Text("Choose", style = MaterialTheme.typography.labelSmall)
+              Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+            }
+
+            DropdownMenu(
+              expanded = isExpanded,
+              onDismissRequest = { isExpanded = false }
+            ) {
+              sections.forEach { section ->
+                DropdownMenuItem(
+                  text = {
+                    Column {
+                      Text(section.title, fontWeight = FontWeight.Bold)
+                      if (section.description.isNotBlank()) {
+                        Text(
+                          section.description,
+                          style = MaterialTheme.typography.bodySmall,
+                          color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                      }
+                    }
+                  },
+                  onClick = {
+                    onSectionSelected(section.id)
+                    isExpanded = false
+                  },
+                  leadingIcon = {
+                    if (section.id == selectedSectionId) {
+                      Icon(Icons.Default.Check, contentDescription = null, tint = SuccessGreen)
+                    }
+                  }
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Manage Course Sections / Topics Dialog
+ * Lists all sections within a course, allows adding, editing, and deleting sections.
+ */
+@Composable
+fun ManageSectionsDialog(
+  course: CourseEntity,
+  sections: List<TopicEntity>,
+  questions: List<QuestionEntity> = emptyList(),
+  notes: List<NoteEntity> = emptyList(),
+  onDismiss: () -> Unit,
+  onSaveSection: (TopicEntity) -> Unit,
+  onDeleteSection: (String) -> Unit
+) {
+  var editingSection by remember { mutableStateOf<TopicEntity?>(null) }
+  var showCreateSectionDialog by remember { mutableStateOf(false) }
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text("Manage Course Sections", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+          Text("${course.code} • ${course.title}", style = MaterialTheme.typography.bodySmall, color = AcademicCobalt)
+        }
+        IconButton(onClick = onDismiss) {
+          Icon(Icons.Default.Close, contentDescription = "Close")
+        }
+      }
+    },
+    text = {
+      Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(
+            "Sections (${sections.size})",
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+          )
+          Button(
+            onClick = { showCreateSectionDialog = true },
+            colors = ButtonDefaults.buttonColors(containerColor = AcademicBluePrimary),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+            shape = RoundedCornerShape(8.dp)
+          ) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Add Section", style = MaterialTheme.typography.labelSmall)
+          }
+        }
+
+        if (sections.isEmpty()) {
+          Card(
+            shape = RoundedCornerShape(10.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+              Text("No sections created for this course yet.", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+              Spacer(modifier = Modifier.height(4.dp))
+              Text("Click '+ Add Section' above to organize this course into study sections.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+        } else {
+          LazyColumn(
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(300.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            items(sections) { section ->
+              val qCount = questions.count { it.topicId == section.id }
+              val nCount = notes.count { it.topicId == section.id }
+
+              Card(
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text(section.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                    if (section.description.isNotBlank()) {
+                      Text(
+                        section.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2
+                      )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                      text = "$qCount questions • $nCount notes",
+                      style = MaterialTheme.typography.labelSmall,
+                      color = AcademicCobalt
+                    )
+                  }
+
+                  Row {
+                    IconButton(onClick = { editingSection = section }) {
+                      Icon(Icons.Default.Edit, contentDescription = "Edit Section", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(onClick = { onDeleteSection(section.id) }) {
+                      Icon(Icons.Default.Delete, contentDescription = "Delete Section", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    confirmButton = {
+      TextButton(onClick = onDismiss) {
+        Text("Done")
+      }
+    }
+  )
+
+  // Sub-dialog to create a new section
+  if (showCreateSectionDialog) {
+    CreateOrEditSectionDialog(
+      courseId = course.id,
+      existingSection = null,
+      existingCount = sections.size,
+      onDismiss = { showCreateSectionDialog = false },
+      onSave = { newSection ->
+        onSaveSection(newSection)
+        showCreateSectionDialog = false
+      }
+    )
+  }
+
+  // Sub-dialog to edit existing section
+  if (editingSection != null) {
+    CreateOrEditSectionDialog(
+      courseId = course.id,
+      existingSection = editingSection,
+      existingCount = sections.size,
+      onDismiss = { editingSection = null },
+      onSave = { updatedSection ->
+        onSaveSection(updatedSection)
+        editingSection = null
+      }
+    )
+  }
+}
+
+/**
+ * Dialog to Create or Edit a Course Section / Topic.
+ */
+@Composable
+fun CreateOrEditSectionDialog(
+  courseId: String,
+  existingSection: TopicEntity? = null,
+  existingCount: Int = 0,
+  onDismiss: () -> Unit,
+  onSave: (TopicEntity) -> Unit
+) {
+  var title by remember { mutableStateOf(existingSection?.title ?: "") }
+  var description by remember { mutableStateOf(existingSection?.description ?: "") }
+  var orderStr by remember { mutableStateOf(existingSection?.orderIndex?.toString() ?: (existingCount + 1).toString()) }
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(if (existingSection == null) "Create New Section" else "Edit Section") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+          value = title,
+          onValueChange = { title = it },
+          label = { Text("Section Title (e.g. Limits & Continuity)") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+          value = description,
+          onValueChange = { description = it },
+          label = { Text("Section Description / Scope") },
+          maxLines = 3,
+          modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+          value = orderStr,
+          onValueChange = { orderStr = it },
+          label = { Text("Order Index (1, 2, 3...)") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth()
+        )
+      }
+    },
+    confirmButton = {
+      Button(
+        onClick = {
+          if (title.isNotBlank()) {
+            val order = orderStr.toIntOrNull() ?: (existingCount + 1)
+            val section = TopicEntity(
+              id = existingSection?.id ?: ("T_" + UUID.randomUUID().toString().take(6).uppercase()),
+              courseId = courseId,
+              title = title.trim(),
+              description = description.trim(),
+              orderIndex = order
+            )
+            onSave(section)
+          }
+        }
+      ) {
+        Text("Save Section")
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) { Text("Cancel") }
+    }
+  )
+}
+
+/**
+ * Dialog to Edit Course metadata (code, title, category, description).
+ */
+@Composable
+fun EditCourseDialog(
+  course: CourseEntity,
+  onDismiss: () -> Unit,
+  onSave: (CourseEntity) -> Unit
+) {
+  var code by remember { mutableStateOf(course.code) }
+  var title by remember { mutableStateOf(course.title) }
+  var desc by remember { mutableStateOf(course.description) }
+  var category by remember { mutableStateOf(course.category) }
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Edit Course Details") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(value = code, onValueChange = { code = it }, label = { Text("Course Code (e.g. MATH 101)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Course Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category (STEM, Computing, etc.)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Description") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
+      }
+    },
+    confirmButton = {
+      Button(
+        onClick = {
+          if (code.isNotBlank() && title.isNotBlank()) {
+            onSave(
+              course.copy(
+                code = code.trim(),
+                title = title.trim(),
+                category = category.trim(),
+                description = desc.trim()
+              )
+            )
+          }
+        }
+      ) {
+        Text("Save Changes")
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) { Text("Cancel") }
+    }
+  )
 }
 
 /**
@@ -587,11 +971,14 @@ fun AdminManageContentTab(
   courses: List<CourseEntity>,
   questions: List<QuestionEntity>,
   notes: List<NoteEntity>,
+  topics: List<TopicEntity> = emptyList(),
   initialCourseId: String = "",
   onSaveQuestion: (QuestionEntity) -> Unit,
   onDeleteQuestion: (String) -> Unit,
   onSaveNote: (NoteEntity) -> Unit,
   onDeleteNote: (String) -> Unit,
+  onSaveTopic: (TopicEntity) -> Unit = {},
+  onDeleteTopic: (String) -> Unit = {},
   onSwitchToAddQuestion: (String) -> Unit,
   onSwitchToAddNote: (String) -> Unit
 ) {
@@ -600,12 +987,27 @@ fun AdminManageContentTab(
   }
 
   var selectedSubTab by remember { mutableIntStateOf(0) }
+  var selectedSectionFilter by remember { mutableStateOf("ALL") }
+  var showManageSections by remember { mutableStateOf(false) }
   var editingQuestion by remember { mutableStateOf<QuestionEntity?>(null) }
   var editingNote by remember { mutableStateOf<NoteEntity?>(null) }
 
+  val courseTopics = topics.filter { it.courseId == selectedCourseId }
   val courseQuestions = questions.filter { it.courseId == selectedCourseId }
   val courseNotes = notes.filter { it.courseId == selectedCourseId }
   val currentCourse = courses.firstOrNull { it.id == selectedCourseId }
+
+  val filteredQuestions = if (selectedSectionFilter == "ALL") {
+    courseQuestions
+  } else {
+    courseQuestions.filter { it.topicId == selectedSectionFilter }
+  }
+
+  val filteredNotes = if (selectedSectionFilter == "ALL") {
+    courseNotes
+  } else {
+    courseNotes.filter { it.topicId == selectedSectionFilter }
+  }
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -614,11 +1016,11 @@ fun AdminManageContentTab(
   ) {
     item {
       Text(
-        text = "Customize Course Questions & Notes",
+        text = "Course & Section Content Manager",
         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
       )
       Text(
-        text = "Select any newly added course to view, edit, or customize its questions and lecture notes.",
+        text = "Organize content hierarchically: Course → Section → Learning Resources. Changes sync globally across all devices.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
       )
@@ -629,7 +1031,10 @@ fun AdminManageContentTab(
       AdminCourseSelector(
         courses = courses,
         selectedCourseId = selectedCourseId,
-        onCourseSelected = { selectedCourseId = it }
+        onCourseSelected = {
+          selectedCourseId = it
+          selectedSectionFilter = "ALL"
+        }
       )
     }
 
@@ -648,6 +1053,16 @@ fun AdminManageContentTab(
           horizontalArrangement = Arrangement.spacedBy(8.dp),
           verticalAlignment = Alignment.CenterVertically
         ) {
+          OutlinedButton(
+            onClick = { showManageSections = true },
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.weight(1.1f)
+          ) {
+            Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Sections (${courseTopics.size})", style = MaterialTheme.typography.labelSmall)
+          }
+
           Button(
             onClick = { onSwitchToAddQuestion(selectedCourseId) },
             shape = RoundedCornerShape(10.dp),
@@ -656,7 +1071,7 @@ fun AdminManageContentTab(
           ) {
             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
-            Text("+ Add Question", style = MaterialTheme.typography.labelMedium)
+            Text("+ Question", style = MaterialTheme.typography.labelSmall)
           }
 
           OutlinedButton(
@@ -666,7 +1081,40 @@ fun AdminManageContentTab(
           ) {
             Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
-            Text("+ Add Note", style = MaterialTheme.typography.labelMedium)
+            Text("+ Note", style = MaterialTheme.typography.labelSmall)
+          }
+        }
+      }
+    }
+
+    // Course Hierarchy Banner & Section Filter Chips
+    if (courseTopics.isNotEmpty()) {
+      item {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+          Text(
+            text = "FILTER BY SECTION (TOPIC)",
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+            color = AcademicCobalt
+          )
+          LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            item {
+              FilterChip(
+                selected = selectedSectionFilter == "ALL",
+                onClick = { selectedSectionFilter = "ALL" },
+                label = { Text("All (${courseQuestions.size + courseNotes.size})") }
+              )
+            }
+            items(courseTopics) { sec ->
+              val qC = courseQuestions.count { it.topicId == sec.id }
+              val nC = courseNotes.count { it.topicId == sec.id }
+              FilterChip(
+                selected = selectedSectionFilter == sec.id,
+                onClick = { selectedSectionFilter = sec.id },
+                label = { Text("${sec.title} (${qC + nC})") }
+              )
+            }
           }
         }
       }
@@ -678,19 +1126,19 @@ fun AdminManageContentTab(
         Tab(
           selected = selectedSubTab == 0,
           onClick = { selectedSubTab = 0 },
-          text = { Text("Questions (${courseQuestions.size})", fontWeight = FontWeight.Bold) }
+          text = { Text("Questions (${filteredQuestions.size})", fontWeight = FontWeight.Bold) }
         )
         Tab(
           selected = selectedSubTab == 1,
           onClick = { selectedSubTab = 1 },
-          text = { Text("Revision Notes (${courseNotes.size})", fontWeight = FontWeight.Bold) }
+          text = { Text("Revision Notes (${filteredNotes.size})", fontWeight = FontWeight.Bold) }
         )
       }
     }
 
     // Questions List
     if (selectedSubTab == 0) {
-      if (courseQuestions.isEmpty()) {
+      if (filteredQuestions.isEmpty()) {
         item {
           Card(
             shape = RoundedCornerShape(12.dp),
@@ -699,12 +1147,12 @@ fun AdminManageContentTab(
           ) {
             Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
               Text(
-                text = "No questions found in ${currentCourse?.code ?: "this course"}.",
+                text = "No questions found in this section.",
                 fontWeight = FontWeight.Bold
               )
               Spacer(modifier = Modifier.height(4.dp))
               Text(
-                text = "Click '+ Add Question' above to add the first question to this course.",
+                text = "Click '+ Question' above to add questions to this course section.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
               )
@@ -712,7 +1160,9 @@ fun AdminManageContentTab(
           }
         }
       } else {
-        items(courseQuestions) { q ->
+        items(filteredQuestions) { q ->
+          val secTitle = courseTopics.find { it.id == q.topicId }?.title ?: "General Section"
+
           Card(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -738,11 +1188,24 @@ fun AdminManageContentTab(
                   }
                   Spacer(modifier = Modifier.width(6.dp))
                   Surface(
+                    color = AcademicGold.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(6.dp)
+                  ) {
+                    Text(
+                      text = secTitle,
+                      style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                      color = AcademicBluePrimary,
+                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                      maxLines = 1
+                    )
+                  }
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Surface(
                     color = SuccessGreen.copy(alpha = 0.15f),
                     shape = RoundedCornerShape(6.dp)
                   ) {
                     Text(
-                      text = "Correct: (${q.correctAnswer})",
+                      text = "Ans: (${q.correctAnswer})",
                       style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                       color = SuccessGreen,
                       modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -782,7 +1245,7 @@ fun AdminManageContentTab(
       }
     } else {
       // Notes List
-      if (courseNotes.isEmpty()) {
+      if (filteredNotes.isEmpty()) {
         item {
           Card(
             shape = RoundedCornerShape(12.dp),
@@ -791,12 +1254,12 @@ fun AdminManageContentTab(
           ) {
             Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
               Text(
-                text = "No notes created yet for ${currentCourse?.code ?: "this course"}.",
+                text = "No notes created yet for this section.",
                 fontWeight = FontWeight.Bold
               )
               Spacer(modifier = Modifier.height(4.dp))
               Text(
-                text = "Click '+ Add Note' above to create revision summaries and formulas.",
+                text = "Click '+ Note' above to create revision summaries and formulas.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
               )
@@ -804,7 +1267,9 @@ fun AdminManageContentTab(
           }
         }
       } else {
-        items(courseNotes) { note ->
+        items(filteredNotes) { note ->
+          val secTitle = courseTopics.find { it.id == note.topicId }?.title ?: "General Section"
+
           Card(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -816,7 +1281,24 @@ fun AdminManageContentTab(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Text(text = note.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Column(modifier = Modifier.weight(1f)) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                      color = AcademicGold.copy(alpha = 0.2f),
+                      shape = RoundedCornerShape(6.dp)
+                    ) {
+                      Text(
+                        text = secTitle,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = AcademicBluePrimary,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                      )
+                    }
+                  }
+                  Spacer(modifier = Modifier.height(4.dp))
+                  Text(text = note.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                }
+
                 Row {
                   IconButton(onClick = { editingNote = note }) {
                     Icon(Icons.Default.Edit, contentDescription = "Edit Note", tint = MaterialTheme.colorScheme.primary)
@@ -852,10 +1334,24 @@ fun AdminManageContentTab(
     }
   }
 
-  // Dialogs
+  // Manage Sections Dialog
+  if (showManageSections && currentCourse != null) {
+    ManageSectionsDialog(
+      course = currentCourse,
+      sections = courseTopics,
+      questions = courseQuestions,
+      notes = courseNotes,
+      onDismiss = { showManageSections = false },
+      onSaveSection = onSaveTopic,
+      onDeleteSection = onDeleteTopic
+    )
+  }
+
+  // Edit Question Dialog
   if (editingQuestion != null) {
     EditQuestionDialog(
       question = editingQuestion!!,
+      sections = courseTopics,
       onDismiss = { editingQuestion = null },
       onSave = { updatedQ ->
         onSaveQuestion(updatedQ)
@@ -864,9 +1360,11 @@ fun AdminManageContentTab(
     )
   }
 
+  // Edit Note Dialog
   if (editingNote != null) {
     EditNoteDialog(
       note = editingNote!!,
+      sections = courseTopics,
       onDismiss = { editingNote = null },
       onSave = { updatedNote ->
         onSaveNote(updatedNote)
@@ -882,10 +1380,12 @@ fun AdminManageContentTab(
 @Composable
 fun EditQuestionDialog(
   question: QuestionEntity,
+  sections: List<TopicEntity> = emptyList(),
   onDismiss: () -> Unit,
   onSave: (QuestionEntity) -> Unit
 ) {
   var questionText by remember { mutableStateOf(question.questionText) }
+  var selectedTopicId by remember { mutableStateOf(question.topicId) }
   var optA by remember { mutableStateOf(question.optionA) }
   var optB by remember { mutableStateOf(question.optionB) }
   var optC by remember { mutableStateOf(question.optionC) }
@@ -898,6 +1398,15 @@ fun EditQuestionDialog(
     title = { Text("Customize / Edit Question") },
     text = {
       LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (sections.isNotEmpty()) {
+          item {
+            AdminSectionSelector(
+              sections = sections,
+              selectedSectionId = selectedTopicId,
+              onSectionSelected = { selectedTopicId = it }
+            )
+          }
+        }
         item {
           OutlinedTextField(
             value = questionText,
@@ -949,6 +1458,7 @@ fun EditQuestionDialog(
         onClick = {
           onSave(
             question.copy(
+              topicId = selectedTopicId.ifBlank { question.topicId },
               questionText = questionText.trim(),
               optionA = optA.trim(),
               optionB = optB.trim(),
@@ -975,10 +1485,12 @@ fun EditQuestionDialog(
 @Composable
 fun EditNoteDialog(
   note: NoteEntity,
+  sections: List<TopicEntity> = emptyList(),
   onDismiss: () -> Unit,
   onSave: (NoteEntity) -> Unit
 ) {
   var title by remember { mutableStateOf(note.title) }
+  var selectedTopicId by remember { mutableStateOf(note.topicId) }
   var summary by remember { mutableStateOf(note.summary) }
   var formulas by remember { mutableStateOf(note.keyFormulas) }
   var markdownContent by remember { mutableStateOf(note.contentMarkdown) }
@@ -988,6 +1500,15 @@ fun EditNoteDialog(
     title = { Text("Customize / Edit Revision Note") },
     text = {
       LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (sections.isNotEmpty()) {
+          item {
+            AdminSectionSelector(
+              sections = sections,
+              selectedSectionId = selectedTopicId,
+              onSectionSelected = { selectedTopicId = it }
+            )
+          }
+        }
         item { OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth()) }
         item { OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Summary") }, modifier = Modifier.fillMaxWidth()) }
         item { OutlinedTextField(value = formulas, onValueChange = { formulas = it }, label = { Text("Key Formulas") }, modifier = Modifier.fillMaxWidth()) }
@@ -1007,6 +1528,7 @@ fun EditNoteDialog(
         onClick = {
           onSave(
             note.copy(
+              topicId = selectedTopicId.ifBlank { note.topicId },
               title = title.trim(),
               summary = summary.trim(),
               keyFormulas = formulas.trim(),

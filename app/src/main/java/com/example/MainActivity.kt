@@ -142,6 +142,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
   val isDeviceUnlocked by viewModel.isDeviceUnlocked.collectAsStateWithLifecycle()
   val allQuestions by viewModel.allQuestions.collectAsStateWithLifecycle()
   val allNotes by viewModel.allNotes.collectAsStateWithLifecycle()
+  val allTopics by viewModel.allTopics.collectAsStateWithLifecycle()
   val downloadedKeys by viewModel.downloadedKeys.collectAsStateWithLifecycle()
   val isDownloading by viewModel.isDownloading.collectAsStateWithLifecycle()
 
@@ -607,6 +608,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               accessCodes = allAccessCodes,
               questions = allQuestions,
               notes = allNotes,
+              topics = allTopics,
               pastExams = allPastExams,
               onBackClick = { viewModel.navigateBack() },
               onSaveCourse = { viewModel.adminSaveCourse(it) },
@@ -615,6 +617,8 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               onDeleteQuestion = { viewModel.adminDeleteQuestion(it) },
               onSaveNote = { viewModel.adminSaveNote(it) },
               onDeleteNote = { viewModel.adminDeleteNote(it) },
+              onSaveTopic = { viewModel.adminSaveTopic(it) },
+              onDeleteTopic = { viewModel.adminDeleteTopic(it) },
               onSavePastExam = { viewModel.adminSavePastExam(it) },
               onDeletePastExam = { viewModel.adminDeletePastExam(it) },
               onPublishAnnouncement = { t, m, c, u -> viewModel.adminPublishAnnouncement(t, m, c, u) },

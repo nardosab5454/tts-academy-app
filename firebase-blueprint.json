@@ -82,6 +82,20 @@
       },
       "required": ["id", "code", "title", "category"]
     },
+    "Topic": {
+      "title": "Topic",
+      "description": "Course section or topic",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "orderIndex": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "courseId", "title"]
+    },
     "Question": {
       "title": "Question",
       "description": "Curriculum multiple choice question with explanation",
@@ -207,6 +221,10 @@
     "/courses/{courseId}": {
       "schema": "Course",
       "description": "University courses synced across all devices"
+    },
+    "/topics/{topicId}": {
+      "schema": "Topic",
+      "description": "Course sections/topics synced across all devices"
     },
     "/questions/{questionId}": {
       "schema": "Question",

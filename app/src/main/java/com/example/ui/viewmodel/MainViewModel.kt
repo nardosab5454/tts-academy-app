@@ -149,6 +149,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val allCourses: StateFlow<List<CourseEntity>> = repository.getAllCoursesFlow()
     .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+  val allTopics: StateFlow<List<TopicEntity>> = repository.getAllTopicsFlow()
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
   val allPublishedNotes: StateFlow<List<NoteEntity>> = repository.getAllPublishedNotesFlow()
     .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -546,6 +549,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private var userAttemptsJob: Job? = null
   private var userBookmarksJob: Job? = null
   private var userDownloadsJob: Job? = null
+  private var courseTopicsJob: Job? = null
+  private var courseNotesJob: Job? = null
+  private var coursePastExamsJob: Job? = null
 
   private fun loadUserData(userId: String? = null) {
     val uid = userId ?: currentUser.value?.id ?: return
@@ -698,13 +704,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun selectCourse(course: CourseEntity) {
     _selectedCourse.value = course
-    viewModelScope.launch {
-      _courseTopics.value = repository.getTopicsForCourse(course.id)
+    courseTopicsJob?.cancel()
+    courseTopicsJob = viewModelScope.launch {
+      repository.getTopicsForCourseFlow(course.id).collect { topics ->
+        _courseTopics.value = topics
+      }
+    }
+    courseNotesJob?.cancel()
+    courseNotesJob = viewModelScope.launch {
       repository.getNotesForCourseFlow(course.id).collect { notes ->
         _courseNotes.value = notes
       }
     }
-    viewModelScope.launch {
+    coursePastExamsJob?.cancel()
+    coursePastExamsJob = viewModelScope.launch {
       repository.getPastExamsForCourseFlow(course.id).collect { exams ->
         _coursePastExams.value = exams
       }
@@ -983,8 +996,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       return
     }
     viewModelScope.launch {
-      repository.deleteCourse(courseId)
-      showMessage("Course removed.")
+      try {
+        repository.deleteCourse(courseId)
+        showMessage("Course removed.")
+      } catch (e: Exception) {
+        showMessage("Failed to delete course: ${e.message}")
+      }
+    }
+  }
+
+  fun adminSaveTopic(topic: TopicEntity) {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
+    viewModelScope.launch {
+      try {
+        repository.saveTopic(topic)
+        showMessage("Section '${topic.title}' saved successfully.")
+      } catch (e: Exception) {
+        showMessage("Failed to save section: ${e.message}")
+      }
+    }
+  }
+
+  fun adminDeleteTopic(topicId: String) {
+    if (currentUser.value?.role != "ADMIN") {
+      showMessage("Unauthorized: Administrator permissions required.")
+      return
+    }
+    viewModelScope.launch {
+      try {
+        repository.deleteTopic(topicId)
+        showMessage("Section removed.")
+      } catch (e: Exception) {
+        showMessage("Failed to delete section: ${e.message}")
+      }
     }
   }
 

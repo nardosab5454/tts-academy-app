@@ -164,4 +164,123 @@ class ExampleRobolectricTest {
 
     db.close()
   }
+
+  @Test
+  fun `verify course and section hierarchy management and curriculum synchronization`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = androidx.room.Room.inMemoryDatabaseBuilder(context, com.example.data.local.AppDatabase::class.java)
+      .allowMainThreadQueries()
+      .build()
+    com.example.data.local.AppDatabase.populateDatabase(db)
+    val repo = com.example.data.repository.TtsRepository(db)
+    repo.initialize()
+
+    // 1. Admin creates a new course
+    val newCourse = com.example.data.local.model.CourseEntity(
+      id = "COSC_101",
+      code = "COSC 101",
+      title = "Introduction to Computer Science",
+      description = "Algorithms, programming paradigms, and data structures.",
+      category = "COMPUTING",
+      iconName = "code",
+      totalQuestions = 0,
+      totalNotes = 0,
+      isPublished = true,
+      orderIndex = 14
+    )
+    repo.saveCourse(newCourse)
+
+    val retrievedCourse = repo.getCourseById("COSC_101")
+    assertNotNull("New course must be persisted", retrievedCourse)
+    assertEquals("Introduction to Computer Science", retrievedCourse?.title)
+
+    // 2. Admin creates two sections (topics) within the course
+    val section1 = com.example.data.local.model.TopicEntity(
+      id = "SEC_ALGO",
+      courseId = "COSC_101",
+      title = "Algorithms & Complexity",
+      description = "Big O notation and sorting algorithms",
+      orderIndex = 1
+    )
+    val section2 = com.example.data.local.model.TopicEntity(
+      id = "SEC_DATA",
+      courseId = "COSC_101",
+      title = "Data Structures",
+      description = "Arrays, Linked Lists, Trees, and Hash Maps",
+      orderIndex = 2
+    )
+    repo.saveTopic(section1)
+    repo.saveTopic(section2)
+
+    val courseSections = repo.getTopicsForCourse("COSC_101")
+    assertEquals("Course must have 2 sections", 2, courseSections.size)
+    assertTrue("Algorithms section exists", courseSections.any { it.id == "SEC_ALGO" })
+    assertTrue("Data Structures section exists", courseSections.any { it.id == "SEC_DATA" })
+
+    // 3. Admin creates question and note inside section 1
+    val question = com.example.data.local.model.QuestionEntity(
+      id = "Q_ALGO_1",
+      courseId = "COSC_101",
+      topicId = "SEC_ALGO",
+      questionText = "What is the worst-case time complexity of QuickSort?",
+      optionA = "O(n log n)",
+      optionB = "O(n^2)",
+      optionC = "O(n)",
+      optionD = "O(1)",
+      correctAnswer = "B",
+      explanationGeneral = "QuickSort exhibits O(n^2) when poor pivot choices occur.",
+      explanationA = "O(n log n) is best and average case.",
+      explanationB = "O(n^2) is worst-case.",
+      explanationC = "O(n) is linear scan.",
+      explanationD = "O(1) is constant time.",
+      difficulty = "MEDIUM",
+      isPastExam = false,
+      isVerified = true,
+      isPublished = true
+    )
+    repo.saveQuestion(question)
+
+    val note = com.example.data.local.model.NoteEntity(
+      id = "NOTE_ALGO_1",
+      courseId = "COSC_101",
+      topicId = "SEC_ALGO",
+      title = "Big-O Asymptotic Analysis",
+      summary = "Foundations of computational complexity",
+      contentMarkdown = "Big-O gives an upper bound on growth rate.",
+      keyFormulas = "T(n) <= c * f(n)",
+      readTimeMinutes = 8,
+      isPublished = true
+    )
+    repo.saveNote(note)
+
+    // Verify retrieval under course
+    val savedQuestions = repo.getQuestionsForCourse("COSC_101")
+    assertEquals(1, savedQuestions.size)
+    assertEquals("SEC_ALGO", savedQuestions[0].topicId)
+
+    val savedNotes = repo.getNotesForCourse("COSC_101")
+    assertEquals(1, savedNotes.size)
+    assertEquals("SEC_ALGO", savedNotes[0].topicId)
+
+    // 4. Update section title
+    val updatedSection1 = section1.copy(title = "Algorithms & Time Complexity")
+    repo.saveTopic(updatedSection1)
+    val refreshedSections = repo.getTopicsForCourse("COSC_101")
+    assertEquals("Algorithms & Time Complexity", refreshedSections.find { it.id == "SEC_ALGO" }?.title)
+
+    // 5. Delete section 2
+    repo.deleteTopic("SEC_DATA")
+    val sectionsAfterDelete = repo.getTopicsForCourse("COSC_101")
+    assertEquals(1, sectionsAfterDelete.size)
+    org.junit.Assert.assertNull(sectionsAfterDelete.find { it.id == "SEC_DATA" })
+
+    // 6. Delete course and ensure cleanup
+    repo.deleteCourse("COSC_101")
+    org.junit.Assert.assertNull("Deleted course must no longer exist", repo.getCourseById("COSC_101"))
+    val remainingSections = repo.getTopicsForCourse("COSC_101")
+    assertEquals(0, remainingSections.size)
+
+    db.close()
+  }
 }
+

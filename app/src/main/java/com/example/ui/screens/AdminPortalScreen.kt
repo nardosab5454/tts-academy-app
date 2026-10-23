@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -67,6 +68,7 @@ import com.example.data.local.model.CourseEntity
 import com.example.data.local.model.NoteEntity
 import com.example.data.local.model.PastExamEntity
 import com.example.data.local.model.QuestionEntity
+import com.example.data.local.model.TopicEntity
 import com.example.data.local.model.UserEntity
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import com.example.ui.components.DetailTopBar
@@ -87,6 +89,7 @@ fun AdminPortalScreen(
   questions: List<QuestionEntity> = emptyList(),
   notes: List<NoteEntity> = emptyList(),
   pastExams: List<PastExamEntity> = emptyList(),
+  topics: List<TopicEntity> = emptyList(),
   onBackClick: () -> Unit,
   onSaveCourse: (CourseEntity) -> Unit,
   onDeleteCourse: (String) -> Unit,
@@ -96,6 +99,8 @@ fun AdminPortalScreen(
   onDeleteNote: (String) -> Unit = {},
   onSavePastExam: (PastExamEntity) -> Unit,
   onDeletePastExam: (String) -> Unit = {},
+  onSaveTopic: (TopicEntity) -> Unit = {},
+  onDeleteTopic: (String) -> Unit = {},
   onPublishAnnouncement: (String, String, String, Boolean) -> Unit,
   onResetSeedData: () -> Unit,
   onUpdateUserRole: (String, String) -> Unit,
@@ -159,8 +164,12 @@ fun AdminPortalScreen(
         courses = courses,
         questions = questions,
         notes = notes,
+        topics = topics,
         onAddNew = { showNewCourseDialog = true },
+        onSaveCourse = onSaveCourse,
         onDelete = onDeleteCourse,
+        onSaveTopic = onSaveTopic,
+        onDeleteTopic = onDeleteTopic,
         onAddQuestionForCourse = { cId ->
           activeCourseIdForAdd = cId
           selectedTab = 2 // Switch to Add Question
@@ -176,15 +185,19 @@ fun AdminPortalScreen(
       )
       2 -> AdminAddQuestionTab(
         courses = courses,
+        topics = topics,
         initialCourseId = activeCourseIdForAdd,
         onCourseSelected = { activeCourseIdForAdd = it },
-        onSaveQuestion = onSaveQuestion
+        onSaveQuestion = onSaveQuestion,
+        onSaveTopic = onSaveTopic
       )
       3 -> AdminAddNoteTab(
         courses = courses,
+        topics = topics,
         initialCourseId = activeCourseIdForAdd,
         onCourseSelected = { activeCourseIdForAdd = it },
-        onSaveNote = onSaveNote
+        onSaveNote = onSaveNote,
+        onSaveTopic = onSaveTopic
       )
       4 -> AdminPastExamTab(
         courses = courses,
@@ -198,11 +211,14 @@ fun AdminPortalScreen(
         courses = courses,
         questions = questions,
         notes = notes,
+        topics = topics,
         initialCourseId = activeCourseIdForAdd,
         onSaveQuestion = onSaveQuestion,
         onDeleteQuestion = onDeleteQuestion,
         onSaveNote = onSaveNote,
         onDeleteNote = onDeleteNote,
+        onSaveTopic = onSaveTopic,
+        onDeleteTopic = onDeleteTopic,
         onSwitchToAddQuestion = { cId ->
           activeCourseIdForAdd = cId
           selectedTab = 2
@@ -508,13 +524,19 @@ private fun AdminCoursesTab(
   courses: List<CourseEntity>,
   questions: List<QuestionEntity> = emptyList(),
   notes: List<NoteEntity> = emptyList(),
+  topics: List<TopicEntity> = emptyList(),
   onAddNew: () -> Unit,
+  onSaveCourse: (CourseEntity) -> Unit = {},
   onDelete: (String) -> Unit,
+  onSaveTopic: (TopicEntity) -> Unit = {},
+  onDeleteTopic: (String) -> Unit = {},
   onAddQuestionForCourse: (String) -> Unit,
   onAddNoteForCourse: (String) -> Unit,
   onManageCourse: (String) -> Unit
 ) {
   var courseToDelete by remember { mutableStateOf<CourseEntity?>(null) }
+  var courseToEdit by remember { mutableStateOf<CourseEntity?>(null) }
+  var courseForSections by remember { mutableStateOf<CourseEntity?>(null) }
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -529,7 +551,7 @@ private fun AdminCoursesTab(
       ) {
         Column {
           Text("Curriculum Courses (${courses.size})", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-          Text("Add courses and immediately customize their questions and notes.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Text("Create, edit, and organize courses and course sections.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Button(
           onClick = onAddNew,
@@ -543,6 +565,7 @@ private fun AdminCoursesTab(
     }
 
     items(courses) { course ->
+      val courseTopics = topics.filter { it.courseId == course.id }
       val courseQCount = questions.count { it.courseId == course.id }
       val courseNCount = notes.count { it.courseId == course.id }
 
@@ -592,8 +615,13 @@ private fun AdminCoursesTab(
               )
             }
 
-            IconButton(onClick = { courseToDelete = course }) {
-              Icon(Icons.Default.Delete, contentDescription = "Delete Course", tint = MaterialTheme.colorScheme.error)
+            Row {
+              IconButton(onClick = { courseToEdit = course }) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit Course", tint = MaterialTheme.colorScheme.primary)
+              }
+              IconButton(onClick = { courseToDelete = course }) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete Course", tint = MaterialTheme.colorScheme.error)
+              }
             }
           }
 
@@ -608,7 +636,7 @@ private fun AdminCoursesTab(
             verticalAlignment = Alignment.CenterVertically
           ) {
             Text(
-              text = "$courseQCount Questions • $courseNCount Revision Notes",
+              text = "${courseTopics.size} Sections • $courseQCount Questions • $courseNCount Revision Notes",
               style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
               color = AcademicCobalt
             )
@@ -621,6 +649,17 @@ private fun AdminCoursesTab(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
           ) {
+            OutlinedButton(
+              onClick = { courseForSections = course },
+              modifier = Modifier.weight(1.1f),
+              shape = RoundedCornerShape(8.dp),
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+              Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(14.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Sections (${courseTopics.size})", style = MaterialTheme.typography.labelSmall)
+            }
+
             Button(
               onClick = { onAddQuestionForCourse(course.id) },
               modifier = Modifier.weight(1f),
@@ -646,18 +685,44 @@ private fun AdminCoursesTab(
 
             OutlinedButton(
               onClick = { onManageCourse(course.id) },
-              modifier = Modifier.weight(1.2f),
+              modifier = Modifier.weight(1f),
               shape = RoundedCornerShape(8.dp),
               contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
             ) {
-              Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+              Icon(Icons.Default.School, contentDescription = null, modifier = Modifier.size(14.dp))
               Spacer(modifier = Modifier.width(4.dp))
-              Text("Customize", style = MaterialTheme.typography.labelSmall)
+              Text("Resources", style = MaterialTheme.typography.labelSmall)
             }
           }
         }
       }
     }
+  }
+
+  // Edit Course Dialog
+  if (courseToEdit != null) {
+    EditCourseDialog(
+      course = courseToEdit!!,
+      onDismiss = { courseToEdit = null },
+      onSave = { updatedCourse ->
+        onSaveCourse(updatedCourse)
+        courseToEdit = null
+      }
+    )
+  }
+
+  // Manage Sections Dialog
+  if (courseForSections != null) {
+    val targetCourse = courseForSections!!
+    ManageSectionsDialog(
+      course = targetCourse,
+      sections = topics.filter { it.courseId == targetCourse.id },
+      questions = questions.filter { it.courseId == targetCourse.id },
+      notes = notes.filter { it.courseId == targetCourse.id },
+      onDismiss = { courseForSections = null },
+      onSaveSection = onSaveTopic,
+      onDeleteSection = onDeleteTopic
+    )
   }
 
   // Delete Course Confirmation Dialog
@@ -666,7 +731,7 @@ private fun AdminCoursesTab(
     AlertDialog(
       onDismissRequest = { courseToDelete = null },
       title = { Text("Delete ${targetCourse.code}?") },
-      text = { Text("Are you sure you want to remove '${targetCourse.title}' from the curriculum?") },
+      text = { Text("Are you sure you want to remove '${targetCourse.title}' from the curriculum? All associated sections and questions will also be deleted.") },
       confirmButton = {
         Button(
           onClick = {
@@ -688,13 +753,20 @@ private fun AdminCoursesTab(
 @Composable
 private fun AdminAddQuestionTab(
   courses: List<CourseEntity>,
+  topics: List<TopicEntity> = emptyList(),
   initialCourseId: String = "",
   onCourseSelected: (String) -> Unit = {},
-  onSaveQuestion: (QuestionEntity) -> Unit
+  onSaveQuestion: (QuestionEntity) -> Unit,
+  onSaveTopic: (TopicEntity) -> Unit = {}
 ) {
   var selectedCourseId by remember(initialCourseId, courses) {
     mutableStateOf(if (initialCourseId.isNotBlank()) initialCourseId else courses.firstOrNull()?.id ?: "")
   }
+  val courseTopics = topics.filter { it.courseId == selectedCourseId }
+  var selectedTopicId by remember(selectedCourseId, courseTopics) {
+    mutableStateOf(courseTopics.firstOrNull()?.id ?: "")
+  }
+  var showAddSectionDialog by remember { mutableStateOf(false) }
   var questionText by remember { mutableStateOf("") }
   var optA by remember { mutableStateOf("") }
   var optB by remember { mutableStateOf("") }
@@ -726,6 +798,16 @@ private fun AdminAddQuestionTab(
           selectedCourseId = it
           onCourseSelected(it)
         }
+      )
+    }
+
+    // Section Selector
+    item {
+      AdminSectionSelector(
+        sections = courseTopics,
+        selectedSectionId = selectedTopicId,
+        onSectionSelected = { selectedTopicId = it },
+        onAddNewSection = { showAddSectionDialog = true }
       )
     }
 
@@ -789,7 +871,7 @@ private fun AdminAddQuestionTab(
             val q = QuestionEntity(
               id = "Q_" + UUID.randomUUID().toString().take(6),
               courseId = selectedCourseId.ifBlank { courses.firstOrNull()?.id ?: "MATH_101" },
-              topicId = "T_GEN",
+              topicId = selectedTopicId.ifBlank { "T_GEN" },
               questionText = questionText.trim(),
               optionA = optA.trim(),
               optionB = optB.trim(),
@@ -825,18 +907,38 @@ private fun AdminAddQuestionTab(
       }
     }
   }
+
+  if (showAddSectionDialog && selectedCourseId.isNotBlank()) {
+    CreateOrEditSectionDialog(
+      courseId = selectedCourseId,
+      existingCount = courseTopics.size,
+      onDismiss = { showAddSectionDialog = false },
+      onSave = { newSection ->
+        onSaveTopic(newSection)
+        selectedTopicId = newSection.id
+        showAddSectionDialog = false
+      }
+    )
+  }
 }
 
 @Composable
 private fun AdminAddNoteTab(
   courses: List<CourseEntity>,
+  topics: List<TopicEntity> = emptyList(),
   initialCourseId: String = "",
   onCourseSelected: (String) -> Unit = {},
-  onSaveNote: (NoteEntity) -> Unit
+  onSaveNote: (NoteEntity) -> Unit,
+  onSaveTopic: (TopicEntity) -> Unit = {}
 ) {
   var selectedCourseId by remember(initialCourseId, courses) {
     mutableStateOf(if (initialCourseId.isNotBlank()) initialCourseId else courses.firstOrNull()?.id ?: "")
   }
+  val courseTopics = topics.filter { it.courseId == selectedCourseId }
+  var selectedTopicId by remember(selectedCourseId, courseTopics) {
+    mutableStateOf(courseTopics.firstOrNull()?.id ?: "")
+  }
+  var showAddSectionDialog by remember { mutableStateOf(false) }
   var title by remember { mutableStateOf("") }
   var summary by remember { mutableStateOf("") }
   var formulas by remember { mutableStateOf("") }
@@ -864,6 +966,16 @@ private fun AdminAddNoteTab(
       )
     }
 
+    // Section Selector
+    item {
+      AdminSectionSelector(
+        sections = courseTopics,
+        selectedSectionId = selectedTopicId,
+        onSectionSelected = { selectedTopicId = it },
+        onAddNewSection = { showAddSectionDialog = true }
+      )
+    }
+
     item { OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Note Title") }, modifier = Modifier.fillMaxWidth()) }
     item { OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Concept Summary") }, modifier = Modifier.fillMaxWidth(), maxLines = 2) }
     item { OutlinedTextField(value = formulas, onValueChange = { formulas = it }, label = { Text("Key Formulas") }, modifier = Modifier.fillMaxWidth()) }
@@ -876,7 +988,7 @@ private fun AdminAddNoteTab(
             val note = NoteEntity(
               id = "NOTE_" + UUID.randomUUID().toString().take(6),
               courseId = selectedCourseId.ifBlank { courses.firstOrNull()?.id ?: "MATH_101" },
-              topicId = "T_GEN",
+              topicId = selectedTopicId.ifBlank { "T_GEN" },
               title = title.trim(),
               summary = summary.trim(),
               contentMarkdown = markdownContent.trim(),
@@ -900,7 +1012,21 @@ private fun AdminAddNoteTab(
       }
     }
   }
+
+  if (showAddSectionDialog && selectedCourseId.isNotBlank()) {
+    CreateOrEditSectionDialog(
+      courseId = selectedCourseId,
+      existingCount = courseTopics.size,
+      onDismiss = { showAddSectionDialog = false },
+      onSave = { newSection ->
+        onSaveTopic(newSection)
+        selectedTopicId = newSection.id
+        showAddSectionDialog = false
+      }
+    )
+  }
 }
+
 
 @Composable
 private fun AdminAnnouncementsTab(

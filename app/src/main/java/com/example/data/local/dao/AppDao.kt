@@ -112,6 +112,18 @@ interface TopicDao {
 
   @Query("DELETE FROM topics WHERE courseId = :courseId")
   suspend fun deleteTopicsForCourse(courseId: String)
+
+  @Query("DELETE FROM topics WHERE id NOT IN (:validIds)")
+  suspend fun deleteTopicsNotIn(validIds: List<String>)
+
+  @Query("SELECT * FROM topics ORDER BY orderIndex ASC")
+  fun getAllTopicsFlow(): Flow<List<TopicEntity>>
+
+  @Query("SELECT * FROM topics WHERE id = :topicId LIMIT 1")
+  suspend fun getTopicById(topicId: String): TopicEntity?
+
+  @Update
+  suspend fun updateTopic(topic: TopicEntity)
 }
 
 @Dao
