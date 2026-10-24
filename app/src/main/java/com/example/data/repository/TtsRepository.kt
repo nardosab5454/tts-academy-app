@@ -211,17 +211,27 @@ class TtsRepository(
               val cleanId = if (profile.userId.isNotBlank()) profile.userId else profile.id
               if (cleanId.isNotBlank()) {
                 val existing = userDao.getUserById(cleanId)
+                val isAdmin = profile.role.equals("ADMIN", ignoreCase = true)
+                val isPrem = profile.isPremium || isAdmin
+                val currentUid = _currentUser.value?.id
                 if (existing == null) {
-                  userDao.insertUser(profile.toEntity())
+                  val entity = profile.toEntity().copy(isPremium = isPrem, role = if (isAdmin) "ADMIN" else profile.role)
+                  userDao.insertUser(entity)
+                  if (currentUid == cleanId) {
+                    _currentUser.value = entity
+                  }
                 } else {
                   val updated = existing.copy(
                     name = profile.name.ifBlank { existing.name },
-                    role = profile.role.ifBlank { existing.role },
+                    role = if (isAdmin) "ADMIN" else profile.role.ifBlank { existing.role },
                     department = profile.department.ifBlank { existing.department },
                     studentId = profile.studentId.ifBlank { existing.studentId },
-                    isPremium = existing.isPremium || profile.isPremium
+                    isPremium = existing.isPremium || isPrem
                   )
                   userDao.updateUser(updated)
+                  if (currentUid == cleanId) {
+                    _currentUser.value = updated
+                  }
                 }
               }
             }
@@ -444,6 +454,43 @@ class TtsRepository(
     } catch (e: Exception) {
       Log.e("TtsRepository", "Past exams sync error", e)
     }
+
+    // Sync Users & Roles
+    try {
+      val users = fs.fetchLatestUsers().getOrNull()
+      if (!users.isNullOrEmpty()) {
+        users.forEach { profile ->
+          val cleanId = if (profile.userId.isNotBlank()) profile.userId else profile.id
+          if (cleanId.isNotBlank()) {
+            val existing = userDao.getUserById(cleanId)
+            val isAdmin = profile.role.equals("ADMIN", ignoreCase = true)
+            val isPrem = profile.isPremium || isAdmin
+            val currentUid = _currentUser.value?.id
+            if (existing == null) {
+              val entity = profile.toEntity().copy(isPremium = isPrem, role = if (isAdmin) "ADMIN" else profile.role)
+              userDao.insertUser(entity)
+              if (currentUid == cleanId) {
+                _currentUser.value = entity
+              }
+            } else {
+              val updated = existing.copy(
+                name = profile.name.ifBlank { existing.name },
+                role = if (isAdmin) "ADMIN" else profile.role.ifBlank { existing.role },
+                department = profile.department.ifBlank { existing.department },
+                studentId = profile.studentId.ifBlank { existing.studentId },
+                isPremium = existing.isPremium || isPrem
+              )
+              userDao.updateUser(updated)
+              if (currentUid == cleanId) {
+                _currentUser.value = updated
+              }
+            }
+          }
+        }
+      }
+    } catch (e: Exception) {
+      Log.e("TtsRepository", "Users sync error", e)
+    }
   }
 
   suspend fun seedDatabaseToCloud(fs: FirestoreRepository) = withContext(Dispatchers.IO) {
@@ -538,10 +585,25 @@ class TtsRepository(
   }
 
   suspend fun setUserRole(userId: String, newRole: String) = withContext(Dispatchers.IO) {
-    userDao.updateUserRole(userId, newRole)
-    if (_currentUser.value?.id == userId) {
-      val updated = userDao.getUserById(userId)
-      _currentUser.value = updated
+    val isAdmin = newRole.equals("ADMIN", ignoreCase = true)
+    userDao.updateUserRole(userId, if (isAdmin) "ADMIN" else newRole)
+    val user = userDao.getUserById(userId)
+    if (user != null) {
+      val updated = if (isAdmin) {
+        user.copy(role = "ADMIN", isPremium = true)
+      } else {
+        user.copy(role = newRole)
+      }
+      userDao.updateUser(updated)
+      if (_currentUser.value?.id == userId) {
+        _currentUser.value = updated
+      }
+      try {
+        firestoreRepository?.updateUserRole(userId, if (isAdmin) "ADMIN" else newRole)
+        firestoreRepository?.syncUserToCloud(updated)
+      } catch (e: Exception) {
+        Log.w("TtsRepository", "Could not sync user role to cloud: ${e.message}")
+      }
     }
   }
 
@@ -557,7 +619,11 @@ class TtsRepository(
       userDao.updateUserRole(existing.id, "ADMIN")
       val updated = existing.copy(role = "ADMIN", isPremium = true)
       userDao.updateUser(updated)
+      if (_currentUser.value?.id == existing.id) {
+        _currentUser.value = updated
+      }
       try {
+        firestoreRepository?.updateUserRole(existing.id, "ADMIN")
         firestoreRepository?.syncUserToCloud(updated)
       } catch (_: Exception) {}
       return@withContext Result.success(updated)
@@ -591,17 +657,40 @@ class TtsRepository(
       userDao.updateUserRole(existing.id, "ADMIN")
       val updated = existing.copy(role = "ADMIN", isPremium = true)
       userDao.updateUser(updated)
+      if (_currentUser.value?.id == existing.id) {
+        _currentUser.value = updated
+      }
       try {
+        firestoreRepository?.updateUserRole(existing.id, "ADMIN")
         firestoreRepository?.syncUserToCloud(updated)
       } catch (_: Exception) {}
       Result.success(updated)
     } else {
-      createAdminAccount(
-        name = cleanEmail.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() },
-        email = cleanEmail,
-        password = "Admin@${cleanEmail.take(4)}",
-        department = "University Administration"
-      )
+      // Check cloud Firestore in case the student registered on another device
+      val cloudUser = try {
+        firestoreRepository?.getUserByEmail(cleanEmail)?.getOrNull()
+      } catch (_: Exception) { null }
+
+      if (cloudUser != null) {
+        val cleanId = if (cloudUser.userId.isNotBlank()) cloudUser.userId else cloudUser.id
+        val updated = cloudUser.toEntity().copy(role = "ADMIN", isPremium = true)
+        userDao.insertUser(updated)
+        if (_currentUser.value?.id == cleanId) {
+          _currentUser.value = updated
+        }
+        try {
+          firestoreRepository?.updateUserRole(cleanId, "ADMIN")
+          firestoreRepository?.syncUserToCloud(updated)
+        } catch (_: Exception) {}
+        Result.success(updated)
+      } else {
+        createAdminAccount(
+          name = cleanEmail.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() },
+          email = cleanEmail,
+          password = "Admin@${cleanEmail.take(4)}",
+          department = "University Administration"
+        )
+      }
     }
   }
 

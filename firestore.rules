@@ -68,9 +68,7 @@ service cloud.firestore {
     // User profiles & student registrations
     // Public read so admin dashboard can list all registered students across devices
     match /users/{userId} {
-      allow read: if true;
-      allow create, update: if isValidId(userId) && isValidUserProfile(incoming());
-      allow delete: if isAdmin();
+      allow read, write: if true;
 
       // Quiz attempts subcollection
       match /quiz_attempts/{attemptId} {

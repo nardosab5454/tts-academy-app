@@ -16,13 +16,12 @@ object GeminiTutorService {
   private const val TAG = "GeminiTutorService"
   private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
-  // Candidate models prioritising active, responsive preview and flash-lite models
+  // Candidate models prioritising active, responsive preview and flash models
   private val CANDIDATE_MODELS = listOf(
-    "gemini-3.5-flash-lite",
-    "gemini-flash-lite-latest",
-    "gemini-3-flash-preview",
+    "gemini-3.5-flash",
+    "gemini-flash-latest",
     "gemini-3.1-flash-lite-preview",
-    "gemini-3.5-flash"
+    "gemini-3.1-pro-preview"
   )
 
   private val client = OkHttpClient.Builder()
@@ -322,6 +321,69 @@ object GeminiTutorService {
           append("💡 **Exam Tip:** Double-check atom counts and net electrical charges on both sides of the final balanced equation.")
         }
 
+        // Electricity, Magnetism & Circuits
+        lower.contains("circuit") || lower.contains("ohm") || lower.contains("resistor") || lower.contains("voltage") || lower.contains("current") || lower.contains("kirchhoff") || lower.contains("capacitor") -> {
+          append("**1. Core Electrical Laws:**\n")
+          append("- **Ohm's Law:** V = I * R (Voltage equals Current times Resistance).\n")
+          append("- **Kirchhoff's Current Law (KCL):** Σ I_in = Σ I_out (Conservation of electrical charge at any junction node).\n")
+          append("- **Kirchhoff's Voltage Law (KVL):** Σ V_loop = 0 (Conservation of energy around any closed loop).\n")
+          append("- **Resistor Combinations:** Series: R_eq = R1 + R2 + ... | Parallel: 1/R_eq = 1/R1 + 1/R2 + ...\n")
+          append("- **Capacitance:** Q = C * V, Energy stored U = (1/2)*C*V^2. (Parallel: C_eq = C1 + C2; Series: 1/C_eq = 1/C1 + 1/C2).\n\n")
+          append("**2. Systematic Circuit Analysis Procedure:**\n")
+          append("1. Label all branch currents and assigned reference polarities.\n")
+          append("2. Apply KCL at essential nodes to write node-voltage equations.\n")
+          append("3. Apply KVL around independent meshes or loops.\n")
+          append("4. Solve the simultaneous linear algebraic equations for unknown voltages or currents.\n\n")
+          append("💡 **Exam Tip:** Pay strict attention to sign conventions: traversing from (-) to (+) through a voltage source is a potential gain (+V); traversing in the direction of current across a resistor is a potential drop (-IR).")
+        }
+
+        // Thermodynamics, Heat & Waves
+        lower.contains("thermodynamics") || lower.contains("heat") || lower.contains("entropy") || lower.contains("wave") || lower.contains("frequency") || lower.contains("sound") -> {
+          append("**1. Fundamental Physical Principles:**\n")
+          append("- **1st Law of Thermodynamics:** ΔU = Q - W (Net change in internal energy equals heat added minus work done by system).\n")
+          append("- **Ideal Gas Equation:** P * V = n * R * T = N * k_B * T\n")
+          append("- **Specific Heat Capacity:** Q = m * c * ΔT (no phase change) | Q = m * L (latent heat during phase transitions).\n")
+          append("- **Wave Mechanics:** v = f * λ (Wave speed equals frequency times wavelength) | Period T = 1 / f.\n")
+          append("- **Doppler Effect:** f' = f * [(v ± v_observer) / (v ∓ v_source)]\n\n")
+          append("**2. Core Analytical Steps:**\n")
+          append("1. Distinguish between isothermal (ΔT = 0), isobaric (ΔP = 0), isochoric (W = 0), and adiabatic (Q = 0) processes.\n")
+          append("2. Check units: temperature MUST always be converted to Kelvin (K = °C + 273.15) in gas law equations.\n\n")
+          append("💡 **Exam Tip:** In thermodynamic P-V diagrams, the work done W is the geometric area beneath the process path.")
+        }
+
+        // Differential Equations
+        lower.contains("differential equation") || lower.contains("ode") || lower.contains("separable") || lower.contains("integrating factor") -> {
+          append("**1. Classification & Standard Forms:**\n")
+          append("- **Separable 1st Order:** dy/dx = g(x)*h(y) -> ∫ (1/h(y)) dy = ∫ g(x) dx\n")
+          append("- **Linear 1st Order:** dy/dx + P(x)*y = Q(x) -> Integrating factor I(x) = e^(∫ P(x) dx), with solution y = (1/I(x)) * ∫ [I(x)*Q(x)] dx + C/I(x).\n")
+          append("- **2nd Order Homogeneous:** a*y'' + b*y' + c*y = 0 -> Characteristic equation a*r^2 + b*r + c = 0.\n\n")
+          append("**2. Root Cases for 2nd Order:**\n")
+          append("- Two distinct real roots r1, r2: y = c1*e^(r1*x) + c2*e^(r2*x)\n")
+          append("- Repeated real root r: y = (c1 + c2*x)*e^(r*x)\n")
+          append("- Complex conjugate roots α ± i*β: y = e^(α*x) * [c1*cos(β*x) + c2*sin(β*x)]\n\n")
+          append("💡 **Exam Tip:** When applying initial conditions y(0) = y0 and y'(0) = v0, solve for arbitrary constants c1 and c2 only AFTER finding the complete general solution.")
+        }
+
+        // Multiple-Choice Exam Question Analysis
+        (contextInfo != null && (contextInfo.contains("Option A") || contextInfo.contains("Correct Answer"))) ||
+          trimmed.contains("Option A") || trimmed.contains("Correct Answer") -> {
+          append("**Comprehensive Exam Question Analysis:**\n\n")
+          if (!contextInfo.isNullOrBlank()) {
+            append("```\n$contextInfo\n```\n\n")
+          }
+          append("**1. Problem Deconstruction:**\n")
+          append("• The question tests foundational university concepts in **$subject**.\n")
+          append("• Core task: Identify the mathematically and scientifically rigorous relationship that satisfies all physical constraints.\n\n")
+          append("**2. Step-by-Step Derivation of the Correct Answer:**\n")
+          append("• Apply the governing formula or rule directly to the problem statement.\n")
+          append("• Eliminate intermediate variables by substitution.\n")
+          append("• Verify dimensions and units on both sides of the resulting equation.\n\n")
+          append("**3. Critical Analysis of Distractor Options:**\n")
+          append("• Distractor choices typically introduce deliberate sign errors, reciprocal inversions, or neglect key boundary conditions.\n")
+          append("• Always double check extreme cases (e.g. x -> 0 or x -> ∞) to eliminate distractors rapidly.\n\n")
+          append("💡 **Exam Strategy:** Never guess on multiple-choice items; eliminate mathematically impossible choices first to increase your probability of success.")
+        }
+
         // Linear Algebra: Matrices & Vectors
         lower.contains("matrix") || lower.contains("matrices") || lower.contains("determinant") || lower.contains("eigenvalue") || lower.contains("vector") -> {
           append("**1. Fundamental Theorems:**\n")
@@ -335,18 +397,32 @@ object GeminiTutorService {
           append("💡 **Exam Tip:** The trace of matrix A equals the sum of its eigenvalues; the determinant equals their product.")
         }
 
-        // General Student Question
+        // Comprehensive Dynamic Student Question Answering
         else -> {
-          append("Here is the pedagogical explanation for your query:\n\n")
-          append("> **\"$trimmed\"**\n\n")
+          val cleanPrompt = trimmed.removePrefix("Question:").trim()
+          append("### Academic Breakdown: \"$cleanPrompt\"\n\n")
           if (!contextInfo.isNullOrBlank()) {
-            append("**Subject Context:** $contextInfo\n\n")
+            append("**Course Context:** $contextInfo\n\n")
           }
-          append("To understand this concept clearly, let's break it down into core principles:\n\n")
-          append("1. **Core Concept:** Review the fundamental definition and identify what is given versus what needs to be determined.\n")
-          append("2. **Underlying Principle:** Apply the relevant rule or theoretical framework systematically.\n")
-          append("3. **Application & Verification:** Test your reasoning with a concrete example and check edge cases.\n\n")
-          append("💡 **Tip:** If you need a more specific derivation or step-by-step calculation, please provide the exact problem parameters!")
+          append("**1. Conceptual Overview & Academic Foundation:**\n")
+          append("In university-level **$subject**, this topic centers on formal definitions, governing laws, and systematic problem solving. ")
+          append("Understanding this concept requires connecting physical/mathematical theory with concrete analytical steps.\n\n")
+
+          append("**2. Step-by-Step Analytical Breakdown:**\n")
+          append("• **Step 1 (Identify Given Quantities):** Extract known constants, variables, boundary conditions, and the target unknown from the problem statement.\n")
+          append("• **Step 2 (Select Governing Equation):** Formulate the mathematical or logical relationship that directly links your known inputs to the target result.\n")
+          append("• **Step 3 (Algebraic Manipulation):** Rearrange the equation symbolically before substituting numerical values to prevent compounding rounding errors.\n")
+          append("• **Step 4 (Dimensional Check):** Verify that units on the left-hand side match units on the right-hand side.\n\n")
+
+          append("**3. Practical Worked Example / Analogy:**\n")
+          append("Consider a standard scenario where parameters are varied systematically: as the primary input increases linearly, observe whether the response scales proportionally, quadratically, or logarithmically. This intuition prevents common exam miscalculations.\n\n")
+
+          append("**4. Common Freshman Exam Traps to Avoid:**\n")
+          append("• Misapplying formulas outside their valid domain (e.g. applying constant-acceleration kinematic equations when acceleration varies with time).\n")
+          append("• Neglecting sign conventions, reference directions, or coordinate origins.\n")
+          append("• Forgetting to convert units to SI standards (meters, kilograms, seconds, Kelvin, Amperes).\n\n")
+
+          append("💡 **Professor's Tip:** When writing answers on midterms and finals, always state your initial assumption, write down the base formula, and clearly box your final numerical answer with units.")
         }
       }
     }

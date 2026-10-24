@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Campaign
@@ -263,6 +264,62 @@ fun DashboardScreen(
                   modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                 )
               }
+            }
+          }
+        }
+      }
+    }
+
+    // Administrator Portal Quick Action Banner (Visible to all admins)
+    if (user?.role == "ADMIN") {
+      item {
+        Card(
+          shape = RoundedCornerShape(18.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)),
+          border = BorderStroke(1.dp, AcademicGold.copy(alpha = 0.5f)),
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clickable { onNavigate(Screen.ADMIN_PORTAL) }
+            .testTag("dashboard_admin_portal_banner")
+        ) {
+          Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Box(
+              modifier = Modifier
+                .size(46.dp)
+                .clip(CircleShape)
+                .background(AcademicGold.copy(alpha = 0.2f)),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(
+                imageVector = Icons.Default.AdminPanelSettings,
+                contentDescription = "Admin Portal",
+                tint = AcademicGold,
+                modifier = Modifier.size(26.dp)
+              )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = "Administrator Authorization Active",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+              )
+              Text(
+                text = "Full curriculum control, questions, notes, access codes & student roles.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+              )
+            }
+            Button(
+              onClick = { onNavigate(Screen.ADMIN_PORTAL) },
+              shape = RoundedCornerShape(10.dp),
+              colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+              Text("Console", fontWeight = FontWeight.Bold)
             }
           }
         }

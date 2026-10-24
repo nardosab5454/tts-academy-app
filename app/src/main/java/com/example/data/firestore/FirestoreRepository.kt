@@ -148,6 +148,24 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     }
   }
 
+  suspend fun updateUserRole(userId: String, newRole: String): Result<Unit> = withContext(Dispatchers.IO) {
+    val docRef = db.collection("users").document(userId)
+    try {
+      val payload = hashMapOf<String, Any>(
+        "role" to newRole,
+        "isPremium" to (newRole.equals("ADMIN", ignoreCase = true)),
+        "updatedAt" to FieldValue.serverTimestamp()
+      )
+      docRef.set(payload, SetOptions.merge()).await()
+      Result.success(Unit)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+      Result.failure(e)
+    }
+  }
+
   suspend fun getUserByEmail(email: String): Result<FirestoreUserProfile?> = withContext(Dispatchers.IO) {
     try {
       val cleanEmail = email.trim()
@@ -797,6 +815,15 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     try {
       val snap = db.collection("announcements").get().await()
       Result.success(snap.documents.map { it.toFirestoreAnnouncement() })
+    } catch (e: Exception) {
+      Result.failure(e)
+    }
+  }
+
+  suspend fun fetchLatestUsers(): Result<List<FirestoreUserProfile>> = withContext(Dispatchers.IO) {
+    try {
+      val snap = db.collection("users").get().await()
+      Result.success(snap.documents.map { it.toFirestoreUserProfile() })
     } catch (e: Exception) {
       Result.failure(e)
     }
