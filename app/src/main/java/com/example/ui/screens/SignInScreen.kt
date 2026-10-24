@@ -857,8 +857,20 @@ fun onGoogleSignInClicked(
       Log.w("Auth", "Google Sign-In flow cancelled: ${e.message}", e)
       onAuthCancelled()
     } catch (e: Exception) {
-      Log.e("Auth", "Google Sign-In failed", e)
-      onAuthError(e.localizedMessage ?: "Sign in failed")
+      val errorMsg = e.message ?: ""
+      Log.e("Auth", "Google Sign-In failed: $errorMsg", e)
+      if (errorMsg.contains("DEVELOPER_ERROR", ignoreCase = true) || errorMsg.contains("10:") || errorMsg.contains("statusCode=10")) {
+        Log.e(
+          "Auth",
+          "DEVELOPER_ERROR (statusCode 10): Google Play Services rejected the connection. " +
+            "Ensure package name (com.aistudio.ttsacademy.krvmtq) matches, SHA-1 (31:1F:32:F9:0F:D6:DB:41:1D:E7:B1:1E:FF:81:33:91:D2:9C:C0:28) " +
+            "and SHA-256 (7F:0F:B9:E5:1E:D1:4D:26:9B:74:05:60:61:73:62:18:9D:F6:A8:29:55:0F:15:1C:4C:9E:46:35:78:2B:20:44) fingerprints " +
+            "are registered in Firebase Console -> Project Settings -> Android Apps, and Google Sign-In is enabled in Firebase Authentication."
+        )
+        onAuthError("Google Sign-In configuration error (DEVELOPER_ERROR). Please verify SHA fingerprints and Google provider in Firebase Console.")
+      } else {
+        onAuthError(e.localizedMessage ?: "Sign in failed")
+      }
     }
   }
 }
@@ -888,10 +900,14 @@ fun attemptAutoSignIn(
     .build()
 
   val request = GetCredentialRequest.Builder().addCredentialOption(googleIdOption).build()
+  val activity = generateSequence(context) { (it as? ContextWrapper)?.baseContext }
+    .filterIsInstance<Activity>()
+    .firstOrNull() ?: (context as? Activity)
+  val targetContext = activity ?: context
 
   scope.launch {
     try {
-      val result = credentialManager.getCredential(context, request)
+      val result = credentialManager.getCredential(targetContext, request)
       val credential = result.credential
       if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
         val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
@@ -902,6 +918,7 @@ fun attemptAutoSignIn(
         onUnauthenticated()
       }
     } catch (e: Exception) {
+      Log.d("Auth", "Auto sign-in silent check: ${e.message}")
       onUnauthenticated()
     }
   }
