@@ -586,6 +586,7 @@ fun AdminPastExamTab(
     mutableStateOf(if (initialCourseId.isNotBlank()) initialCourseId else courses.firstOrNull()?.id ?: "")
   }
 
+  var examUniversity by remember { mutableStateOf("Addis Ababa University (AAU)") }
   var examYear by remember { mutableStateOf("2016 E.C. (2024)") }
   var semester by remember { mutableStateOf("Semester 1") }
   var examType by remember { mutableStateOf("FINAL") }
@@ -644,7 +645,38 @@ fun AdminPastExamTab(
         modifier = Modifier.fillMaxWidth()
       ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text("Exam Period & Classification", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+          Text("Exam Period, University & Classification", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+
+          OutlinedTextField(
+            value = examUniversity,
+            onValueChange = { examUniversity = it },
+            label = { Text("University / Institution") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+          )
+
+          // University Quick Chips
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            listOf("Addis Ababa University (AAU)", "ASTU (Adama)", "AASTU", "Hawassa Univ.", "Bahir Dar Univ.", "Jimma Univ.").forEach { uni ->
+              val isSelected = examUniversity == uni
+              Surface(
+                onClick = { examUniversity = uni },
+                shape = RoundedCornerShape(6.dp),
+                color = if (isSelected) AcademicCobalt.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, if (isSelected) AcademicCobalt else Color.Transparent)
+              ) {
+                Text(
+                  text = uni,
+                  style = MaterialTheme.typography.labelSmall.copy(fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal),
+                  color = if (isSelected) AcademicCobalt else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+              }
+            }
+          }
 
           Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
@@ -802,6 +834,7 @@ fun AdminPastExamTab(
             val examEntity = PastExamEntity(
               id = examId,
               courseId = selectedCourseId,
+              university = examUniversity.trim().ifBlank { "Addis Ababa University (AAU)" },
               academicYear = examYear.trim(),
               semester = semester.trim(),
               examType = examType.trim(),

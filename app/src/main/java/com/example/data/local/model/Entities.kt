@@ -90,6 +90,7 @@ data class NoteEntity(
 data class PastExamEntity(
   @PrimaryKey val id: String,
   val courseId: String,
+  val university: String = "Addis Ababa University (AAU)",
   val academicYear: String,
   val semester: String,
   val examType: String, // "MIDTERM", "FINAL"

@@ -527,6 +527,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
       val payload = hashMapOf<String, Any>(
         "id" to exam.id,
         "courseId" to exam.courseId,
+        "university" to exam.university,
         "academicYear" to exam.academicYear,
         "semester" to exam.semester,
         "examType" to exam.examType,
@@ -909,6 +910,7 @@ private fun DocumentSnapshot.toFirestorePastExam(): FirestorePastExam {
   return FirestorePastExam(
     id = (data["id"] as? String)?.ifBlank { this.id } ?: this.id,
     courseId = data["courseId"] as? String ?: "",
+    university = (data["university"] as? String)?.ifBlank { "Addis Ababa University (AAU)" } ?: "Addis Ababa University (AAU)",
     academicYear = data["academicYear"] as? String ?: "",
     semester = data["semester"] as? String ?: "Semester 1",
     examType = data["examType"] as? String ?: "FINAL",

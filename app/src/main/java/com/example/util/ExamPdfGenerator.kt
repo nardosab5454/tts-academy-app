@@ -83,7 +83,7 @@ object ExamPdfGenerator {
       fun drawHeader(pNumber: Int) {
         // Top university crest & institution bar
         canvas.drawRect(MARGIN, 30f, PAGE_WIDTH - MARGIN, 90f, headerBgPaint)
-        canvas.drawText("TTS ACADEMY • UNIVERSITY FRESHMAN DIVISION", MARGIN + 12f, 50f, titlePaint)
+        canvas.drawText("TTS ACADEMY • ${exam.university.uppercase()}", MARGIN + 12f, 50f, titlePaint)
         canvas.drawText(
           "Course: ${course?.code ?: "COURSE"} - ${course?.title ?: "Academic Curriculum"} • Academic Session: ${exam.academicYear}",
           MARGIN + 12f,

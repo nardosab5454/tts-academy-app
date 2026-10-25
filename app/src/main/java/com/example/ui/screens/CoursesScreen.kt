@@ -62,6 +62,7 @@ import com.example.data.local.model.NoteEntity
 import com.example.data.local.model.PastExamEntity
 import com.example.data.local.model.TopicEntity
 import com.example.ui.components.DetailTopBar
+import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
 import com.example.ui.theme.SuccessGreen
 import androidx.compose.material.icons.filled.Download
@@ -617,6 +618,24 @@ private fun PastExamsTabContent(
             verticalAlignment = Alignment.CenterVertically
           ) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+              Surface(
+                color = AcademicCobalt.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(4.dp)
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(Icons.Default.School, contentDescription = null, tint = AcademicCobalt, modifier = Modifier.size(11.dp))
+                  Spacer(modifier = Modifier.width(3.dp))
+                  Text(
+                    text = exam.university,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = AcademicCobalt
+                  )
+                }
+              }
+
               Surface(
                 color = MaterialTheme.colorScheme.tertiaryContainer,
                 shape = RoundedCornerShape(4.dp)

@@ -217,6 +217,7 @@ data class FirestoreNote(
 data class FirestorePastExam(
   val id: String = "",
   val courseId: String = "",
+  val university: String = "Addis Ababa University (AAU)",
   val academicYear: String = "",
   val semester: String = "Semester 1",
   val examType: String = "FINAL",
@@ -234,6 +235,7 @@ data class FirestorePastExam(
     return PastExamEntity(
       id = id,
       courseId = courseId,
+      university = university.ifBlank { "Addis Ababa University (AAU)" },
       academicYear = academicYear,
       semester = semester,
       examType = examType,
