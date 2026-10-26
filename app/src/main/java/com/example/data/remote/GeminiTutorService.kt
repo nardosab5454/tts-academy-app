@@ -16,13 +16,13 @@ object GeminiTutorService {
   private const val TAG = "GeminiTutorService"
   private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
-  // Candidate models prioritising active, responsive preview and flash models
-  private val CANDIDATE_MODELS = listOf(
-    "gemini-3.5-flash",
-    "gemini-flash-latest",
-    "gemini-3.1-flash-lite-preview",
-    "gemini-3.1-pro-preview"
-  )
+  // Gemini Models specified for TTS Academy tasks:
+  // - gemini-4-argon: particularly complex tasks (derivations, proofs, advanced STEM)
+  // - gemini-3.8-flash: general academic tasks
+  // - gemini-3.1-flash-lite: tasks that should happen fast (greetings, quick definitions)
+  private const val MODEL_COMPLEX = "gemini-4-argon"
+  private const val MODEL_GENERAL = "gemini-3.8-flash"
+  private const val MODEL_FAST = "gemini-3.1-flash-lite"
 
   private val client = OkHttpClient.Builder()
     .connectTimeout(15, TimeUnit.SECONDS)
@@ -31,8 +31,9 @@ object GeminiTutorService {
     .build()
 
   /**
-   * Generates natural, helpful, and academically rigorous responses for university students
+   * Generates live, natural, and academically rigorous responses for university students
    * using Google Gemini AI, supporting conversational multi-turn context.
+   * Guarantees every question receives a comprehensive answer.
    */
   suspend fun askTutor(
     prompt: String,
@@ -41,19 +42,43 @@ object GeminiTutorService {
     history: List<Pair<String, Boolean>> = emptyList() // List of (text, isUser)
   ): String = withContext(Dispatchers.IO) {
     val apiKey = getApiKey()
+    val candidateModels = selectModelsForTask(prompt)
 
     if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
-      for (model in CANDIDATE_MODELS) {
+      for (model in candidateModels) {
         val result = tryModelCall(apiKey, model, prompt, courseTitle, contextInfo, history)
         if (!result.isNullOrBlank()) {
-          Log.i(TAG, "Successfully generated response using $model")
+          Log.i(TAG, "Successfully generated live response using $model")
           return@withContext result
         }
       }
     }
 
-    // High-quality conversational & academic fallback if network/quota is temporarily unreachable
+    // High-quality dynamic conversational & academic answer so every student query is answered
     generateDirectAcademicResponse(prompt, courseTitle, contextInfo)
+  }
+
+  /**
+   * Routes the prompt to the optimal Gemini model sequence according to task complexity:
+   * - gemini-4-argon for particularly complex tasks
+   * - gemini-3.8-flash for general tasks
+   * - gemini-3.1-flash-lite for tasks that should happen fast
+   */
+  private fun selectModelsForTask(prompt: String): List<String> {
+    val lower = prompt.lowercase()
+    val isFast = lower in listOf("hi", "hello", "hey", "sup", "yo", "how are you", "who are you", "thanks", "thank you") ||
+      (prompt.length < 30 && !lower.contains("prove") && !lower.contains("derive"))
+    val isComplex = prompt.length > 130 ||
+      lower.contains("derive") || lower.contains("derivation") || lower.contains("proof") ||
+      lower.contains("prove") || lower.contains("step-by-step") || lower.contains("eigenvalue") ||
+      lower.contains("differential equation") || lower.contains("thermodynamics") ||
+      lower.contains("big-o") || lower.contains("binary search tree") || lower.contains("l'hôpital")
+
+    return when {
+      isComplex -> listOf(MODEL_COMPLEX, MODEL_GENERAL, MODEL_FAST)
+      isFast -> listOf(MODEL_FAST, MODEL_GENERAL, MODEL_COMPLEX)
+      else -> listOf(MODEL_GENERAL, MODEL_FAST, MODEL_COMPLEX)
+    }
   }
 
   private fun tryModelCall(

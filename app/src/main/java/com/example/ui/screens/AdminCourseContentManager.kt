@@ -52,6 +52,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -578,12 +579,30 @@ fun AdminPastExamTab(
   courses: List<CourseEntity>,
   questions: List<QuestionEntity>,
   initialCourseId: String = "",
+  onCourseSelected: (String) -> Unit = {},
   onSaveQuestion: (QuestionEntity) -> Unit,
   onSavePastExam: (PastExamEntity) -> Unit,
   onDeleteQuestion: (String) -> Unit
 ) {
-  var selectedCourseId by remember(initialCourseId, courses) {
+  var selectedCourseId by remember {
     mutableStateOf(if (initialCourseId.isNotBlank()) initialCourseId else courses.firstOrNull()?.id ?: "")
+  }
+
+  LaunchedEffect(initialCourseId) {
+    if (initialCourseId.isNotBlank() && selectedCourseId != initialCourseId) {
+      selectedCourseId = initialCourseId
+    }
+  }
+
+  LaunchedEffect(courses) {
+    if (courses.isNotEmpty()) {
+      if (selectedCourseId.isBlank() || courses.none { it.id == selectedCourseId }) {
+        if (selectedCourseId.isBlank()) {
+          selectedCourseId = courses.first().id
+          onCourseSelected(selectedCourseId)
+        }
+      }
+    }
   }
 
   var examUniversity by remember { mutableStateOf("Addis Ababa University (AAU)") }
@@ -632,7 +651,10 @@ fun AdminPastExamTab(
       AdminCourseSelector(
         courses = courses,
         selectedCourseId = selectedCourseId,
-        onCourseSelected = { selectedCourseId = it }
+        onCourseSelected = {
+          selectedCourseId = it
+          onCourseSelected(it)
+        }
       )
     }
 
@@ -1006,6 +1028,7 @@ fun AdminManageContentTab(
   notes: List<NoteEntity>,
   topics: List<TopicEntity> = emptyList(),
   initialCourseId: String = "",
+  onCourseSelected: (String) -> Unit = {},
   onSaveQuestion: (QuestionEntity) -> Unit,
   onDeleteQuestion: (String) -> Unit,
   onSaveNote: (NoteEntity) -> Unit,
@@ -1015,8 +1038,25 @@ fun AdminManageContentTab(
   onSwitchToAddQuestion: (String) -> Unit,
   onSwitchToAddNote: (String) -> Unit
 ) {
-  var selectedCourseId by remember(initialCourseId, courses) {
+  var selectedCourseId by remember {
     mutableStateOf(if (initialCourseId.isNotBlank()) initialCourseId else courses.firstOrNull()?.id ?: "")
+  }
+
+  LaunchedEffect(initialCourseId) {
+    if (initialCourseId.isNotBlank() && selectedCourseId != initialCourseId) {
+      selectedCourseId = initialCourseId
+    }
+  }
+
+  LaunchedEffect(courses) {
+    if (courses.isNotEmpty()) {
+      if (selectedCourseId.isBlank() || courses.none { it.id == selectedCourseId }) {
+        if (selectedCourseId.isBlank()) {
+          selectedCourseId = courses.first().id
+          onCourseSelected(selectedCourseId)
+        }
+      }
+    }
   }
 
   var selectedSubTab by remember { mutableIntStateOf(0) }
@@ -1067,6 +1107,7 @@ fun AdminManageContentTab(
         onCourseSelected = {
           selectedCourseId = it
           selectedSectionFilter = "ALL"
+          onCourseSelected(it)
         }
       )
     }

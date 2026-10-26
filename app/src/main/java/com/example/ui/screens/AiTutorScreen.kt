@@ -194,12 +194,12 @@ fun AiTutorScreen(
                   Spacer(modifier = Modifier.width(12.dp))
                   Column {
                     Text(
-                      text = "TTS Academy AI Research Tutor",
+                      text = "TTS Academy Live Gemini Tutor",
                       style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                       color = Color.White
                     )
                     Text(
-                      text = "Powered by Google Gemini 3.5 Flash",
+                      text = "Multi-Turn Live AI • gemini-4-argon & gemini-3.8-flash",
                       style = MaterialTheme.typography.labelSmall,
                       color = AcademicGold
                     )
@@ -305,7 +305,41 @@ fun AiTutorScreen(
         }
       }
 
-      // Render conversation messages
+      // Render welcome prompt or conversation messages
+      if (conversation.isEmpty()) {
+        item {
+          Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                  imageVector = Icons.Default.AutoAwesome,
+                  contentDescription = null,
+                  tint = MaterialTheme.colorScheme.primary,
+                  modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                  text = "Live Gemini Academic Tutor Ready",
+                  style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                  color = MaterialTheme.colorScheme.primary
+                )
+              }
+              Spacer(modifier = Modifier.height(8.dp))
+              Text(
+                text = "Ask any university question! Gemini provides rigorous step-by-step mathematical proofs, physics formulas, algorithms, and exam strategies. You can ask follow-up questions to continue our multi-turn tutoring session.",
+                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+          }
+        }
+      }
+
       items(conversation) { msg ->
         if (msg.isUser) {
           // User Question Bubble

@@ -47,6 +47,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -115,8 +116,19 @@ fun AdminPortalScreen(
   modifier: Modifier = Modifier
 ) {
   var selectedTab by remember { mutableIntStateOf(0) }
-  var activeCourseIdForAdd by remember(courses) {
+  var activeCourseIdForAdd by remember {
     mutableStateOf(courses.firstOrNull()?.id ?: "")
+  }
+
+  // Preserve user's course preference and only initialize or fallback if blank or non-existent
+  LaunchedEffect(courses) {
+    if (courses.isNotEmpty()) {
+      if (activeCourseIdForAdd.isBlank() || courses.none { it.id == activeCourseIdForAdd }) {
+        if (activeCourseIdForAdd.isBlank()) {
+          activeCourseIdForAdd = courses.first().id
+        }
+      }
+    }
   }
 
   val tabs = listOf(
@@ -208,6 +220,7 @@ fun AdminPortalScreen(
         courses = courses,
         questions = questions,
         initialCourseId = activeCourseIdForAdd,
+        onCourseSelected = { activeCourseIdForAdd = it },
         onSaveQuestion = onSaveQuestion,
         onSavePastExam = onSavePastExam,
         onDeleteQuestion = onDeleteQuestion
@@ -218,6 +231,7 @@ fun AdminPortalScreen(
         notes = notes,
         topics = topics,
         initialCourseId = activeCourseIdForAdd,
+        onCourseSelected = { activeCourseIdForAdd = it },
         onSaveQuestion = onSaveQuestion,
         onDeleteQuestion = onDeleteQuestion,
         onSaveNote = onSaveNote,
@@ -818,13 +832,38 @@ private fun AdminAddQuestionTab(
   onSaveQuestion: (QuestionEntity) -> Unit,
   onSaveTopic: (TopicEntity) -> Unit = {}
 ) {
-  var selectedCourseId by remember(initialCourseId, courses) {
+  var selectedCourseId by remember {
     mutableStateOf(if (initialCourseId.isNotBlank()) initialCourseId else courses.firstOrNull()?.id ?: "")
   }
-  val courseTopics = topics.filter { it.courseId == selectedCourseId }
-  var selectedTopicId by remember(selectedCourseId, courseTopics) {
-    mutableStateOf(courseTopics.firstOrNull()?.id ?: "")
+
+  LaunchedEffect(initialCourseId) {
+    if (initialCourseId.isNotBlank() && selectedCourseId != initialCourseId) {
+      selectedCourseId = initialCourseId
+    }
   }
+
+  LaunchedEffect(courses) {
+    if (courses.isNotEmpty()) {
+      if (selectedCourseId.isBlank() || courses.none { it.id == selectedCourseId }) {
+        if (selectedCourseId.isBlank()) {
+          selectedCourseId = courses.first().id
+          onCourseSelected(selectedCourseId)
+        }
+      }
+    }
+  }
+
+  val courseTopics = topics.filter { it.courseId == selectedCourseId }
+  var selectedTopicId by remember {
+    mutableStateOf("")
+  }
+
+  LaunchedEffect(selectedCourseId, courseTopics) {
+    if (courseTopics.isNotEmpty() && (selectedTopicId.isBlank() || courseTopics.none { it.id == selectedTopicId })) {
+      selectedTopicId = courseTopics.first().id
+    }
+  }
+
   var showAddSectionDialog by remember { mutableStateOf(false) }
   var questionText by remember { mutableStateOf("") }
   var optA by remember { mutableStateOf("") }
@@ -990,13 +1029,38 @@ private fun AdminAddNoteTab(
   onSaveNote: (NoteEntity) -> Unit,
   onSaveTopic: (TopicEntity) -> Unit = {}
 ) {
-  var selectedCourseId by remember(initialCourseId, courses) {
+  var selectedCourseId by remember {
     mutableStateOf(if (initialCourseId.isNotBlank()) initialCourseId else courses.firstOrNull()?.id ?: "")
   }
-  val courseTopics = topics.filter { it.courseId == selectedCourseId }
-  var selectedTopicId by remember(selectedCourseId, courseTopics) {
-    mutableStateOf(courseTopics.firstOrNull()?.id ?: "")
+
+  LaunchedEffect(initialCourseId) {
+    if (initialCourseId.isNotBlank() && selectedCourseId != initialCourseId) {
+      selectedCourseId = initialCourseId
+    }
   }
+
+  LaunchedEffect(courses) {
+    if (courses.isNotEmpty()) {
+      if (selectedCourseId.isBlank() || courses.none { it.id == selectedCourseId }) {
+        if (selectedCourseId.isBlank()) {
+          selectedCourseId = courses.first().id
+          onCourseSelected(selectedCourseId)
+        }
+      }
+    }
+  }
+
+  val courseTopics = topics.filter { it.courseId == selectedCourseId }
+  var selectedTopicId by remember {
+    mutableStateOf("")
+  }
+
+  LaunchedEffect(selectedCourseId, courseTopics) {
+    if (courseTopics.isNotEmpty() && (selectedTopicId.isBlank() || courseTopics.none { it.id == selectedTopicId })) {
+      selectedTopicId = courseTopics.first().id
+    }
+  }
+
   var showAddSectionDialog by remember { mutableStateOf(false) }
   var title by remember { mutableStateOf("") }
   var summary by remember { mutableStateOf("") }
