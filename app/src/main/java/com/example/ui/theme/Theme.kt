@@ -14,12 +14,12 @@ import androidx.compose.ui.platform.LocalContext
 private val DarkColorScheme =
   darkColorScheme(
     primary = DarkPrimary,
-    onPrimary = AcademicBlueDark,
+    onPrimary = GradientDeepNavy,
     primaryContainer = AcademicBluePrimary,
     onPrimaryContainer = Color.White,
     secondary = DarkSecondary,
     onSecondary = Color(0xFF00363A),
-    secondaryContainer = Color(0xFF075985),
+    secondaryContainer = Color(0xFF132A4A),
     onSecondaryContainer = Color(0xFFE0F2FE),
     tertiary = DarkTertiary,
     onTertiary = Color(0xFF451A03),
@@ -36,8 +36,8 @@ private val LightColorScheme =
   lightColorScheme(
     primary = AcademicBluePrimary,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFDBEAFE),
-    onPrimaryContainer = Color(0xFF1E3A8A),
+    primaryContainer = Color(0xFFE0EDFC),
+    onPrimaryContainer = AcademicBluePrimary,
     secondary = AcademicSky,
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFE0F2FE),
@@ -56,7 +56,7 @@ private val LightColorScheme =
 @Composable
 fun MyApplicationTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
-  dynamicColor: Boolean = false, // Keep consistent academic brand identity
+  dynamicColor: Boolean = false, // Preserve brand identity
   content: @Composable () -> Unit,
 ) {
   val colorScheme =

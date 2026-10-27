@@ -240,6 +240,15 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
           onSearchClick = { viewModel.navigateTo(Screen.SEARCH) },
           onProfileClick = { viewModel.navigateTo(Screen.PROFILE) },
           onAiTutorClick = { viewModel.navigateTo(Screen.AI_TUTOR) },
+          currentTheme = appTheme,
+          onToggleTheme = {
+            val isDark = when (appTheme) {
+              "LIGHT" -> false
+              "DARK" -> true
+              else -> false
+            }
+            viewModel.setAppTheme(if (isDark) "LIGHT" else "DARK")
+          },
           isOnline = isOnline
         )
       }

@@ -165,7 +165,7 @@ fun AiTutorScreen(
               .fillMaxWidth()
               .background(
                 Brush.horizontalGradient(
-                  listOf(AcademicBluePrimary, AcademicCobalt)
+                  listOf(com.example.ui.theme.GradientDeepNavy, com.example.ui.theme.GradientTealNavy)
                 )
               )
               .padding(18.dp)

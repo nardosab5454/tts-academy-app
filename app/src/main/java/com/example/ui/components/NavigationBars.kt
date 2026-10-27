@@ -1,7 +1,11 @@
 package com.example.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,11 +13,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Assignment
@@ -22,36 +28,27 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -73,46 +70,54 @@ fun AppHeader(
   onSearchClick: () -> Unit,
   onProfileClick: () -> Unit,
   onAiTutorClick: (() -> Unit)? = null,
+  currentTheme: String = "SYSTEM",
+  onToggleTheme: (() -> Unit)? = null,
   isOnline: Boolean = true,
   modifier: Modifier = Modifier
 ) {
+  val isDark = when (currentTheme) {
+    "LIGHT" -> false
+    "DARK" -> true
+    else -> isSystemInDarkTheme()
+  }
+
   Surface(
     modifier = modifier.fillMaxWidth(),
     color = MaterialTheme.colorScheme.surface,
-    tonalElevation = 2.dp,
-    shadowElevation = 2.dp
+    tonalElevation = 1.dp,
+    shadowElevation = 2.dp,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
   ) {
     Column(modifier = Modifier.fillMaxWidth()) {
       Row(
         modifier = Modifier
           .fillMaxWidth()
           .statusBarsPadding()
-          .padding(horizontal = 16.dp, vertical = 12.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-      Row(
+          .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.weight(1f)
+        horizontalArrangement = Arrangement.SpaceBetween
       ) {
-        // App emblem
-        Box(
-          modifier = Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(AcademicBluePrimary),
-          contentAlignment = Alignment.Center
+        // App emblem & title
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier.weight(1f)
         ) {
-          Icon(
-            imageVector = Icons.Default.School,
-            contentDescription = "TTS Academy",
-            tint = AcademicGold,
-            modifier = Modifier.size(24.dp)
-          )
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column {
-          Row(verticalAlignment = Alignment.CenterVertically) {
+          Box(
+            modifier = Modifier
+              .size(38.dp)
+              .clip(RoundedCornerShape(12.dp))
+              .background(AcademicBluePrimary),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.School,
+              contentDescription = "TTS Academy",
+              tint = AcademicGold,
+              modifier = Modifier.size(22.dp)
+            )
+          }
+          Spacer(modifier = Modifier.width(10.dp))
+          Column {
             Text(
               text = "TTS ACADEMY",
               style = MaterialTheme.typography.titleMedium.copy(
@@ -121,109 +126,146 @@ fun AppHeader(
               ),
               color = MaterialTheme.colorScheme.primary
             )
-          }
-          Text(
-            text = "Freshman University Learning",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-          )
-        }
-      }
-
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        if (onAiTutorClick != null) {
-          IconButton(
-            onClick = onAiTutorClick,
-            modifier = Modifier.testTag("ai_tutor_icon_button")
-          ) {
-            Icon(
-              imageVector = Icons.Default.AutoAwesome,
-              contentDescription = "Gemini AI Tutor",
-              tint = MaterialTheme.colorScheme.primary
+            Text(
+              text = user?.department ?: "Freshman University",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
             )
           }
         }
 
-        IconButton(
-          onClick = onSearchClick,
-          modifier = Modifier.testTag("search_icon_button")
+        // Action icons: AI Tutor, Theme Toggle (Day/Dark), Search, Notifications, Avatar
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-          Icon(
-            imageVector = Icons.Default.Search,
-            contentDescription = "Search",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-          )
-        }
+          if (onAiTutorClick != null) {
+            IconButton(
+              onClick = onAiTutorClick,
+              modifier = Modifier
+                .size(40.dp)
+                .testTag("ai_tutor_icon_button")
+            ) {
+              Icon(
+                imageVector = Icons.Default.AutoAwesome,
+                contentDescription = "Gemini AI Tutor",
+                tint = AcademicGold,
+                modifier = Modifier.size(20.dp)
+              )
+            }
+          }
 
-        IconButton(
-          onClick = onNotificationsClick,
-          modifier = Modifier.testTag("notifications_icon_button")
-        ) {
-          BadgedBox(
-            badge = {
-              if (unreadAnnouncementsCount > 0) {
-                Badge(containerColor = MaterialTheme.colorScheme.error) {
-                  Text("$unreadAnnouncementsCount")
+          // Day and Dark Mode toggle button
+          if (onToggleTheme != null) {
+            IconButton(
+              onClick = onToggleTheme,
+              modifier = Modifier
+                .size(40.dp)
+                .testTag("theme_toggle_button")
+            ) {
+              Icon(
+                imageVector = if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                contentDescription = if (isDark) "Switch to Day Mode" else "Switch to Dark Mode",
+                tint = if (isDark) AcademicGold else AcademicCobalt,
+                modifier = Modifier.size(20.dp)
+              )
+            }
+          }
+
+          IconButton(
+            onClick = onSearchClick,
+            modifier = Modifier
+              .size(40.dp)
+              .testTag("search_icon_button")
+          ) {
+            Icon(
+              imageVector = Icons.Default.Search,
+              contentDescription = "Search",
+              tint = MaterialTheme.colorScheme.onSurfaceVariant,
+              modifier = Modifier.size(20.dp)
+            )
+          }
+
+          IconButton(
+            onClick = onNotificationsClick,
+            modifier = Modifier
+              .size(40.dp)
+              .testTag("notifications_icon_button")
+          ) {
+            BadgedBox(
+              badge = {
+                if (unreadAnnouncementsCount > 0) {
+                  Badge(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp)
+                  ) {
+                    Text("$unreadAnnouncementsCount", fontSize = 9.sp)
+                  }
                 }
               }
+            ) {
+              Icon(
+                imageVector = Icons.Default.Notifications,
+                contentDescription = "Announcements",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+              )
             }
+          }
+
+          Spacer(modifier = Modifier.width(4.dp))
+
+          // Profile Avatar Button (Squircle with sleek border)
+          Surface(
+            modifier = Modifier
+              .size(36.dp)
+              .clip(RoundedCornerShape(10.dp))
+              .clickable(onClick = onProfileClick)
+              .testTag("profile_avatar_button"),
+            color = MaterialTheme.colorScheme.primaryContainer,
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
           ) {
-            Icon(
-              imageVector = Icons.Default.Notifications,
-              contentDescription = "Announcements",
-              tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Box(contentAlignment = Alignment.Center) {
+              Text(
+                text = user?.name?.firstOrNull()?.uppercase() ?: "S",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+              )
+            }
           }
         }
-
-        // Profile Avatar Button
-        Box(
-          modifier = Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primaryContainer)
-            .clickable(onClick = onProfileClick)
-            .testTag("profile_avatar_button"),
-          contentAlignment = Alignment.Center
-        ) {
-          Text(
-            text = user?.name?.firstOrNull()?.uppercase() ?: "S",
-            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onPrimaryContainer
-          )
-        }
       }
-    }
-    if (!isOnline) {
-      Surface(
-        color = MaterialTheme.colorScheme.errorContainer,
-        modifier = Modifier.fillMaxWidth().testTag("offline_warning_banner")
-      ) {
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-          verticalAlignment = Alignment.CenterVertically
+
+      if (!isOnline) {
+        Surface(
+          color = MaterialTheme.colorScheme.errorContainer,
+          modifier = Modifier.fillMaxWidth().testTag("offline_warning_banner")
         ) {
-          Icon(
-            imageVector = Icons.Default.CloudOff,
-            contentDescription = "Offline indicator",
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(16.dp)
-          )
-          Spacer(modifier = Modifier.width(8.dp))
-          Text(
-            text = "Offline Mode: Active internet connection required to access protected academic materials.",
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onErrorContainer
-          )
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(
+              imageVector = Icons.Default.CloudOff,
+              contentDescription = "Offline indicator",
+              tint = MaterialTheme.colorScheme.error,
+              modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              text = "Offline Mode: Previously downloaded materials remain accessible.",
+              style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+              color = MaterialTheme.colorScheme.onErrorContainer
+            )
+          }
         }
       }
     }
   }
-}
 }
 
 @Composable
@@ -240,7 +282,8 @@ fun DetailTopBar(
   Surface(
     modifier = modifier.fillMaxWidth(),
     color = MaterialTheme.colorScheme.surface,
-    tonalElevation = 2.dp
+    tonalElevation = 2.dp,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
   ) {
     Row(
       modifier = Modifier
@@ -327,67 +370,73 @@ fun AppBottomNavigation(
   onNavigate: (Screen) -> Unit,
   modifier: Modifier = Modifier
 ) {
-  Surface(
+  Box(
     modifier = modifier
       .fillMaxWidth()
-      .padding(horizontal = 16.dp, vertical = 8.dp)
-      .testTag("app_bottom_nav"),
-    shape = RoundedCornerShape(28.dp),
-    color = MaterialTheme.colorScheme.surface,
-    tonalElevation = 4.dp,
-    shadowElevation = 8.dp,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+      .navigationBarsPadding()
+      .padding(horizontal = 16.dp, vertical = 6.dp)
   ) {
-    Row(
+    Surface(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 6.dp, vertical = 6.dp),
-      horizontalArrangement = Arrangement.SpaceAround,
-      verticalAlignment = Alignment.CenterVertically
+        .testTag("app_bottom_nav"),
+      shape = RoundedCornerShape(32.dp),
+      color = MaterialTheme.colorScheme.surface,
+      tonalElevation = 6.dp,
+      shadowElevation = 10.dp,
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
     ) {
-      val navItems = listOf(
-        ModernNavItem(
-          label = "Home",
-          icon = Icons.Default.Home,
-          isSelected = currentScreen == Screen.DASHBOARD,
-          tag = "nav_tab_home",
-          onClick = { onNavigate(Screen.DASHBOARD) }
-        ),
-        ModernNavItem(
-          label = "Courses",
-          icon = Icons.Default.School,
-          isSelected = currentScreen == Screen.COURSES || currentScreen == Screen.COURSE_DETAIL,
-          tag = "nav_tab_courses",
-          onClick = { onNavigate(Screen.COURSES) }
-        ),
-        ModernNavItem(
-          label = "Notes",
-          icon = Icons.AutoMirrored.Filled.MenuBook,
-          isSelected = currentScreen == Screen.NOTES || currentScreen == Screen.NOTE_DETAIL,
-          tag = "nav_tab_notes",
-          onClick = { onNavigate(Screen.NOTES) }
-        ),
-        ModernNavItem(
-          label = "Exams",
-          icon = Icons.AutoMirrored.Filled.Assignment,
-          isSelected = currentScreen == Screen.PAST_EXAMS || currentScreen == Screen.PAST_EXAM_DETAIL,
-          tag = "nav_tab_exams",
-          onClick = { onNavigate(Screen.PAST_EXAMS) }
-        ),
-        ModernNavItem(
-          label = "Progress",
-          icon = Icons.Default.BarChart,
-          isSelected = currentScreen == Screen.PROGRESS,
-          tag = "nav_tab_progress",
-          onClick = { onNavigate(Screen.PROGRESS) }
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceAround,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        val navItems = listOf(
+          ModernNavItem(
+            label = "Home",
+            icon = Icons.Default.Home,
+            isSelected = currentScreen == Screen.DASHBOARD,
+            tag = "nav_tab_home",
+            onClick = { onNavigate(Screen.DASHBOARD) }
+          ),
+          ModernNavItem(
+            label = "Courses",
+            icon = Icons.Default.School,
+            isSelected = currentScreen == Screen.COURSES || currentScreen == Screen.COURSE_DETAIL,
+            tag = "nav_tab_courses",
+            onClick = { onNavigate(Screen.COURSES) }
+          ),
+          ModernNavItem(
+            label = "Notes",
+            icon = Icons.AutoMirrored.Filled.MenuBook,
+            isSelected = currentScreen == Screen.NOTES || currentScreen == Screen.NOTE_DETAIL,
+            tag = "nav_tab_notes",
+            onClick = { onNavigate(Screen.NOTES) }
+          ),
+          ModernNavItem(
+            label = "Exams",
+            icon = Icons.AutoMirrored.Filled.Assignment,
+            isSelected = currentScreen == Screen.PAST_EXAMS || currentScreen == Screen.PAST_EXAM_DETAIL,
+            tag = "nav_tab_exams",
+            onClick = { onNavigate(Screen.PAST_EXAMS) }
+          ),
+          ModernNavItem(
+            label = "Progress",
+            icon = Icons.Default.BarChart,
+            isSelected = currentScreen == Screen.PROGRESS,
+            tag = "nav_tab_progress",
+            onClick = { onNavigate(Screen.PROGRESS) }
+          )
         )
-      )
 
-      navItems.forEach { item ->
-        ModernNavigationTabItem(
-          item = item,
-          modifier = Modifier.weight(1f)
-        )
+        navItems.forEach { item ->
+          ModernNavigationTabItem(
+            item = item,
+            modifier = Modifier.weight(1f)
+          )
+        }
       }
     }
   }
@@ -406,29 +455,19 @@ private fun ModernNavigationTabItem(
   item: ModernNavItem,
   modifier: Modifier = Modifier
 ) {
-  val animatedBgColor by animateColorAsState(
-    targetValue = if (item.isSelected) {
-      AcademicCobalt.copy(alpha = 0.14f)
-    } else {
-      Color.Transparent
-    },
-    animationSpec = tween(250),
-    label = "tabBg"
-  )
-
   val animatedIconColor by animateColorAsState(
     targetValue = if (item.isSelected) {
-      AcademicCobalt
+      MaterialTheme.colorScheme.primary
     } else {
-      MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+      MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
     },
-    animationSpec = tween(250),
+    animationSpec = tween(200),
     label = "tabIcon"
   )
 
   Box(
     modifier = modifier
-      .clip(RoundedCornerShape(20.dp))
+      .clip(RoundedCornerShape(24.dp))
       .clickable(onClick = item.onClick)
       .padding(vertical = 4.dp)
       .testTag(item.tag),
@@ -438,27 +477,19 @@ private fun ModernNavigationTabItem(
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.Center
     ) {
-      Box(
-        modifier = Modifier
-          .clip(RoundedCornerShape(16.dp))
-          .background(animatedBgColor)
-          .padding(horizontal = 14.dp, vertical = 5.dp),
-        contentAlignment = Alignment.Center
-      ) {
-        Icon(
-          imageVector = item.icon,
-          contentDescription = item.label,
-          tint = animatedIconColor,
-          modifier = Modifier.size(22.dp)
-        )
-      }
+      Icon(
+        imageVector = item.icon,
+        contentDescription = item.label,
+        tint = animatedIconColor,
+        modifier = Modifier.size(22.dp)
+      )
 
       Spacer(modifier = Modifier.height(2.dp))
 
       Text(
         text = item.label,
         style = MaterialTheme.typography.labelSmall.copy(
-          fontWeight = if (item.isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+          fontWeight = if (item.isSelected) FontWeight.Bold else FontWeight.Medium,
           fontSize = 11.sp,
           letterSpacing = 0.2.sp
         ),
@@ -466,9 +497,9 @@ private fun ModernNavigationTabItem(
         maxLines = 1
       )
 
-      Spacer(modifier = Modifier.height(2.dp))
+      Spacer(modifier = Modifier.height(3.dp))
 
-      // Subtle active indicator dot
+      // Elegant active dot indicator matching reference image
       Box(
         modifier = Modifier
           .size(4.dp)

@@ -155,9 +155,9 @@ fun SignInScreen(
           .background(
             Brush.verticalGradient(
               colors = listOf(
-                AcademicCobalt,
-                AcademicBluePrimary,
-                AcademicBlueDark
+                com.example.ui.theme.GradientDeepNavy,
+                com.example.ui.theme.GradientOcean,
+                com.example.ui.theme.GradientTealNavy
               )
             )
           )
