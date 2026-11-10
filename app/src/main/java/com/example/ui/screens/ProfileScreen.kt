@@ -178,13 +178,6 @@ fun ProfileScreen(
       .testTag("profile_screen"),
     contentPadding = PaddingValues(bottom = 36.dp)
   ) {
-    item {
-      DetailTopBar(
-        title = "Student Profile & Settings",
-        onBackClick = onBackClick
-      )
-    }
-
     // 1. World-Class Modern Hero Banner & Avatar Card
     item {
       Card(

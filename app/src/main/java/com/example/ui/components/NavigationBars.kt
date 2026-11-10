@@ -25,7 +25,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CloudOff
@@ -33,6 +32,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
@@ -57,9 +57,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.model.UserEntity
-import com.example.ui.theme.AcademicBluePrimary
-import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
+import com.example.ui.theme.BrandGreenPrimary
 import com.example.ui.viewmodel.Screen
 
 @Composable
@@ -68,7 +67,7 @@ fun AppHeader(
   unreadAnnouncementsCount: Int,
   onNotificationsClick: () -> Unit,
   onSearchClick: () -> Unit,
-  onProfileClick: () -> Unit,
+  onProfileClick: (() -> Unit)? = null,
   onAiTutorClick: (() -> Unit)? = null,
   currentTheme: String = "SYSTEM",
   onToggleTheme: (() -> Unit)? = null,
@@ -86,7 +85,7 @@ fun AppHeader(
     color = MaterialTheme.colorScheme.surface,
     tonalElevation = 1.dp,
     shadowElevation = 2.dp,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
   ) {
     Column(modifier = Modifier.fillMaxWidth()) {
       Row(
@@ -106,13 +105,13 @@ fun AppHeader(
             modifier = Modifier
               .size(38.dp)
               .clip(RoundedCornerShape(12.dp))
-              .background(AcademicBluePrimary),
+              .background(BrandGreenPrimary),
             contentAlignment = Alignment.Center
           ) {
             Icon(
               imageVector = Icons.Default.School,
               contentDescription = "TTS Academy",
-              tint = AcademicGold,
+              tint = Color.White,
               modifier = Modifier.size(22.dp)
             )
           }
@@ -136,10 +135,11 @@ fun AppHeader(
           }
         }
 
-        // Action icons: AI Tutor, Theme Toggle (Day/Dark), Search, Notifications, Avatar
+        // Clean Action Icons (AI Tutor, Day/Dark Theme, Search, Notifications)
+        // Profile icon removed from top per user request (Profile is directly in the bottom navigation)
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(2.dp)
+          horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
           if (onAiTutorClick != null) {
             IconButton(
@@ -168,7 +168,7 @@ fun AppHeader(
               Icon(
                 imageVector = if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
                 contentDescription = if (isDark) "Switch to Day Mode" else "Switch to Dark Mode",
-                tint = if (isDark) AcademicGold else AcademicCobalt,
+                tint = if (isDark) AcademicGold else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp)
               )
             }
@@ -211,27 +211,6 @@ fun AppHeader(
                 contentDescription = "Announcements",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
-              )
-            }
-          }
-
-          Spacer(modifier = Modifier.width(4.dp))
-
-          // Profile Avatar Button (Squircle with sleek border)
-          Surface(
-            modifier = Modifier
-              .size(36.dp)
-              .clip(RoundedCornerShape(10.dp))
-              .clickable(onClick = onProfileClick)
-              .testTag("profile_avatar_button"),
-            color = MaterialTheme.colorScheme.primaryContainer,
-            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
-          ) {
-            Box(contentAlignment = Alignment.Center) {
-              Text(
-                text = user?.name?.firstOrNull()?.uppercase() ?: "S",
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onPrimaryContainer
               )
             }
           }
@@ -382,8 +361,8 @@ fun AppBottomNavigation(
         .testTag("app_bottom_nav"),
       shape = RoundedCornerShape(32.dp),
       color = MaterialTheme.colorScheme.surface,
-      tonalElevation = 6.dp,
-      shadowElevation = 10.dp,
+      tonalElevation = 4.dp,
+      shadowElevation = 8.dp,
       border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
     ) {
       Row(
@@ -422,12 +401,13 @@ fun AppBottomNavigation(
             tag = "nav_tab_exams",
             onClick = { onNavigate(Screen.PAST_EXAMS) }
           ),
+          // Substituted Progress with Profile & Settings per user request
           ModernNavItem(
-            label = "Progress",
-            icon = Icons.Default.BarChart,
-            isSelected = currentScreen == Screen.PROGRESS,
-            tag = "nav_tab_progress",
-            onClick = { onNavigate(Screen.PROGRESS) }
+            label = "Profile",
+            icon = Icons.Default.Person,
+            isSelected = currentScreen == Screen.PROFILE,
+            tag = "nav_tab_profile",
+            onClick = { onNavigate(Screen.PROFILE) }
           )
         )
 
@@ -465,6 +445,16 @@ private fun ModernNavigationTabItem(
     label = "tabIcon"
   )
 
+  val animatedBgColor by animateColorAsState(
+    targetValue = if (item.isSelected) {
+      MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+    } else {
+      Color.Transparent
+    },
+    animationSpec = tween(200),
+    label = "tabBg"
+  )
+
   Box(
     modifier = modifier
       .clip(RoundedCornerShape(24.dp))
@@ -477,12 +467,20 @@ private fun ModernNavigationTabItem(
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.Center
     ) {
-      Icon(
-        imageVector = item.icon,
-        contentDescription = item.label,
-        tint = animatedIconColor,
-        modifier = Modifier.size(22.dp)
-      )
+      Box(
+        modifier = Modifier
+          .clip(RoundedCornerShape(16.dp))
+          .background(animatedBgColor)
+          .padding(horizontal = 12.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
+      ) {
+        Icon(
+          imageVector = item.icon,
+          contentDescription = item.label,
+          tint = animatedIconColor,
+          modifier = Modifier.size(22.dp)
+        )
+      }
 
       Spacer(modifier = Modifier.height(2.dp))
 
@@ -497,14 +495,14 @@ private fun ModernNavigationTabItem(
         maxLines = 1
       )
 
-      Spacer(modifier = Modifier.height(3.dp))
+      Spacer(modifier = Modifier.height(2.dp))
 
-      // Elegant active dot indicator matching reference image
+      // Subtle active dot indicator with primary brand color
       Box(
         modifier = Modifier
           .size(4.dp)
           .clip(CircleShape)
-          .background(if (item.isSelected) AcademicGold else Color.Transparent)
+          .background(if (item.isSelected) MaterialTheme.colorScheme.primary else Color.Transparent)
       )
     }
   }

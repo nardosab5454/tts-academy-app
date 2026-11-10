@@ -14,15 +14,15 @@ import androidx.compose.ui.platform.LocalContext
 private val DarkColorScheme =
   darkColorScheme(
     primary = DarkPrimary,
-    onPrimary = GradientDeepNavy,
-    primaryContainer = AcademicBluePrimary,
-    onPrimaryContainer = Color.White,
+    onPrimary = Color(0xFF0A2214),
+    primaryContainer = Color(0xFF1E5235),
+    onPrimaryContainer = BrandGreenSurface,
     secondary = DarkSecondary,
-    onSecondary = Color(0xFF00363A),
-    secondaryContainer = Color(0xFF132A4A),
-    onSecondaryContainer = Color(0xFFE0F2FE),
+    onSecondary = Color(0xFF10331C),
+    secondaryContainer = Color(0xFF1B3B26),
+    onSecondaryContainer = BrandGreenSecondary,
     tertiary = DarkTertiary,
-    onTertiary = Color(0xFF451A03),
+    onTertiary = Color(0xFF3E2723),
     background = DarkBackground,
     surface = DarkSurface,
     surfaceVariant = DarkSurfaceVariant,
@@ -34,15 +34,15 @@ private val DarkColorScheme =
 
 private val LightColorScheme =
   lightColorScheme(
-    primary = AcademicBluePrimary,
+    primary = BrandGreenPrimary,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFE0EDFC),
-    onPrimaryContainer = AcademicBluePrimary,
-    secondary = AcademicSky,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE0F2FE),
-    onSecondaryContainer = Color(0xFF0369A1),
-    tertiary = AcademicAmberDark,
+    primaryContainer = BrandGreenSurface,
+    onPrimaryContainer = Color(0xFF134327),
+    secondary = BrandGreenSecondary,
+    onSecondary = Color(0xFF1B4D33),
+    secondaryContainer = BrandGreenSurface,
+    onSecondaryContainer = Color(0xFF1B4D33),
+    tertiary = AcademicGold,
     onTertiary = Color.White,
     background = LightBackground,
     surface = LightSurface,
@@ -56,7 +56,7 @@ private val LightColorScheme =
 @Composable
 fun MyApplicationTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
-  dynamicColor: Boolean = false, // Preserve brand identity
+  dynamicColor: Boolean = false, // Keep consistent modern brand identity
   content: @Composable () -> Unit,
 ) {
   val colorScheme =

@@ -223,7 +223,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
     Screen.COURSES,
     Screen.NOTES,
     Screen.PAST_EXAMS,
-    Screen.PROGRESS
+    Screen.PROFILE
   )
 
   Scaffold(
