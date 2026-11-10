@@ -30,15 +30,15 @@ object GeminiService {
   private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
   private val okHttpClient = OkHttpClient.Builder()
-    .connectTimeout(60, TimeUnit.SECONDS)
-    .readTimeout(60, TimeUnit.SECONDS)
-    .writeTimeout(60, TimeUnit.SECONDS)
+    .connectTimeout(10, TimeUnit.SECONDS)
+    .readTimeout(20, TimeUnit.SECONDS)
+    .writeTimeout(10, TimeUnit.SECONDS)
     .build()
 
   suspend fun askGemini(
     prompt: String,
     courseContext: String? = null,
-    enableSearchGrounding: Boolean = true
+    enableSearchGrounding: Boolean = false
   ): AiExplanationResult = withContext(Dispatchers.IO) {
     val rawKey = try { BuildConfig.GEMINI_API_KEY } catch (_: Throwable) { "" }
     val apiKey = if (rawKey.isNotBlank() && rawKey != "MY_GEMINI_API_KEY") rawKey else (System.getenv("GEMINI_API_KEY") ?: "")

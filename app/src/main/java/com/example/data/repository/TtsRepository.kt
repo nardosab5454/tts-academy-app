@@ -363,16 +363,6 @@ class TtsRepository(
         Log.e("TtsRepository", "Cloud seed check error", e)
       }
     }
-
-    // 9. Periodic cloud pull to ensure updates propagate even if background socket connection paused
-    scope.launch(Dispatchers.IO) {
-      while (true) {
-        kotlinx.coroutines.delay(20000L) // every 20 seconds
-        try {
-          syncFromCloudNow()
-        } catch (_: Exception) {}
-      }
-    }
   }
 
   suspend fun syncFromCloudNow() = withContext(Dispatchers.IO) {

@@ -199,7 +199,7 @@ fun AiTutorScreen(
                       color = Color.White
                     )
                     Text(
-                      text = "Multi-Turn Live AI • gemini-4-argon & gemini-3.8-flash",
+                      text = "Real-Time Live AI • Gemini 3.5 Flash & Lite",
                       style = MaterialTheme.typography.labelSmall,
                       color = AcademicGold
                     )
