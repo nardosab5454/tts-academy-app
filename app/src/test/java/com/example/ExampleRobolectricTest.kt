@@ -282,5 +282,64 @@ class ExampleRobolectricTest {
 
     db.close()
   }
+
+  @Test
+  fun `verify revision notes are sorted chronologically by chapter number from chapter 1 to last`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = androidx.room.Room.inMemoryDatabaseBuilder(context, com.example.data.local.AppDatabase::class.java)
+      .allowMainThreadQueries()
+      .build()
+    com.example.data.local.AppDatabase.populateDatabase(db)
+    val repo = com.example.data.repository.TtsRepository(db)
+    repo.initialize()
+
+    // 1. Math 101 notes seeded should be sorted: Chapter 1, then Chapter 2, then Chapter 3
+    val mathNotes = repo.getNotesForCourse("MATH_101")
+    assertTrue("Should have at least 3 math notes", mathNotes.size >= 3)
+    assertEquals(1, mathNotes[0].chapterNumber)
+    assertEquals(2, mathNotes[1].chapterNumber)
+    assertEquals(3, mathNotes[2].chapterNumber)
+
+    // 2. Admin inserts notes out of order: inserts Chapter 5 first, then Chapter 1, then Chapter 4
+    val noteCh5 = com.example.data.local.model.NoteEntity(
+      id = "TEST_N_5",
+      courseId = "TEST_SORT_101",
+      topicId = "T_1",
+      title = "Chapter 5: Advanced Topics",
+      summary = "Chapter 5 summary",
+      contentMarkdown = "Chapter 5 content",
+      chapterNumber = 5
+    )
+    val noteCh1 = com.example.data.local.model.NoteEntity(
+      id = "TEST_N_1",
+      courseId = "TEST_SORT_101",
+      topicId = "T_1",
+      title = "Chapter 1: Intro",
+      summary = "Chapter 1 summary",
+      contentMarkdown = "Chapter 1 content",
+      chapterNumber = 1
+    )
+    val noteCh4 = com.example.data.local.model.NoteEntity(
+      id = "TEST_N_4",
+      courseId = "TEST_SORT_101",
+      topicId = "T_1",
+      title = "Chapter 4: Intermediate",
+      summary = "Chapter 4 summary",
+      contentMarkdown = "Chapter 4 content",
+      chapterNumber = 4
+    )
+
+    repo.saveNote(noteCh5)
+    repo.saveNote(noteCh1)
+    repo.saveNote(noteCh4)
+
+    val sortedNotes = repo.getNotesForCourse("TEST_SORT_101")
+    assertEquals(3, sortedNotes.size)
+    assertEquals("First note must be Chapter 1", 1, sortedNotes[0].chapterNumber)
+    assertEquals("Second note must be Chapter 4", 4, sortedNotes[1].chapterNumber)
+    assertEquals("Third note must be Chapter 5", 5, sortedNotes[2].chapterNumber)
+
+    db.close()
+  }
 }
 

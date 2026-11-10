@@ -179,22 +179,22 @@ interface QuestionDao {
 
 @Dao
 interface NoteDao {
-  @Query("SELECT * FROM notes WHERE courseId = :courseId AND isPublished = 1 ORDER BY createdAt ASC")
+  @Query("SELECT * FROM notes WHERE courseId = :courseId AND isPublished = 1 ORDER BY chapterNumber ASC, createdAt ASC")
   fun getNotesForCourseFlow(courseId: String): Flow<List<NoteEntity>>
 
-  @Query("SELECT * FROM notes WHERE isPublished = 1 ORDER BY createdAt DESC")
+  @Query("SELECT * FROM notes WHERE isPublished = 1 ORDER BY chapterNumber ASC, createdAt ASC")
   fun getAllPublishedNotesFlow(): Flow<List<NoteEntity>>
 
-  @Query("SELECT * FROM notes ORDER BY createdAt DESC")
+  @Query("SELECT * FROM notes ORDER BY chapterNumber ASC, createdAt ASC")
   fun getAllNotesFlow(): Flow<List<NoteEntity>>
 
   @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
   suspend fun getNoteById(id: String): NoteEntity?
 
-  @Query("SELECT * FROM notes WHERE courseId = :courseId")
+  @Query("SELECT * FROM notes WHERE courseId = :courseId ORDER BY chapterNumber ASC, createdAt ASC")
   suspend fun getNotesForCourse(courseId: String): List<NoteEntity>
 
-  @Query("SELECT * FROM notes WHERE title LIKE '%' || :query || '%' OR contentMarkdown LIKE '%' || :query || '%' OR summary LIKE '%' || :query || '%'")
+  @Query("SELECT * FROM notes WHERE title LIKE '%' || :query || '%' OR contentMarkdown LIKE '%' || :query || '%' OR summary LIKE '%' || :query || '%' ORDER BY chapterNumber ASC, createdAt ASC")
   suspend fun searchNotes(query: String): List<NoteEntity>
 
   @Insert(onConflict = OnConflictStrategy.REPLACE)

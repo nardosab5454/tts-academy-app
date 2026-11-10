@@ -61,9 +61,13 @@ import com.example.data.local.model.CourseEntity
 import com.example.data.local.model.NoteEntity
 import com.example.data.local.model.PastExamEntity
 import com.example.data.local.model.TopicEntity
+import androidx.compose.foundation.BorderStroke
 import com.example.ui.components.DetailTopBar
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
+import com.example.ui.theme.BrandGreenPrimary
+import com.example.ui.theme.BrandGreenSecondary
+import com.example.ui.theme.BrandGreenSurface
 import com.example.ui.theme.SuccessGreen
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CloudDone
@@ -505,12 +509,16 @@ private fun NotesTabContent(
     return
   }
 
+  val sortedNotes = remember(notes) {
+    notes.sortedWith(compareBy({ it.chapterNumber }, { it.createdAt }))
+  }
+
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(16.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp)
   ) {
-    items(notes) { note ->
+    items(sortedNotes) { note ->
       val downloaded = isCourseDownloaded || (isNoteDownloaded?.invoke(note) == true)
       Card(
         shape = RoundedCornerShape(14.dp),
@@ -526,11 +534,25 @@ private fun NotesTabContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
           ) {
-            Text(
-              text = "${note.readTimeMinutes} min read",
-              style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.primary
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+              Surface(
+                color = BrandGreenSurface,
+                shape = RoundedCornerShape(4.dp),
+                border = BorderStroke(1.dp, BrandGreenSecondary)
+              ) {
+                Text(
+                  text = "Chapter ${note.chapterNumber}",
+                  style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                  color = BrandGreenPrimary,
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+              }
+              Text(
+                text = "${note.readTimeMinutes} min read",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
               if (downloaded) {

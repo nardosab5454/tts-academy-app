@@ -73,6 +73,9 @@ import com.example.data.local.model.TopicEntity
 import com.example.ui.theme.AcademicBluePrimary
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
+import com.example.ui.theme.BrandGreenPrimary
+import com.example.ui.theme.BrandGreenSecondary
+import com.example.ui.theme.BrandGreenSurface
 import com.example.ui.theme.SuccessGreen
 import java.util.UUID
 
@@ -1076,11 +1079,11 @@ fun AdminManageContentTab(
     courseQuestions.filter { it.topicId == selectedSectionFilter }
   }
 
-  val filteredNotes = if (selectedSectionFilter == "ALL") {
+  val filteredNotes = (if (selectedSectionFilter == "ALL") {
     courseNotes
   } else {
     courseNotes.filter { it.topicId == selectedSectionFilter }
-  }
+  }).sortedWith(compareBy({ it.chapterNumber }, { it.createdAt }))
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -1356,7 +1359,19 @@ fun AdminManageContentTab(
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 Column(modifier = Modifier.weight(1f)) {
-                  Row(verticalAlignment = Alignment.CenterVertically) {
+                  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Surface(
+                      color = BrandGreenSurface,
+                      shape = RoundedCornerShape(6.dp),
+                      border = BorderStroke(1.dp, BrandGreenSecondary)
+                    ) {
+                      Text(
+                        text = "Chapter ${note.chapterNumber}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = BrandGreenPrimary,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                      )
+                    }
                     Surface(
                       color = AcademicGold.copy(alpha = 0.2f),
                       shape = RoundedCornerShape(6.dp)
@@ -1564,6 +1579,7 @@ fun EditNoteDialog(
   onSave: (NoteEntity) -> Unit
 ) {
   var title by remember { mutableStateOf(note.title) }
+  var chapterNumber by remember { mutableIntStateOf(note.chapterNumber) }
   var selectedTopicId by remember { mutableStateOf(note.topicId) }
   var summary by remember { mutableStateOf(note.summary) }
   var formulas by remember { mutableStateOf(note.keyFormulas) }
@@ -1581,6 +1597,65 @@ fun EditNoteDialog(
               selectedSectionId = selectedTopicId,
               onSectionSelected = { selectedTopicId = it }
             )
+          }
+        }
+        item {
+          Card(
+            shape = RoundedCornerShape(10.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            border = BorderStroke(1.dp, BrandGreenSecondary.copy(alpha = 0.5f)),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Column {
+                Text(
+                  text = "Chapter / Sort Order",
+                  style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                  color = BrandGreenPrimary
+                )
+                Text(
+                  text = "Chapter 1 to last chapter",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
+              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedButton(
+                  onClick = { if (chapterNumber > 1) chapterNumber-- },
+                  shape = RoundedCornerShape(6.dp),
+                  contentPadding = PaddingValues(horizontal = 6.dp),
+                  modifier = Modifier.height(30.dp)
+                ) {
+                  Text("-", fontWeight = FontWeight.Bold)
+                }
+                Surface(
+                  color = BrandGreenSurface,
+                  shape = RoundedCornerShape(6.dp),
+                  border = BorderStroke(1.dp, BrandGreenSecondary)
+                ) {
+                  Text(
+                    text = "Ch $chapterNumber",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = BrandGreenPrimary,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                  )
+                }
+                OutlinedButton(
+                  onClick = { chapterNumber++ },
+                  shape = RoundedCornerShape(6.dp),
+                  contentPadding = PaddingValues(horizontal = 6.dp),
+                  modifier = Modifier.height(30.dp)
+                ) {
+                  Text("+", fontWeight = FontWeight.Bold)
+                }
+              }
+            }
           }
         }
         item { OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth()) }
@@ -1603,6 +1678,7 @@ fun EditNoteDialog(
           onSave(
             note.copy(
               topicId = selectedTopicId.ifBlank { note.topicId },
+              chapterNumber = chapterNumber,
               title = title.trim(),
               summary = summary.trim(),
               keyFormulas = formulas.trim(),

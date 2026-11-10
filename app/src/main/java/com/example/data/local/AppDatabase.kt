@@ -45,7 +45,7 @@ import kotlinx.coroutines.launch
     UserPreferenceEntity::class,
     AccessCodeEntity::class
   ],
-  version = 4,
+  version = 5,
   exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

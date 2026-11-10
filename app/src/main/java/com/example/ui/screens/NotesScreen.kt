@@ -39,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +61,9 @@ import androidx.compose.material3.ButtonDefaults
 import com.example.ui.components.DetailTopBar
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
+import com.example.ui.theme.BrandGreenPrimary
+import com.example.ui.theme.BrandGreenSecondary
+import com.example.ui.theme.BrandGreenSurface
 import com.example.ui.theme.SuccessGreen
 
 @Composable
@@ -77,16 +81,30 @@ fun NotesScreen(
 ) {
   var searchQuery by remember { mutableStateOf("") }
   var selectedCourseId by remember { mutableStateOf<String?>("All") }
+  var selectedChapterFilter by remember { mutableStateOf<Int?>(null) }
 
   val courseMap = remember(courses) { courses.associateBy { it.id } }
 
-  val filteredNotes = notes.filter { note ->
-    (selectedCourseId == "All" || note.courseId == selectedCourseId) &&
+  // Reset chapter filter when course changes
+  LaunchedEffect(selectedCourseId) {
+    selectedChapterFilter = null
+  }
+
+  val baseCourseNotes = notes.filter { note ->
+    (selectedCourseId == "All" || note.courseId == selectedCourseId)
+  }
+
+  val availableChapters = remember(baseCourseNotes) {
+    baseCourseNotes.map { it.chapterNumber }.distinct().sorted()
+  }
+
+  val filteredNotes = baseCourseNotes.filter { note ->
+    (selectedChapterFilter == null || note.chapterNumber == selectedChapterFilter) &&
       (searchQuery.isBlank() ||
         note.title.contains(searchQuery, ignoreCase = true) ||
         note.summary.contains(searchQuery, ignoreCase = true) ||
         note.contentMarkdown.contains(searchQuery, ignoreCase = true))
-  }
+  }.sortedWith(compareBy({ it.chapterNumber }, { it.createdAt }))
 
   Column(
     modifier = modifier
@@ -179,7 +197,7 @@ fun NotesScreen(
     LazyRow(
       contentPadding = PaddingValues(horizontal = 16.dp),
       horizontalArrangement = Arrangement.spacedBy(8.dp),
-      modifier = Modifier.padding(bottom = 8.dp)
+      modifier = Modifier.padding(bottom = 6.dp)
     ) {
       item {
         FilterChip(
@@ -194,6 +212,31 @@ fun NotesScreen(
           onClick = { selectedCourseId = course.id },
           label = { Text(course.code) }
         )
+      }
+    }
+
+    // Chapter Filter Chips (when multiple chapters exist)
+    if (availableChapters.size > 1) {
+      LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.padding(bottom = 8.dp)
+      ) {
+        item {
+          FilterChip(
+            selected = selectedChapterFilter == null,
+            onClick = { selectedChapterFilter = null },
+            label = { Text("All Chapters (${baseCourseNotes.size})") }
+          )
+        }
+        items(availableChapters) { ch ->
+          val countInChapter = baseCourseNotes.count { it.chapterNumber == ch }
+          FilterChip(
+            selected = selectedChapterFilter == ch,
+            onClick = { selectedChapterFilter = if (selectedChapterFilter == ch) null else ch },
+            label = { Text("Chapter $ch ($countInChapter)") }
+          )
+        }
       }
     }
 
@@ -258,6 +301,19 @@ private fun NoteCardItem(
               text = courseCode,
               style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
               color = MaterialTheme.colorScheme.onPrimaryContainer,
+              modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+          }
+
+          Surface(
+            color = BrandGreenSurface,
+            shape = RoundedCornerShape(4.dp),
+            border = BorderStroke(1.dp, BrandGreenSecondary)
+          ) {
+            Text(
+              text = "Chapter ${note.chapterNumber}",
+              style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+              color = BrandGreenPrimary,
               modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
             )
           }
@@ -405,7 +461,7 @@ fun NoteDetailScreen(
   ) {
     DetailTopBar(
       title = note.title,
-      subtitle = "${course?.title ?: "Revision Note"} • ${note.readTimeMinutes} min read",
+      subtitle = "${course?.code ?: "COURSE"} • Chapter ${note.chapterNumber} • ${note.readTimeMinutes} min read",
       onBackClick = onBackClick,
       isBookmarked = isBookmarked,
       onBookmarkClick = onToggleBookmark

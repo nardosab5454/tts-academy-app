@@ -14,7 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -78,6 +81,9 @@ import com.example.ui.theme.AcademicBlueDark
 import com.example.ui.theme.AcademicBluePrimary
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
+import com.example.ui.theme.BrandGreenPrimary
+import com.example.ui.theme.BrandGreenSecondary
+import com.example.ui.theme.BrandGreenSurface
 import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.SuccessGreen
 import java.util.UUID
@@ -211,6 +217,7 @@ fun AdminPortalScreen(
       3 -> AdminAddNoteTab(
         courses = courses,
         topics = topics,
+        notes = notes,
         initialCourseId = activeCourseIdForAdd,
         onCourseSelected = { activeCourseIdForAdd = it },
         onSaveNote = onSaveNote,
@@ -1024,6 +1031,7 @@ private fun AdminAddQuestionTab(
 private fun AdminAddNoteTab(
   courses: List<CourseEntity>,
   topics: List<TopicEntity> = emptyList(),
+  notes: List<NoteEntity> = emptyList(),
   initialCourseId: String = "",
   onCourseSelected: (String) -> Unit = {},
   onSaveNote: (NoteEntity) -> Unit,
@@ -1051,6 +1059,9 @@ private fun AdminAddNoteTab(
   }
 
   val courseTopics = topics.filter { it.courseId == selectedCourseId }
+  val courseNotes = notes.filter { it.courseId == selectedCourseId }.sortedBy { it.chapterNumber }
+  val suggestedChapter = (courseNotes.maxOfOrNull { it.chapterNumber } ?: 0) + 1
+
   var selectedTopicId by remember {
     mutableStateOf("")
   }
@@ -1059,6 +1070,13 @@ private fun AdminAddNoteTab(
     if (courseTopics.isNotEmpty() && (selectedTopicId.isBlank() || courseTopics.none { it.id == selectedTopicId })) {
       selectedTopicId = courseTopics.first().id
     }
+  }
+
+  var chapterNumber by remember { mutableIntStateOf(suggestedChapter) }
+
+  // Update chapter number automatically when switching courses
+  LaunchedEffect(selectedCourseId, courseNotes.size) {
+    chapterNumber = suggestedChapter
   }
 
   var showAddSectionDialog by remember { mutableStateOf(false) }
@@ -1074,7 +1092,7 @@ private fun AdminAddNoteTab(
   ) {
     item {
       Text("Create Revision Note", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-      Text("Add comprehensive summaries and formulas to any freshman course.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      Text("Add comprehensive summaries and formulas to any freshman course, sorted from Chapter 1 to the last chapter.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 
     // Course Selector
@@ -1099,7 +1117,99 @@ private fun AdminAddNoteTab(
       )
     }
 
-    item { OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Note Title") }, modifier = Modifier.fillMaxWidth()) }
+    // Chapter & Sorting Order Picker Card
+    item {
+      Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, BrandGreenSecondary.copy(alpha = 0.6f)),
+        elevation = CardDefaults.cardElevation(1.dp),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = "CHAPTER & PRESENTATION ORDER",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                color = BrandGreenPrimary
+              )
+              Text(
+                text = "Controls exact sorting for students from Chapter 1 up to the last chapter.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+
+            // Stepper
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+              OutlinedButton(
+                onClick = { if (chapterNumber > 1) chapterNumber-- },
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.height(34.dp)
+              ) {
+                Text("-", fontWeight = FontWeight.Bold)
+              }
+              Surface(
+                color = BrandGreenSurface,
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, BrandGreenSecondary)
+              ) {
+                Text(
+                  text = "Chapter $chapterNumber",
+                  style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                  color = BrandGreenPrimary,
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+              }
+              OutlinedButton(
+                onClick = { chapterNumber++ },
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.height(34.dp)
+              ) {
+                Text("+", fontWeight = FontWeight.Bold)
+              }
+            }
+          }
+
+          // Quick Chapter Chips (1 to 12)
+          Text(
+            text = "Select Chapter Number:",
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold)
+          )
+          LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items((1..12).toList()) { ch ->
+              FilterChip(
+                selected = chapterNumber == ch,
+                onClick = { chapterNumber = ch },
+                label = { Text("Ch $ch") }
+              )
+            }
+          }
+
+          if (courseNotes.isNotEmpty()) {
+            Text(
+              text = "Already created in this course: " + courseNotes.joinToString { "Ch ${it.chapterNumber}: ${it.title.take(16)}" },
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis
+            )
+          }
+        }
+      }
+    }
+
+    item { OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Note Title (e.g. Limits & Continuity)") }, modifier = Modifier.fillMaxWidth()) }
     item { OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Concept Summary") }, modifier = Modifier.fillMaxWidth(), maxLines = 2) }
     item { OutlinedTextField(value = formulas, onValueChange = { formulas = it }, label = { Text("Key Formulas") }, modifier = Modifier.fillMaxWidth()) }
     item { OutlinedTextField(value = markdownContent, onValueChange = { markdownContent = it }, label = { Text("Detailed Revision Text / Markdown") }, modifier = Modifier.fillMaxWidth(), minLines = 5) }
@@ -1113,6 +1223,7 @@ private fun AdminAddNoteTab(
               courseId = selectedCourseId.ifBlank { courses.firstOrNull()?.id ?: "MATH_101" },
               topicId = selectedTopicId.ifBlank { "T_GEN" },
               title = title.trim(),
+              chapterNumber = chapterNumber,
               summary = summary.trim(),
               contentMarkdown = markdownContent.trim(),
               keyFormulas = formulas.trim(),
@@ -1127,11 +1238,11 @@ private fun AdminAddNoteTab(
           }
         },
         modifier = Modifier.fillMaxWidth().height(48.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = AcademicBluePrimary)
+        colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary)
       ) {
         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(6.dp))
-        Text("Save Revision Note to Selected Course", fontWeight = FontWeight.Bold)
+        Text("Save Chapter $chapterNumber Revision Note", fontWeight = FontWeight.Bold)
       }
     }
   }

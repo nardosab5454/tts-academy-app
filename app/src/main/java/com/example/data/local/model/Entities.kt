@@ -81,6 +81,7 @@ data class NoteEntity(
   val summary: String,
   val contentMarkdown: String,
   val keyFormulas: String = "",
+  val chapterNumber: Int = 1,
   val readTimeMinutes: Int = 5,
   val isPublished: Boolean = true,
   val createdAt: Long = System.currentTimeMillis()

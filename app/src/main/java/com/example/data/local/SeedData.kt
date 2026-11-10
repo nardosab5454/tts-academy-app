@@ -673,7 +673,7 @@ object SeedData {
       id = "NOTE_MATH_1",
       courseId = "MATH_101",
       topicId = "T_MATH_1",
-      title = "Essential Limit Laws & L'Hopital's Rule",
+      title = "Limits, Continuity & Indeterminate Forms",
       summary = "Comprehensive summary of limit evaluation techniques, squeeze theorem, and indeterminate forms.",
       contentMarkdown = """
 # Calculus I: Limits & Continuity Quick Revision
@@ -696,13 +696,14 @@ If g(x) ≤ f(x) ≤ h(x) near a, and:
 Then lim (x -> a) f(x) = L must hold.
       """.trimIndent(),
       keyFormulas = "lim (f/g) = lim (f'/g') [L'Hopital]; sin(x)/x -> 1 as x -> 0",
+      chapterNumber = 1,
       readTimeMinutes = 4
     ),
     NoteEntity(
       id = "NOTE_MATH_2",
       courseId = "MATH_101",
       topicId = "T_MATH_2",
-      title = "Differentiation Rules Mastery",
+      title = "Differentiation Rules & Chain Rule Mastery",
       summary = "Product rule, quotient rule, chain rule, and derivatives of trigonometric and exponential functions.",
       contentMarkdown = """
 # Calculus I: Differentiation Rules
@@ -720,13 +721,42 @@ Then lim (x -> a) f(x) = L must hold.
 • d/dx [sec x] = sec x · tan x
       """.trimIndent(),
       keyFormulas = "(uv)' = u'v + uv'; (u/v)' = (u'v - uv')/v²; d/dx[sin x] = cos x",
+      chapterNumber = 2,
       readTimeMinutes = 5
+    ),
+    NoteEntity(
+      id = "NOTE_MATH_3",
+      courseId = "MATH_101",
+      topicId = "T_MATH_3",
+      title = "Definite Integrals & Fundamental Theorem of Calculus",
+      summary = "Riemann sums, antiderivatives, substitution method, and area under curves.",
+      contentMarkdown = """
+# Calculus I: Integration Essentials
+
+## Fundamental Theorem of Calculus (FTC)
+• Part 1: d/dx [∫ (from a to x) f(t) dt] = f(x)
+• Part 2: ∫ (from a to b) f(x) dx = F(b) - F(a), where F'(x) = f(x)
+
+## Standard Indefinite Integrals
+• ∫ x^n dx = (x^(n+1))/(n+1) + C (n ≠ -1)
+• ∫ (1/x) dx = ln|x| + C
+• ∫ e^x dx = e^x + C
+• ∫ cos x dx = sin x + C
+• ∫ sin x dx = -cos x + C
+
+## U-Substitution Method
+Let u = g(x), du = g'(x) dx:
+  ∫ f(g(x)) g'(x) dx = ∫ f(u) du
+      """.trimIndent(),
+      keyFormulas = "∫ f(x) dx = F(b) - F(a); ∫ x^n dx = x^(n+1)/(n+1) + C",
+      chapterNumber = 3,
+      readTimeMinutes = 6
     ),
     NoteEntity(
       id = "NOTE_PHYS_1",
       courseId = "PHYS_101",
       topicId = "T_PHYS_1",
-      title = "Kinematics Equations (SUVAT)",
+      title = "Kinematics Equations in 1D & 2D (SUVAT)",
       summary = "Constant acceleration motion equations in 1D and 2D projectile breakdown.",
       contentMarkdown = """
 # Physics I: 1D & 2D Kinematics
@@ -745,13 +775,68 @@ For launch angle θ and initial speed v0:
 • Max Height: H = (v0²·sin²(θ)) / (2g)
       """.trimIndent(),
       keyFormulas = "v = v0 + at; Δx = v0·t + 0.5a·t²; v² = v0² + 2a·Δx",
+      chapterNumber = 1,
       readTimeMinutes = 4
+    ),
+    NoteEntity(
+      id = "NOTE_PHYS_2",
+      courseId = "PHYS_101",
+      topicId = "T_PHYS_2",
+      title = "Newton's Laws of Motion & Friction Dynamics",
+      summary = "Inertia, F = ma, action-reaction, static and kinetic friction on inclines.",
+      contentMarkdown = """
+# Physics I: Dynamics & Newton's Laws
+
+## 1. Newton's Three Laws
+• 1st Law (Inertia): An object remains at rest or in uniform motion unless acted on by net external force.
+• 2nd Law: ΣF = m · a
+• 3rd Law: For every action, there is an equal and opposite reaction (F_AB = -F_BA).
+
+## 2. Friction Forces
+• Static Friction: f_s ≤ μ_s · N (prevents slipping)
+• Kinetic Friction: f_k = μ_k · N (opposes motion)
+
+## 3. Inclined Plane Breakdown
+• Parallel to slope: F_parallel = m · g · sin(θ)
+• Perpendicular to slope: F_perp = m · g · cos(θ) = N
+      """.trimIndent(),
+      keyFormulas = "ΣF = m·a; f_k = μ_k·N; F_parallel = m·g·sin(θ)",
+      chapterNumber = 2,
+      readTimeMinutes = 5
+    ),
+    NoteEntity(
+      id = "NOTE_PHYS_3",
+      courseId = "PHYS_101",
+      topicId = "T_PHYS_3",
+      title = "Work, Energy & Conservation of Linear Momentum",
+      summary = "Work-energy theorem, kinetic and potential energy, elastic and inelastic collisions.",
+      contentMarkdown = """
+# Physics I: Work, Energy & Momentum
+
+## 1. Work and Kinetic Energy
+• Work: W = F · d · cos(θ) = ∫ F dx
+• Kinetic Energy: KE = (1/2) m v²
+• Work-Energy Theorem: W_net = ΔKE = KE_final - KE_initial
+
+## 2. Potential Energy & Mechanical Conservation
+• Gravitational PE: PE = m · g · h
+• Elastic Spring PE: PE_s = (1/2) k x²
+• Conservation: E_initial = E_final (in closed system without dissipative forces)
+
+## 3. Conservation of Linear Momentum
+• Momentum: p = m · v
+• In Isolated System: Σp_initial = Σp_final
+• Completely Inelastic: m1·v1 + m2·v2 = (m1 + m2)·v_final
+      """.trimIndent(),
+      keyFormulas = "W = F·d·cos(θ); KE = 0.5·m·v²; p = m·v",
+      chapterNumber = 3,
+      readTimeMinutes = 5
     ),
     NoteEntity(
       id = "NOTE_CHEM_1",
       courseId = "CHEM_101",
       topicId = "T_CHEM_1",
-      title = "Chemical Bonding & Molecular Shapes",
+      title = "Chemical Bonding & Molecular Shapes (VSEPR)",
       summary = "Lewis electron dot structures, VSEPR geometries, bond angles, and hybridization.",
       contentMarkdown = """
 # Chemistry: VSEPR & Bonding Summary
@@ -770,7 +855,33 @@ For launch angle θ and initial speed v0:
 • ΔEN ≥ 1.7: Ionic
       """.trimIndent(),
       keyFormulas = "Steric Number = Bonded Atoms + Lone Pairs; Formal Charge = Valence - Nonbonding - 0.5(Bonding)",
+      chapterNumber = 1,
       readTimeMinutes = 6
+    ),
+    NoteEntity(
+      id = "NOTE_CHEM_2",
+      courseId = "CHEM_101",
+      topicId = "T_CHEM_2",
+      title = "Chemical Thermodynamics & Enthalpy of Reaction",
+      summary = "First law of thermodynamics, heat capacity, Hess's law, and calorimetry calculations.",
+      contentMarkdown = """
+# Chemistry: Thermodynamics & Thermochemistry
+
+## 1. Heat and Calorimetry
+• q = m · c · ΔT
+• Heat Capacity: C = m · c
+
+## 2. Enthalpy (ΔH)
+• Endothermic: ΔH > 0 (absorbs heat from surroundings)
+• Exothermic: ΔH < 0 (releases heat to surroundings)
+• Standard Enthalpy of Reaction: ΔH°_rxn = Σ [n · ΔH°_f(products)] - Σ [m · ΔH°_f(reactants)]
+
+## 3. Hess's Law
+If a reaction is carried out in a series of steps, ΔH for overall reaction equals the sum of enthalpy changes for individual steps.
+      """.trimIndent(),
+      keyFormulas = "q = m·c·ΔT; ΔH°_rxn = Σ n·ΔH°_f(products) - Σ m·ΔH°_f(reactants)",
+      chapterNumber = 2,
+      readTimeMinutes = 5
     ),
     NoteEntity(
       id = "NOTE_CS_1",
@@ -792,7 +903,36 @@ O(1) < O(log n) < O(n) < O(n log n) < O(n²) < O(2^n) < O(n!)
 • Bubble Sort / Insertion Sort: O(n²) worst case
       """.trimIndent(),
       keyFormulas = "O(1) < O(log n) < O(n) < O(n log n) < O(n²)",
+      chapterNumber = 1,
       readTimeMinutes = 4
+    ),
+    NoteEntity(
+      id = "NOTE_CS_2",
+      courseId = "CS_101",
+      topicId = "T_CS_2",
+      title = "Linear Data Structures: Arrays, Linked Lists & Stacks",
+      summary = "Memory layout, dynamic arrays, singly/doubly linked lists, stack LIFO, and queue FIFO.",
+      contentMarkdown = """
+# Computer Science: Linear Data Structures
+
+## 1. Static vs Dynamic Arrays
+• Contiguous memory allocation.
+• Instant indexing: O(1).
+• Insertion/Deletion in middle: O(n) due to shifting.
+
+## 2. Singly Linked Lists
+• Composed of nodes with value and next pointer.
+• Insertion at head: O(1).
+• Search by value: O(n).
+• No contiguous memory required; pointer overhead.
+
+## 3. Stacks & Queues
+• Stack (LIFO): push, pop, peek - all O(1).
+• Queue (FIFO): enqueue, dequeue, peek - all O(1).
+      """.trimIndent(),
+      keyFormulas = "Stack: LIFO O(1); Queue: FIFO O(1); Array Index: O(1)",
+      chapterNumber = 2,
+      readTimeMinutes = 5
     )
   )
 

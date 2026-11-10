@@ -474,6 +474,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         "courseId" to note.courseId,
         "topicId" to note.topicId,
         "title" to note.title,
+        "chapterNumber" to note.chapterNumber.toLong(),
         "summary" to note.summary,
         "keyFormulas" to note.keyFormulas,
         "contentMarkdown" to note.contentMarkdown,
@@ -891,11 +892,15 @@ private fun DocumentSnapshot.toFirestoreQuestion(): FirestoreQuestion {
 
 private fun DocumentSnapshot.toFirestoreNote(): FirestoreNote {
   val data = this.data ?: return FirestoreNote(id = this.id)
+  val parsedChapter = (data["chapterNumber"] as? Number)?.toLong()
+    ?: (data["chapter"] as? Number)?.toLong()
+    ?: 1L
   return FirestoreNote(
     id = (data["id"] as? String)?.ifBlank { this.id } ?: this.id,
     courseId = data["courseId"] as? String ?: "",
     topicId = (data["topicId"] as? String)?.ifBlank { "T_GEN" } ?: "T_GEN",
     title = data["title"] as? String ?: "",
+    chapterNumber = parsedChapter,
     summary = data["summary"] as? String ?: "",
     keyFormulas = data["keyFormulas"] as? String ?: "",
     contentMarkdown = (data["contentMarkdown"] as? String) ?: (data["content"] as? String) ?: "",

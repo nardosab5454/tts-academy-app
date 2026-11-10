@@ -178,7 +178,7 @@ fun SearchScreen(
                 Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                  Text(text = note.title, fontWeight = FontWeight.Bold)
+                  Text(text = "Chapter ${note.chapterNumber}: ${note.title}", fontWeight = FontWeight.Bold)
                   Text(text = note.summary, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 }
               }
