@@ -56,9 +56,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Brush
 import com.example.data.local.model.UserEntity
 import com.example.ui.theme.AcademicGold
-import com.example.ui.theme.BrandGreenPrimary
+import com.example.ui.theme.BrandBlueBright
+import com.example.ui.theme.BrandBlueDark
 import com.example.ui.viewmodel.Screen
 
 @Composable
@@ -85,7 +87,7 @@ fun AppHeader(
     color = MaterialTheme.colorScheme.surface,
     tonalElevation = 1.dp,
     shadowElevation = 2.dp,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
   ) {
     Column(modifier = Modifier.fillMaxWidth()) {
       Row(
@@ -105,7 +107,11 @@ fun AppHeader(
             modifier = Modifier
               .size(38.dp)
               .clip(RoundedCornerShape(12.dp))
-              .background(BrandGreenPrimary),
+              .background(
+                Brush.linearGradient(
+                  colors = listOf(BrandBlueDark, BrandBlueBright)
+                )
+              ),
             contentAlignment = Alignment.Center
           ) {
             Icon(
@@ -151,7 +157,7 @@ fun AppHeader(
               Icon(
                 imageVector = Icons.Default.AutoAwesome,
                 contentDescription = "Gemini AI Tutor",
-                tint = AcademicGold,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp)
               )
             }
@@ -361,9 +367,9 @@ fun AppBottomNavigation(
         .testTag("app_bottom_nav"),
       shape = RoundedCornerShape(32.dp),
       color = MaterialTheme.colorScheme.surface,
-      tonalElevation = 4.dp,
+      tonalElevation = 3.dp,
       shadowElevation = 8.dp,
-      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f))
     ) {
       Row(
         modifier = Modifier

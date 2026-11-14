@@ -272,12 +272,12 @@ fun AiClarificationDialog(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                      Icon(Icons.Default.Language, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(16.dp))
+                      Icon(Icons.Default.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                       Spacer(modifier = Modifier.width(6.dp))
                       Text(
                         text = "Google Search Grounded References:",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = SuccessGreen
+                        color = MaterialTheme.colorScheme.primary
                       )
                     }
 

@@ -73,9 +73,6 @@ import com.example.data.local.model.TopicEntity
 import com.example.ui.theme.AcademicBluePrimary
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
-import com.example.ui.theme.BrandGreenPrimary
-import com.example.ui.theme.BrandGreenSecondary
-import com.example.ui.theme.BrandGreenSurface
 import com.example.ui.theme.SuccessGreen
 import java.util.UUID
 
@@ -154,7 +151,7 @@ fun AdminCourseSelector(
                 },
                 leadingIcon = {
                   if (course.id == selectedCourseId) {
-                    Icon(Icons.Default.Check, contentDescription = null, tint = SuccessGreen)
+                    Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                   }
                 }
               )
@@ -279,7 +276,7 @@ fun AdminSectionSelector(
                   },
                   leadingIcon = {
                     if (section.id == selectedSectionId) {
-                      Icon(Icons.Default.Check, contentDescription = null, tint = SuccessGreen)
+                      Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     }
                   }
                 )
@@ -1361,25 +1358,25 @@ fun AdminManageContentTab(
                 Column(modifier = Modifier.weight(1f)) {
                   Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Surface(
-                      color = BrandGreenSurface,
+                      color = MaterialTheme.colorScheme.primaryContainer,
                       shape = RoundedCornerShape(6.dp),
-                      border = BorderStroke(1.dp, BrandGreenSecondary)
+                      border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f))
                     ) {
                       Text(
                         text = "Chapter ${note.chapterNumber}",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = BrandGreenPrimary,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                       )
                     }
                     Surface(
-                      color = AcademicGold.copy(alpha = 0.2f),
+                      color = MaterialTheme.colorScheme.secondaryContainer,
                       shape = RoundedCornerShape(6.dp)
                     ) {
                       Text(
                         text = secTitle,
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = AcademicBluePrimary,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                       )
                     }
@@ -1603,7 +1600,7 @@ fun EditNoteDialog(
           Card(
             shape = RoundedCornerShape(10.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-            border = BorderStroke(1.dp, BrandGreenSecondary.copy(alpha = 0.5f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)),
             modifier = Modifier.fillMaxWidth()
           ) {
             Row(
@@ -1617,7 +1614,7 @@ fun EditNoteDialog(
                 Text(
                   text = "Chapter / Sort Order",
                   style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                  color = BrandGreenPrimary
+                  color = MaterialTheme.colorScheme.primary
                 )
                 Text(
                   text = "Chapter 1 to last chapter",
@@ -1635,14 +1632,14 @@ fun EditNoteDialog(
                   Text("-", fontWeight = FontWeight.Bold)
                 }
                 Surface(
-                  color = BrandGreenSurface,
+                  color = MaterialTheme.colorScheme.primaryContainer,
                   shape = RoundedCornerShape(6.dp),
-                  border = BorderStroke(1.dp, BrandGreenSecondary)
+                  border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f))
                 ) {
                   Text(
                     text = "Ch $chapterNumber",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = BrandGreenPrimary,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                   )
                 }

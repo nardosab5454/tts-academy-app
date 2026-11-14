@@ -81,9 +81,6 @@ import com.example.ui.theme.AcademicBlueDark
 import com.example.ui.theme.AcademicBluePrimary
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
-import com.example.ui.theme.BrandGreenPrimary
-import com.example.ui.theme.BrandGreenSecondary
-import com.example.ui.theme.BrandGreenSurface
 import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.SuccessGreen
 import java.util.UUID
@@ -466,7 +463,7 @@ private fun AdminOverviewTab(
     item {
       Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         AdminStatCard("Courses", "${courses.size}", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-        AdminStatCard("Students", "${studentUsers.size}", SuccessGreen, Modifier.weight(1f))
+        AdminStatCard("Students", "${studentUsers.size}", AcademicBluePrimary, Modifier.weight(1f))
         AdminStatCard("Notices", "${announcements.size}", AcademicGold, Modifier.weight(1f))
       }
     }
@@ -475,7 +472,7 @@ private fun AdminOverviewTab(
       Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         AdminStatCard("Live Qs Practiced", "$totalQuestionsAnswered", AcademicCobalt, Modifier.weight(1f))
         AdminStatCard("Active 1-Hr Passes", "$activePasses", AcademicGold, Modifier.weight(1f))
-        AdminStatCard("Redeemed Passes", "$redeemedPasses", SuccessGreen, Modifier.weight(1f))
+        AdminStatCard("Redeemed Passes", "$redeemedPasses", AcademicBluePrimary, Modifier.weight(1f))
       }
     }
 
@@ -1122,7 +1119,7 @@ private fun AdminAddNoteTab(
       Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, BrandGreenSecondary.copy(alpha = 0.6f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.55f)),
         elevation = CardDefaults.cardElevation(1.dp),
         modifier = Modifier.fillMaxWidth()
       ) {
@@ -1136,7 +1133,7 @@ private fun AdminAddNoteTab(
               Text(
                 text = "CHAPTER & PRESENTATION ORDER",
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
-                color = BrandGreenPrimary
+                color = MaterialTheme.colorScheme.primary
               )
               Text(
                 text = "Controls exact sorting for students from Chapter 1 up to the last chapter.",
@@ -1159,14 +1156,14 @@ private fun AdminAddNoteTab(
                 Text("-", fontWeight = FontWeight.Bold)
               }
               Surface(
-                color = BrandGreenSurface,
+                color = MaterialTheme.colorScheme.primaryContainer,
                 shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, BrandGreenSecondary)
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f))
               ) {
                 Text(
                   text = "Chapter $chapterNumber",
                   style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                  color = BrandGreenPrimary,
+                  color = MaterialTheme.colorScheme.onPrimaryContainer,
                   modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 )
               }
@@ -1238,7 +1235,7 @@ private fun AdminAddNoteTab(
           }
         },
         modifier = Modifier.fillMaxWidth().height(48.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary)
+        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
       ) {
         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(6.dp))

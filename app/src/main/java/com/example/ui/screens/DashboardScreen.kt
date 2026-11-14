@@ -61,11 +61,10 @@ import com.example.data.local.model.CourseEntity
 import com.example.data.local.model.QuizAttemptEntity
 import com.example.data.local.model.UserEntity
 import com.example.ui.theme.AcademicGold
-import com.example.ui.theme.BrandGreenDark
-import com.example.ui.theme.BrandGreenPrimary
-import com.example.ui.theme.BrandGreenSecondary
-import com.example.ui.theme.BrandGreenSurface
-import com.example.ui.theme.SuccessGreen
+import com.example.ui.theme.BrandBlueBright
+import com.example.ui.theme.BrandBlueDark
+import com.example.ui.theme.BrandBluePrimary
+import com.example.ui.theme.BrandBlueSecondary
 import com.example.ui.viewmodel.Screen
 
 @Composable
@@ -97,7 +96,7 @@ fun DashboardScreen(
       .testTag("dashboard_screen"),
     contentPadding = PaddingValues(bottom = 32.dp)
   ) {
-    // 1. Clean, Modern Top Banner (Rich Brand Green Gradient + Simple Goal Box + Quick Action Pills)
+    // 1. Clean, Modern Top Banner (Rich White & Royal Blue Gradient + Simple Goal Box + Quick Action Pills)
     item {
       Box(
         modifier = Modifier
@@ -105,8 +104,9 @@ fun DashboardScreen(
           .background(
             Brush.verticalGradient(
               colors = listOf(
-                BrandGreenDark,
-                BrandGreenPrimary
+                BrandBlueDark,
+                BrandBluePrimary,
+                BrandBlueBright
               )
             )
           )
@@ -136,7 +136,7 @@ fun DashboardScreen(
               Text(
                 text = user?.department ?: "Freshman University",
                 style = MaterialTheme.typography.labelSmall,
-                color = BrandGreenSecondary,
+                color = BrandBlueSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
               )
@@ -179,7 +179,7 @@ fun DashboardScreen(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(3.dp),
-            border = BorderStroke(1.dp, BrandGreenSecondary.copy(alpha = 0.6f))
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f))
           ) {
             Column(modifier = Modifier.padding(18.dp)) {
               Row(
@@ -192,13 +192,13 @@ fun DashboardScreen(
                     modifier = Modifier
                       .size(42.dp)
                       .clip(CircleShape)
-                      .background(BrandGreenSurface),
+                      .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center
                   ) {
                     Icon(
                       imageVector = Icons.Default.Timer,
                       contentDescription = "Study Goal",
-                      tint = BrandGreenPrimary,
+                      tint = MaterialTheme.colorScheme.primary,
                       modifier = Modifier.size(22.dp)
                     )
                   }
@@ -210,7 +210,7 @@ fun DashboardScreen(
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = 0.8.sp
                       ),
-                      color = BrandGreenPrimary
+                      color = MaterialTheme.colorScheme.primary
                     )
                     Text(
                       text = "$dailyGoalMins mins / day",
@@ -223,13 +223,13 @@ fun DashboardScreen(
                 // Edit Goal Button
                 Surface(
                   shape = RoundedCornerShape(10.dp),
-                  color = BrandGreenSurface,
+                  color = MaterialTheme.colorScheme.primaryContainer,
                   modifier = Modifier.clickable { onNavigate(Screen.PROFILE) }
                 ) {
                   Text(
                     text = "Edit Goal",
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = BrandGreenPrimary,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                   )
                 }
@@ -247,8 +247,8 @@ fun DashboardScreen(
                   .fillMaxWidth()
                   .height(8.dp)
                   .clip(RoundedCornerShape(4.dp)),
-                color = BrandGreenPrimary,
-                trackColor = BrandGreenSecondary.copy(alpha = 0.5f)
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f)
               )
 
               Spacer(modifier = Modifier.height(12.dp))
@@ -320,8 +320,8 @@ fun DashboardScreen(
       item {
         Card(
           shape = RoundedCornerShape(18.dp),
-          colors = CardDefaults.cardColors(containerColor = BrandGreenSurface),
-          border = BorderStroke(1.dp, BrandGreenPrimary.copy(alpha = 0.35f)),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
           modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -336,13 +336,13 @@ fun DashboardScreen(
               modifier = Modifier
                 .size(44.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(BrandGreenPrimary.copy(alpha = 0.15f)),
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
               contentAlignment = Alignment.Center
             ) {
               Icon(
                 imageVector = Icons.Default.AdminPanelSettings,
                 contentDescription = "Admin Portal",
-                tint = BrandGreenPrimary,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(24.dp)
               )
             }
@@ -362,7 +362,7 @@ fun DashboardScreen(
             Button(
               onClick = { onNavigate(Screen.ADMIN_PORTAL) },
               shape = RoundedCornerShape(10.dp),
-              colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary)
+              colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
               Text("Manage", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
@@ -418,7 +418,7 @@ fun DashboardScreen(
             Button(
               onClick = onUnlockClick,
               shape = RoundedCornerShape(10.dp),
-              colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary)
+              colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
               Text("Unlock", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
@@ -447,7 +447,7 @@ fun DashboardScreen(
             Icon(
               imageVector = Icons.Default.Campaign,
               contentDescription = null,
-              tint = BrandGreenPrimary,
+              tint = MaterialTheme.colorScheme.primary,
               modifier = Modifier.size(22.dp)
             )
             Spacer(modifier = Modifier.width(10.dp))
@@ -496,7 +496,7 @@ fun DashboardScreen(
               text = "View All >",
               style = MaterialTheme.typography.labelMedium.copy(
                 fontWeight = FontWeight.SemiBold,
-                color = BrandGreenPrimary
+                color = MaterialTheme.colorScheme.primary
               ),
               modifier = Modifier.clickable { onNavigate(Screen.COURSES) }
             )
@@ -513,7 +513,7 @@ fun DashboardScreen(
               containerColor = MaterialTheme.colorScheme.surface
             ),
             elevation = CardDefaults.cardElevation(2.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
           ) {
             Column(modifier = Modifier.padding(18.dp)) {
               Row(
@@ -522,31 +522,31 @@ fun DashboardScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
               ) {
                 Surface(
-                  color = BrandGreenSurface,
+                  color = MaterialTheme.colorScheme.primaryContainer,
                   shape = RoundedCornerShape(8.dp)
                 ) {
                   Text(
                     text = recentCourse.code,
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
-                    color = BrandGreenPrimary,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                   )
                 }
                 if (isCourseDownloaded?.invoke(recentCourse) == true) {
                   Surface(
-                    color = SuccessGreen.copy(alpha = 0.12f),
+                    color = MaterialTheme.colorScheme.primaryContainer,
                     shape = RoundedCornerShape(6.dp)
                   ) {
                     Row(
                       modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                       verticalAlignment = Alignment.CenterVertically
                     ) {
-                      Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(12.dp))
+                      Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(12.dp))
                       Spacer(modifier = Modifier.width(3.dp))
                       Text(
                         text = "Offline Ready",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = SuccessGreen
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
                       )
                     }
                   }
@@ -585,12 +585,12 @@ fun DashboardScreen(
                 Text(
                   text = "${recentCourse.totalQuestions} Questions • University Verified",
                   style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                  color = BrandGreenPrimary
+                  color = MaterialTheme.colorScheme.primary
                 )
 
                 Button(
                   onClick = { onStartQuickPractice(recentCourse) },
-                  colors = ButtonDefaults.buttonColors(containerColor = BrandGreenPrimary),
+                  colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                   shape = RoundedCornerShape(12.dp),
                   contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                 ) {
@@ -632,13 +632,13 @@ fun DashboardScreen(
               modifier = Modifier
                 .size(38.dp)
                 .clip(CircleShape)
-                .background(BrandGreenSurface),
+                .background(MaterialTheme.colorScheme.primaryContainer),
               contentAlignment = Alignment.Center
             ) {
               Icon(
                 imageVector = Icons.AutoMirrored.Filled.MenuBook,
                 contentDescription = null,
-                tint = BrandGreenPrimary,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp)
               )
             }
@@ -671,13 +671,13 @@ fun DashboardScreen(
               modifier = Modifier
                 .size(38.dp)
                 .clip(CircleShape)
-                .background(BrandGreenSurface),
+                .background(MaterialTheme.colorScheme.primaryContainer),
               contentAlignment = Alignment.Center
             ) {
               Icon(
                 imageVector = Icons.Default.Bookmark,
                 contentDescription = null,
-                tint = AcademicGold,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp)
               )
             }
@@ -715,7 +715,7 @@ fun DashboardScreen(
           text = "See All (${courses.size})",
           style = MaterialTheme.typography.labelMedium.copy(
             fontWeight = FontWeight.SemiBold,
-            color = BrandGreenPrimary
+            color = MaterialTheme.colorScheme.primary
           ),
           modifier = Modifier.clickable { onNavigate(Screen.COURSES) }
         )
@@ -820,13 +820,13 @@ fun FreshmanCourseCard(
         verticalAlignment = Alignment.CenterVertically
       ) {
         Surface(
-          color = BrandGreenSurface,
+          color = MaterialTheme.colorScheme.primaryContainer,
           shape = RoundedCornerShape(8.dp)
         ) {
           Text(
             text = course.code,
             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
-            color = BrandGreenPrimary,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
           )
         }
@@ -865,12 +865,12 @@ fun FreshmanCourseCard(
         Text(
           text = "${course.totalQuestions} Questions",
           style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-          color = BrandGreenPrimary
+          color = MaterialTheme.colorScheme.primary
         )
         Icon(
           imageVector = Icons.AutoMirrored.Filled.ArrowForward,
           contentDescription = null,
-          tint = BrandGreenPrimary,
+          tint = MaterialTheme.colorScheme.primary,
           modifier = Modifier.size(16.dp)
         )
       }

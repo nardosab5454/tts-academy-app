@@ -2,31 +2,31 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// TTS Academy Brand Colors - Market Standard Emerald & Fresh Mint Palette
-// User Specified: #4ca771, #C0E6BA, #EAF9E7
-val BrandGreenPrimary = Color(0xFF4CA771)     // Primary Action & Branding #4ca771
-val BrandGreenSecondary = Color(0xFFC0E6BA)   // Soft Accent / Pistachio Tint #C0E6BA
-val BrandGreenSurface = Color(0xFFEAF9E7)     // Fresh Light Background Tint #EAF9E7
+// TTS Academy Brand Colors - Crisp White & Royal Blue Palette
+val BrandBluePrimary = Color(0xFF1D4ED8)       // Deep Cobalt Blue - primary actions & headings
+val BrandBlueBright = Color(0xFF2563EB)        // Vibrant Royal Blue - buttons, icons & links
+val BrandBlueSecondary = Color(0xFFBFDBFE)     // Soft Sky Blue - crisp borders & progress tracks
+val BrandBlueSurface = Color(0xFFEFF6FF)       // Ice Blue White Tint - icon wells & soft badges
 
-// Supporting Harmonious Brand Tones
-val BrandGreenDark = Color(0xFF1E5235)        // Deep Forest for contrast headers
-val BrandGreenDeep = Color(0xFF0F3120)        // Midnight Emerald
-val BrandGreenVibrant = Color(0xFF388E3C)     // Active Vibrant Green
-val BrandGreenDarkSurface = Color(0xFF13231A) // Dark Mode Surface
-val BrandGreenDarkBackground = Color(0xFF0B1710) // Dark Mode Background
+// Supporting Harmonious Blue Tones
+val BrandBlueDark = Color(0xFF0F295C)          // Deep Royal Navy for hero gradients
+val BrandBlueDeep = Color(0xFF091B42)          // Midnight Navy
+val BrandBlueVibrant = Color(0xFF3B82F6)       // Electric Blue
+val BrandBlueDarkSurface = Color(0xFF111B2E)   // Dark Mode Card Surface
+val BrandBlueDarkBackground = Color(0xFF080E1A) // Dark Mode Canvas
 
-// Retain legacy aliases mapped to the new fresh green theme for backward compatibility
-val AcademicBluePrimary = BrandGreenPrimary
-val AcademicBlueDark = BrandGreenDark
-val AcademicCobalt = BrandGreenPrimary
-val AcademicSky = BrandGreenSecondary
-val AcademicGold = Color(0xFFE6A23C)          // Warm Gold for streak fire & badges
-val AcademicAmberDark = Color(0xFFC67D17)
+// Semantic Academic Brand Aliases (White & Blue)
+val AcademicBluePrimary = BrandBlueBright
+val AcademicBlueDark = BrandBlueDark
+val AcademicCobalt = BrandBluePrimary
+val AcademicSky = BrandBlueSecondary
+val AcademicGold = Color(0xFFF59E0B)           // Crisp Amber-Gold for streak flame & stars
+val AcademicAmberDark = Color(0xFFB45309)
 
-// Modern Header Gradient Colors
-val GradientDeepNavy = BrandGreenDark
-val GradientOcean = Color(0xFF2E6B47)
-val GradientTealNavy = BrandGreenPrimary
+// Modern Header Gradient Colors (Deep Navy -> Cobalt -> Royal Blue)
+val GradientDeepNavy = BrandBlueDark
+val GradientOcean = BrandBluePrimary
+val GradientTealNavy = BrandBlueBright
 
 // Frosted Glassmorphism Tokens
 val GlassWhite10 = Color(0x1AFFFFFF)
@@ -35,43 +35,43 @@ val GlassWhite20 = Color(0x33FFFFFF)
 val GlassBorder = Color(0x3DFFFFFF)
 
 // Functional Semantic Colors
-val SuccessGreen = Color(0xFF4CA771)
-val SuccessGreenLight = BrandGreenSurface
-val SuccessGreenDark = Color(0xFF1E5235)
+val SuccessGreen = Color(0xFF16A34A)           // Quiz correct-answer semantic green
+val SuccessGreenLight = Color(0xFFDCFCE7)
+val SuccessGreenDark = Color(0xFF14532D)
 
-val ErrorRed = Color(0xFFE53935)
-val ErrorRedLight = Color(0xFFFFEBEE)
-val ErrorRedDark = Color(0xFFB71C1C)
+val ErrorRed = Color(0xFFDC2626)
+val ErrorRedLight = Color(0xFFFEE2E2)
+val ErrorRedDark = Color(0xFF991B1B)
 
-val WarningYellow = Color(0xFFE6A23C)
-val WarningYellowLight = Color(0xFFFFF8E1)
+val WarningYellow = Color(0xFFF59E0B)
+val WarningYellowLight = Color(0xFFFEF3C7)
 
-val InfoBlueLight = BrandGreenSurface
+val InfoBlueLight = BrandBlueSurface
 
 // Category & Accent Colors
-val AccentCyan = Color(0xFF26A69A)
-val AccentGold = Color(0xFFE6A23C)
-val AccentEmerald = BrandGreenPrimary
-val AccentRose = Color(0xFFE57373)
-val AccentPurple = Color(0xFF7E57C2)
+val AccentCyan = Color(0xFF0EA5E9)
+val AccentGold = Color(0xFFF59E0B)
+val AccentEmerald = BrandBlueBright
+val AccentRose = Color(0xFFE11D48)
+val AccentPurple = Color(0xFF4F46E5)
 
-// Light Theme Neutrals (Crisp, High-Standard, Minimalist)
-val LightBackground = Color(0xFFF6FAF6)
+// Light Theme Neutrals (Crisp Pure White & Soft Ice Slate)
+val LightBackground = Color(0xFFF8FAFC)
 val LightSurface = Color(0xFFFFFFFF)
-val LightSurfaceVariant = BrandGreenSurface
-val LightOutline = Color(0xFFCFE4D2)
-val LightOnBackground = Color(0xFF14241B)
-val LightOnSurface = Color(0xFF14241B)
-val LightOnSurfaceVariant = Color(0xFF4A6353)
+val LightSurfaceVariant = BrandBlueSurface
+val LightOutline = Color(0xFFCBD5E1)
+val LightOnBackground = Color(0xFF0F172A)
+val LightOnSurface = Color(0xFF0F172A)
+val LightOnSurfaceVariant = Color(0xFF475569)
 
-// Dark Theme Neutrals (Sleek Obsidian & Forest Emerald)
-val DarkBackground = BrandGreenDarkBackground
-val DarkSurface = BrandGreenDarkSurface
-val DarkSurfaceVariant = Color(0xFF1B2F23)
-val DarkOutline = Color(0xFF2D4D38)
-val DarkOnBackground = Color(0xFFF1F7F2)
-val DarkOnSurface = Color(0xFFF1F7F2)
-val DarkOnSurfaceVariant = Color(0xFFA1B8A8)
-val DarkPrimary = Color(0xFF6ED196)           // Accessible high-contrast mint green
-val DarkSecondary = BrandGreenSecondary
-val DarkTertiary = Color(0xFFFFD54F)
+// Dark Theme Neutrals (Sleek Midnight Navy & Crisp Sky Blue)
+val DarkBackground = BrandBlueDarkBackground
+val DarkSurface = BrandBlueDarkSurface
+val DarkSurfaceVariant = Color(0xFF192742)
+val DarkOutline = Color(0xFF263C63)
+val DarkOnBackground = Color(0xFFF8FAFC)
+val DarkOnSurface = Color(0xFFF8FAFC)
+val DarkOnSurfaceVariant = Color(0xFF94A3B8)
+val DarkPrimary = Color(0xFF60A5FA)            // Accessible high-contrast Sky Blue
+val DarkSecondary = BrandBlueSecondary
+val DarkTertiary = Color(0xFFFBBF24)

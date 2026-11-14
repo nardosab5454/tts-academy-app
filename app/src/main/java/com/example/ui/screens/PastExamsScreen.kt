@@ -65,7 +65,6 @@ import com.example.ui.theme.AcademicBlueDark
 import com.example.ui.theme.AcademicBluePrimary
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
-import com.example.ui.theme.SuccessGreen
 
 @Composable
 fun PastExamsScreen(
@@ -542,19 +541,19 @@ private fun PastExamCard(
 
         if (isDownloaded) {
           Surface(
-            color = SuccessGreen.copy(alpha = 0.15f),
+            color = MaterialTheme.colorScheme.primaryContainer,
             shape = RoundedCornerShape(4.dp)
           ) {
             Row(
               modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Icon(Icons.Default.Verified, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(10.dp))
+              Icon(Icons.Default.Verified, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(10.dp))
               Spacer(modifier = Modifier.width(3.dp))
               Text(
                 text = "Offline Ready",
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                color = SuccessGreen
+                color = MaterialTheme.colorScheme.onPrimaryContainer
               )
             }
           }
@@ -612,14 +611,14 @@ private fun PastExamCard(
             Icon(
               imageVector = Icons.Default.Verified,
               contentDescription = "Verified",
-              tint = SuccessGreen,
+              tint = MaterialTheme.colorScheme.primary,
               modifier = Modifier.size(14.dp)
             )
             Spacer(modifier = Modifier.width(3.dp))
             Text(
               text = "Verified",
               style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-              color = SuccessGreen
+              color = MaterialTheme.colorScheme.primary
             )
           }
         }
@@ -749,16 +748,16 @@ fun PastExamDetailScreen(
               )
               if (exam.isVerified) {
                 Surface(
-                  color = SuccessGreen.copy(alpha = 0.15f),
+                  color = MaterialTheme.colorScheme.primaryContainer,
                   shape = RoundedCornerShape(4.dp)
                 ) {
                   Row(
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                   ) {
-                    Icon(Icons.Default.Verified, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.Verified, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Verified Answer Key", style = MaterialTheme.typography.labelSmall, color = SuccessGreen)
+                    Text("Verified Answer Key", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                   }
                 }
               }

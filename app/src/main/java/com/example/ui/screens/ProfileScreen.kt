@@ -103,7 +103,6 @@ import com.example.ui.theme.AcademicBlueDark
 import com.example.ui.theme.AcademicBluePrimary
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
-import com.example.ui.theme.SuccessGreen
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 
@@ -300,7 +299,7 @@ fun ProfileScreen(
               val isPremium = user?.isPremium == true || user?.role == "ADMIN"
               Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = if (isPremium) AcademicGold.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant
+                color = if (isPremium) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
               ) {
                 Row(
                   modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
@@ -309,14 +308,14 @@ fun ProfileScreen(
                   Icon(
                     imageVector = if (isPremium) Icons.Default.Verified else Icons.Default.Key,
                     contentDescription = null,
-                    tint = if (isPremium) AcademicGold else MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = if (isPremium) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(14.dp)
                   )
                   Spacer(modifier = Modifier.width(4.dp))
                   Text(
                     text = if (isPremium) "PREMIUM ACCESS" else "STANDARD ACCESS",
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = if (isPremium) Color(0xFFB45309) else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (isPremium) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                   )
                 }
               }
@@ -375,7 +374,7 @@ fun ProfileScreen(
               Icon(
                 imageVector = Icons.Default.CheckCircle,
                 contentDescription = null,
-                tint = SuccessGreen,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp)
               )
               Spacer(modifier = Modifier.width(4.dp))
@@ -775,7 +774,7 @@ fun ProfileScreen(
               Icon(
                 imageVector = Icons.Default.VpnKey,
                 contentDescription = "Key Generator",
-                tint = if (isAdmin) AcademicGold else if (isPremium) SuccessGreen else MaterialTheme.colorScheme.primary,
+                tint = if (isAdmin) AcademicGold else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(24.dp)
               )
               Spacer(modifier = Modifier.width(10.dp))
@@ -789,7 +788,7 @@ fun ProfileScreen(
                   Text(
                     text = "Tap box to get a 6-digit single-use pass",
                     style = MaterialTheme.typography.bodySmall,
-                    color = AcademicCobalt,
+                    color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold
                   )
                 }
@@ -798,12 +797,12 @@ fun ProfileScreen(
 
             Surface(
               shape = RoundedCornerShape(10.dp),
-              color = if (isAdmin) AcademicGold.copy(alpha = 0.18f) else if (isPremium) SuccessGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+              color = if (isAdmin) AcademicGold.copy(alpha = 0.18f) else if (isPremium) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
             ) {
               Text(
                 text = if (isAdmin) "ADMIN KEY ENGINE" else if (isPremium) "ACTIVE" else "UNVERIFIED",
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                color = if (isAdmin) AcademicGold else if (isPremium) SuccessGreen else MaterialTheme.colorScheme.error,
+                color = if (isAdmin) AcademicGold else if (isPremium) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
               )
             }
@@ -922,7 +921,8 @@ fun ProfileScreen(
                       shape = RoundedCornerShape(10.dp),
                       modifier = Modifier.weight(1f),
                       colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isCodeCopied) SuccessGreen else MaterialTheme.colorScheme.primary
+                        containerColor = if (isCodeCopied) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                        contentColor = if (isCodeCopied) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onPrimary
                       )
                     ) {
                       Icon(if (isCodeCopied) Icons.Default.Check else Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -1015,13 +1015,13 @@ fun ProfileScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Surface(
-                              color = if (item.isRedeemed) MaterialTheme.colorScheme.surfaceVariant else if (isExpired) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f) else SuccessGreen.copy(alpha = 0.15f),
+                              color = if (item.isRedeemed) MaterialTheme.colorScheme.surfaceVariant else if (isExpired) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.primaryContainer,
                               shape = RoundedCornerShape(4.dp)
                             ) {
                               Text(
                                 text = if (item.isRedeemed) "REDEEMED" else if (isExpired) "EXPIRED" else "${minsLeft}m LEFT",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
-                                color = if (item.isRedeemed) MaterialTheme.colorScheme.onSurfaceVariant else if (isExpired) MaterialTheme.colorScheme.error else SuccessGreen,
+                                color = if (item.isRedeemed) MaterialTheme.colorScheme.onSurfaceVariant else if (isExpired) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                               )
                             }
@@ -1080,7 +1080,7 @@ fun ProfileScreen(
                 Icon(
                   imageVector = if (isUnlocked) Icons.Default.CheckCircle else Icons.Default.Lock,
                   contentDescription = null,
-                  tint = if (isUnlocked) SuccessGreen else MaterialTheme.colorScheme.error,
+                  tint = if (isUnlocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                   modifier = Modifier.size(22.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
@@ -1093,12 +1093,12 @@ fun ProfileScreen(
 
               Surface(
                 shape = RoundedCornerShape(8.dp),
-                color = if (isUnlocked) SuccessGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                color = if (isUnlocked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
               ) {
                 Text(
                   text = if (isUnlocked) "UNLOCKED" else "LOCKED",
                   style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                  color = if (isUnlocked) SuccessGreen else MaterialTheme.colorScheme.error,
+                  color = if (isUnlocked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.error,
                   modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                 )
               }

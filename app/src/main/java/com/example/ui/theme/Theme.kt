@@ -14,13 +14,13 @@ import androidx.compose.ui.platform.LocalContext
 private val DarkColorScheme =
   darkColorScheme(
     primary = DarkPrimary,
-    onPrimary = Color(0xFF0A2214),
-    primaryContainer = Color(0xFF1E5235),
-    onPrimaryContainer = BrandGreenSurface,
+    onPrimary = Color(0xFF081B3E),
+    primaryContainer = Color(0xFF1E3A8A),
+    onPrimaryContainer = BrandBlueSurface,
     secondary = DarkSecondary,
-    onSecondary = Color(0xFF10331C),
-    secondaryContainer = Color(0xFF1B3B26),
-    onSecondaryContainer = BrandGreenSecondary,
+    onSecondary = Color(0xFF0A244D),
+    secondaryContainer = Color(0xFF162C54),
+    onSecondaryContainer = BrandBlueSecondary,
     tertiary = DarkTertiary,
     onTertiary = Color(0xFF3E2723),
     background = DarkBackground,
@@ -29,19 +29,20 @@ private val DarkColorScheme =
     onBackground = DarkOnBackground,
     onSurface = DarkOnSurface,
     onSurfaceVariant = DarkOnSurfaceVariant,
-    outline = DarkOutline
+    outline = DarkOutline,
+    outlineVariant = Color(0xFF1E3154)
   )
 
 private val LightColorScheme =
   lightColorScheme(
-    primary = BrandGreenPrimary,
+    primary = BrandBlueBright,
     onPrimary = Color.White,
-    primaryContainer = BrandGreenSurface,
-    onPrimaryContainer = Color(0xFF134327),
-    secondary = BrandGreenSecondary,
-    onSecondary = Color(0xFF1B4D33),
-    secondaryContainer = BrandGreenSurface,
-    onSecondaryContainer = Color(0xFF1B4D33),
+    primaryContainer = BrandBlueSurface,
+    onPrimaryContainer = BrandBlueDark,
+    secondary = BrandBlueSecondary,
+    onSecondary = BrandBlueDark,
+    secondaryContainer = BrandBlueSurface,
+    onSecondaryContainer = BrandBluePrimary,
     tertiary = AcademicGold,
     onTertiary = Color.White,
     background = LightBackground,
@@ -50,13 +51,14 @@ private val LightColorScheme =
     onBackground = LightOnBackground,
     onSurface = LightOnSurface,
     onSurfaceVariant = LightOnSurfaceVariant,
-    outline = LightOutline
+    outline = LightOutline,
+    outlineVariant = Color(0xFFE2E8F0)
   )
 
 @Composable
 fun MyApplicationTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
-  dynamicColor: Boolean = false, // Keep consistent modern brand identity
+  dynamicColor: Boolean = false, // Keep consistent White & Blue brand identity
   content: @Composable () -> Unit,
 ) {
   val colorScheme =

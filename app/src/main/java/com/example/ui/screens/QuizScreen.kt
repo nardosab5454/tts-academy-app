@@ -361,7 +361,7 @@ fun QuizScreen(
         } else {
           Button(
             onClick = { showFinishConfirmDialog = true },
-            colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             modifier = Modifier.testTag("quiz_finish_button")
           ) {
             Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -412,7 +412,7 @@ fun QuizScreen(
             showFinishConfirmDialog = false
             onFinishQuiz()
           },
-          colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)
+          colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
         ) {
           Text("Confirm Submit")
         }

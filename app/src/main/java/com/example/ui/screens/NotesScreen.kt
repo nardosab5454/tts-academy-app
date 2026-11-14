@@ -61,10 +61,6 @@ import androidx.compose.material3.ButtonDefaults
 import com.example.ui.components.DetailTopBar
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
-import com.example.ui.theme.BrandGreenPrimary
-import com.example.ui.theme.BrandGreenSecondary
-import com.example.ui.theme.BrandGreenSurface
-import com.example.ui.theme.SuccessGreen
 
 @Composable
 fun NotesScreen(
@@ -306,14 +302,14 @@ private fun NoteCardItem(
           }
 
           Surface(
-            color = BrandGreenSurface,
+            color = MaterialTheme.colorScheme.primaryContainer,
             shape = RoundedCornerShape(4.dp),
-            border = BorderStroke(1.dp, BrandGreenSecondary)
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f))
           ) {
             Text(
               text = "Chapter ${note.chapterNumber}",
               style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-              color = BrandGreenPrimary,
+              color = MaterialTheme.colorScheme.onPrimaryContainer,
               modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
             )
           }
@@ -338,19 +334,19 @@ private fun NoteCardItem(
             }
           } else if (isDownloaded) {
             Surface(
-              color = SuccessGreen.copy(alpha = 0.15f),
+              color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
               shape = RoundedCornerShape(4.dp)
             ) {
               Row(
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(10.dp))
+                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(10.dp))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                   text = "Offline Ready",
                   style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                  color = SuccessGreen
+                  color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
               }
             }

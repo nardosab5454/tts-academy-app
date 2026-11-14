@@ -65,10 +65,6 @@ import androidx.compose.foundation.BorderStroke
 import com.example.ui.components.DetailTopBar
 import com.example.ui.theme.AcademicCobalt
 import com.example.ui.theme.AcademicGold
-import com.example.ui.theme.BrandGreenPrimary
-import com.example.ui.theme.BrandGreenSecondary
-import com.example.ui.theme.BrandGreenSurface
-import com.example.ui.theme.SuccessGreen
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material3.CircularProgressIndicator
@@ -375,7 +371,7 @@ fun CourseDetailScreen(
         Spacer(modifier = Modifier.height(10.dp))
         if (isCourseDownloaded) {
           Surface(
-            color = SuccessGreen.copy(alpha = 0.15f),
+            color = MaterialTheme.colorScheme.primaryContainer,
             shape = RoundedCornerShape(10.dp),
             modifier = Modifier.fillMaxWidth()
           ) {
@@ -383,12 +379,12 @@ fun CourseDetailScreen(
               modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Icon(Icons.Default.CloudDone, contentDescription = "Downloaded", tint = SuccessGreen, modifier = Modifier.size(18.dp))
+              Icon(Icons.Default.CloudDone, contentDescription = "Downloaded", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
               Spacer(modifier = Modifier.width(8.dp))
               Text(
                 text = "Offline Ready • Course and materials saved to this device",
                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                color = SuccessGreen
+                color = MaterialTheme.colorScheme.onPrimaryContainer
               )
             }
           }
@@ -397,7 +393,7 @@ fun CourseDetailScreen(
             onClick = onDownloadCourse,
             enabled = !isDownloading,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
           ) {
             if (isDownloading) {
               CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onSecondary, strokeWidth = 2.dp)
@@ -536,14 +532,14 @@ private fun NotesTabContent(
           ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
               Surface(
-                color = BrandGreenSurface,
+                color = MaterialTheme.colorScheme.primaryContainer,
                 shape = RoundedCornerShape(4.dp),
-                border = BorderStroke(1.dp, BrandGreenSecondary)
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f))
               ) {
                 Text(
                   text = "Chapter ${note.chapterNumber}",
                   style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                  color = BrandGreenPrimary,
+                  color = MaterialTheme.colorScheme.onPrimaryContainer,
                   modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                 )
               }
@@ -557,16 +553,16 @@ private fun NotesTabContent(
             Row(verticalAlignment = Alignment.CenterVertically) {
               if (downloaded) {
                 Surface(
-                  color = SuccessGreen.copy(alpha = 0.15f),
+                  color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
                   shape = RoundedCornerShape(4.dp)
                 ) {
                   Row(
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                   ) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = "Offline Ready", tint = SuccessGreen, modifier = Modifier.size(12.dp))
+                    Icon(Icons.Default.CheckCircle, contentDescription = "Offline Ready", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(12.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Offline Ready", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = SuccessGreen)
+                    Text("Offline Ready", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onPrimaryContainer)
                   }
                 }
               } else if (onDownloadNote != null) {
@@ -671,16 +667,16 @@ private fun PastExamsTabContent(
               }
               if (downloaded) {
                 Surface(
-                  color = SuccessGreen.copy(alpha = 0.15f),
+                  color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
                   shape = RoundedCornerShape(4.dp)
                 ) {
                   Row(
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                   ) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = "Offline Ready", tint = SuccessGreen, modifier = Modifier.size(12.dp))
+                    Icon(Icons.Default.CheckCircle, contentDescription = "Offline Ready", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(12.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Offline Ready", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = SuccessGreen)
+                    Text("Offline Ready", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onPrimaryContainer)
                   }
                 }
               }
@@ -691,14 +687,14 @@ private fun PastExamsTabContent(
                 Icon(
                   imageVector = Icons.Default.Verified,
                   contentDescription = "Verified",
-                  tint = SuccessGreen,
+                  tint = MaterialTheme.colorScheme.primary,
                   modifier = Modifier.size(14.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                   text = "Official Key",
                   style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                  color = SuccessGreen
+                  color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.width(6.dp))
               }
