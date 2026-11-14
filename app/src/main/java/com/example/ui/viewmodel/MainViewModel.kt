@@ -278,9 +278,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
+  private val initJob: Job
+
   init {
     repository.firestoreRepository = firestoreRepository
-    viewModelScope.launch {
+    initJob = viewModelScope.launch {
       repository.initialize()
       repository.startRealtimeCloudSync(viewModelScope)
       _offlineCacheStats.value = repository.getOfflineCacheStats(repository.currentUser.value?.id)
@@ -302,6 +304,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       isOnline.collect { online ->
         if (online) {
+          initJob.join()
           repository.syncFromCloudNow()
         }
       }
@@ -323,6 +326,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       if (screen in listOf(Screen.ANNOUNCEMENTS, Screen.NOTES, Screen.COURSES, Screen.DASHBOARD, Screen.PAST_EXAMS)) {
         viewModelScope.launch {
           try {
+            initJob.join()
             repository.syncFromCloudNow()
           } catch (_: Exception) {}
         }
@@ -1004,6 +1008,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
+  private fun hasFirebaseCloudSession(): Boolean = FirebaseAuth.getInstance().currentUser != null
+
   // --- Admin operations ---
   fun adminSaveCourse(course: CourseEntity) {
     if (currentUser.value?.role != "ADMIN") {
@@ -1013,7 +1019,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.saveCourse(course)
-        showMessage("Course '${course.title}' published to central cloud database.")
+        if (hasFirebaseCloudSession()) {
+          showMessage("Course '${course.title}' published to central cloud database.")
+        } else {
+          showMessage("Course '${course.title}' saved on device. Sign in with Google to sync to cloud.")
+        }
       } catch (e: Exception) {
         showMessage("Failed to save course: ${e.message}")
       }
@@ -1028,7 +1038,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deleteCourse(courseId)
-        showMessage("Course removed from central cloud database.")
+        showMessage("Course removed.")
       } catch (e: Exception) {
         showMessage("Failed to delete course: ${e.message}")
       }
@@ -1043,7 +1053,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.saveTopic(topic)
-        showMessage("Section '${topic.title}' published to central cloud database.")
+        if (hasFirebaseCloudSession()) {
+          showMessage("Section '${topic.title}' published to central cloud database.")
+        } else {
+          showMessage("Section '${topic.title}' saved on device. Sign in with Google to sync to cloud.")
+        }
       } catch (e: Exception) {
         showMessage("Failed to save section: ${e.message}")
       }
@@ -1058,7 +1072,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deleteTopic(topicId)
-        showMessage("Section removed from central cloud database.")
+        showMessage("Section removed.")
       } catch (e: Exception) {
         showMessage("Failed to delete section: ${e.message}")
       }
@@ -1073,7 +1087,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.saveQuestion(question)
-        showMessage("Question published to central cloud database & synced.")
+        if (hasFirebaseCloudSession()) {
+          showMessage("Question published to central cloud database & synced.")
+        } else {
+          showMessage("Question saved on device. Sign in with Google to sync to cloud.")
+        }
       } catch (e: Exception) {
         showMessage("Failed to save question: ${e.message}")
       }
@@ -1088,7 +1106,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deleteQuestion(questionId)
-        showMessage("Question deleted from central cloud database.")
+        showMessage("Question deleted.")
       } catch (e: Exception) {
         showMessage("Failed to delete question: ${e.message}")
       }
@@ -1103,7 +1121,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.saveNote(note)
-        showMessage("Revision note '${note.title}' published to central cloud database.")
+        if (hasFirebaseCloudSession()) {
+          showMessage("Revision note '${note.title}' published to central cloud database.")
+        } else {
+          showMessage("Revision note '${note.title}' saved on device. Sign in with Google to sync to cloud.")
+        }
       } catch (e: Exception) {
         showMessage("Failed to save note: ${e.message}")
       }
@@ -1118,7 +1140,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deleteNote(noteId)
-        showMessage("Note deleted from central cloud database.")
+        showMessage("Note deleted.")
       } catch (e: Exception) {
         showMessage("Failed to delete note: ${e.message}")
       }
@@ -1133,7 +1155,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.savePastExam(exam)
-        showMessage("Past exam '${exam.title}' published to central cloud database.")
+        if (hasFirebaseCloudSession()) {
+          showMessage("Past exam '${exam.title}' published to central cloud database.")
+        } else {
+          showMessage("Past exam '${exam.title}' saved on device. Sign in with Google to sync to cloud.")
+        }
       } catch (e: Exception) {
         showMessage("Failed to publish past exam: ${e.message}")
       }
@@ -1148,7 +1174,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deletePastExam(examId)
-        showMessage("Past exam removed from central cloud database.")
+        showMessage("Past exam removed.")
       } catch (e: Exception) {
         showMessage("Failed to delete past exam: ${e.message}")
       }
@@ -1171,7 +1197,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         repository.saveAnnouncement(ann)
         repository.syncFromCloudNow()
-        showMessage("Announcement broadcasted to all students & central cloud.")
+        if (hasFirebaseCloudSession()) {
+          showMessage("Announcement broadcasted to all students & central cloud.")
+        } else {
+          showMessage("Announcement saved on device. Sign in with Google to broadcast to cloud.")
+        }
       } catch (e: Exception) {
         showMessage("Failed to broadcast announcement: ${e.message}")
       }

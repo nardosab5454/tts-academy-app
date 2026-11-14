@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.local.dao.AccessCodeDao
 import com.example.data.local.dao.AnnouncementDao
@@ -65,6 +66,130 @@ abstract class AppDatabase : RoomDatabase() {
     @Volatile
     private var INSTANCE: AppDatabase? = null
 
+    private fun getExistingColumns(db: SupportSQLiteDatabase, tableName: String): Set<String> {
+      val cols = mutableSetOf<String>()
+      db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
+        val nameIdx = cursor.getColumnIndex("name")
+        while (cursor.moveToNext()) {
+          if (nameIdx >= 0) cols.add(cursor.getString(nameIdx))
+        }
+      }
+      return cols
+    }
+
+    private fun addColumnIfMissing(
+      db: SupportSQLiteDatabase,
+      tableName: String,
+      existingCols: Set<String>,
+      columnName: String,
+      definition: String
+    ) {
+      if (columnName !in existingCols) {
+        db.execSQL("ALTER TABLE `$tableName` ADD COLUMN `$columnName` $definition")
+      }
+    }
+
+    private fun migrateSchemaToV5(db: SupportSQLiteDatabase) {
+      db.execSQL(
+        """
+        CREATE TABLE IF NOT EXISTS `topics` (
+          `id` TEXT NOT NULL,
+          `courseId` TEXT NOT NULL,
+          `title` TEXT NOT NULL,
+          `description` TEXT NOT NULL DEFAULT '',
+          `orderIndex` INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY(`id`)
+        )
+        """.trimIndent()
+      )
+      db.execSQL(
+        """
+        CREATE TABLE IF NOT EXISTS `access_codes` (
+          `code` TEXT NOT NULL,
+          `createdAt` INTEGER NOT NULL DEFAULT 0,
+          `expiresAt` INTEGER NOT NULL DEFAULT 0,
+          `createdByAdminId` TEXT NOT NULL DEFAULT 'admin_1',
+          `isRedeemed` INTEGER NOT NULL DEFAULT 0,
+          `redeemedByUserId` TEXT,
+          `redeemedByEmail` TEXT,
+          `redeemedAt` INTEGER,
+          `note` TEXT NOT NULL DEFAULT 'Permanent Academic Access Pass',
+          PRIMARY KEY(`code`)
+        )
+        """.trimIndent()
+      )
+
+      val userCols = getExistingColumns(db, "users")
+      if (userCols.isNotEmpty()) {
+        addColumnIfMissing(db, "users", userCols, "password", "TEXT NOT NULL DEFAULT 'student123'")
+        addColumnIfMissing(db, "users", userCols, "studyGoalMinutesPerDay", "INTEGER NOT NULL DEFAULT 45")
+        addColumnIfMissing(db, "users", userCols, "isPremium", "INTEGER NOT NULL DEFAULT 0")
+        addColumnIfMissing(db, "users", userCols, "activationCode", "TEXT")
+        addColumnIfMissing(db, "users", userCols, "activatedAt", "INTEGER")
+        addColumnIfMissing(db, "users", userCols, "createdAt", "INTEGER NOT NULL DEFAULT 0")
+      }
+
+      val courseCols = getExistingColumns(db, "courses")
+      if (courseCols.isNotEmpty()) {
+        addColumnIfMissing(db, "courses", courseCols, "totalQuestions", "INTEGER NOT NULL DEFAULT 0")
+        addColumnIfMissing(db, "courses", courseCols, "totalNotes", "INTEGER NOT NULL DEFAULT 0")
+        addColumnIfMissing(db, "courses", courseCols, "isPublished", "INTEGER NOT NULL DEFAULT 1")
+        addColumnIfMissing(db, "courses", courseCols, "orderIndex", "INTEGER NOT NULL DEFAULT 0")
+      }
+
+      val noteCols = getExistingColumns(db, "notes")
+      if (noteCols.isNotEmpty()) {
+        addColumnIfMissing(db, "notes", noteCols, "topicId", "TEXT NOT NULL DEFAULT 'T_GEN'")
+        addColumnIfMissing(db, "notes", noteCols, "keyFormulas", "TEXT NOT NULL DEFAULT ''")
+        addColumnIfMissing(db, "notes", noteCols, "chapterNumber", "INTEGER NOT NULL DEFAULT 1")
+        addColumnIfMissing(db, "notes", noteCols, "readTimeMinutes", "INTEGER NOT NULL DEFAULT 5")
+        addColumnIfMissing(db, "notes", noteCols, "isPublished", "INTEGER NOT NULL DEFAULT 1")
+        addColumnIfMissing(db, "notes", noteCols, "createdAt", "INTEGER NOT NULL DEFAULT 0")
+      }
+
+      val examCols = getExistingColumns(db, "past_exams")
+      if (examCols.isNotEmpty()) {
+        addColumnIfMissing(db, "past_exams", examCols, "university", "TEXT NOT NULL DEFAULT 'Addis Ababa University (AAU)'")
+        addColumnIfMissing(db, "past_exams", examCols, "isDigitized", "INTEGER NOT NULL DEFAULT 1")
+        addColumnIfMissing(db, "past_exams", examCols, "isVerified", "INTEGER NOT NULL DEFAULT 1")
+        addColumnIfMissing(db, "past_exams", examCols, "documentSummary", "TEXT NOT NULL DEFAULT ''")
+        addColumnIfMissing(db, "past_exams", examCols, "isPublished", "INTEGER NOT NULL DEFAULT 1")
+      }
+
+      val questionCols = getExistingColumns(db, "questions")
+      if (questionCols.isNotEmpty()) {
+        addColumnIfMissing(db, "questions", questionCols, "topicId", "TEXT NOT NULL DEFAULT 'T_GEN'")
+        addColumnIfMissing(db, "questions", questionCols, "difficulty", "TEXT NOT NULL DEFAULT 'MEDIUM'")
+        addColumnIfMissing(db, "questions", questionCols, "isPastExam", "INTEGER NOT NULL DEFAULT 0")
+        addColumnIfMissing(db, "questions", questionCols, "examYear", "TEXT")
+        addColumnIfMissing(db, "questions", questionCols, "examType", "TEXT")
+        addColumnIfMissing(db, "questions", questionCols, "isVerified", "INTEGER NOT NULL DEFAULT 1")
+        addColumnIfMissing(db, "questions", questionCols, "isPublished", "INTEGER NOT NULL DEFAULT 1")
+      }
+
+      val annCols = getExistingColumns(db, "announcements")
+      if (annCols.isNotEmpty()) {
+        addColumnIfMissing(db, "announcements", annCols, "category", "TEXT NOT NULL DEFAULT 'GENERAL'")
+        addColumnIfMissing(db, "announcements", annCols, "targetCourseId", "TEXT")
+        addColumnIfMissing(db, "announcements", annCols, "targetCourseTitle", "TEXT")
+        addColumnIfMissing(db, "announcements", annCols, "isUrgent", "INTEGER NOT NULL DEFAULT 0")
+        addColumnIfMissing(db, "announcements", annCols, "isPublished", "INTEGER NOT NULL DEFAULT 1")
+      }
+    }
+
+    val MIGRATION_1_5 = object : Migration(1, 5) {
+      override fun migrate(db: SupportSQLiteDatabase) = migrateSchemaToV5(db)
+    }
+    val MIGRATION_2_5 = object : Migration(2, 5) {
+      override fun migrate(db: SupportSQLiteDatabase) = migrateSchemaToV5(db)
+    }
+    val MIGRATION_3_5 = object : Migration(3, 5) {
+      override fun migrate(db: SupportSQLiteDatabase) = migrateSchemaToV5(db)
+    }
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+      override fun migrate(db: SupportSQLiteDatabase) = migrateSchemaToV5(db)
+    }
+
     fun getDatabase(context: Context, scope: CoroutineScope): AppDatabase {
       return INSTANCE ?: synchronized(this) {
         val instance = Room.databaseBuilder(
@@ -73,7 +198,7 @@ abstract class AppDatabase : RoomDatabase() {
           "tts_academy_database"
         )
           .addCallback(DatabaseCallback(scope))
-          .fallbackToDestructiveMigration(dropAllTables = true)
+          .addMigrations(MIGRATION_1_5, MIGRATION_2_5, MIGRATION_3_5, MIGRATION_4_5)
           .build()
         INSTANCE = instance
         instance

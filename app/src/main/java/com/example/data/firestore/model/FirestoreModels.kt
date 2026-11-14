@@ -210,7 +210,8 @@ data class FirestoreNote(
       summary = summary,
       keyFormulas = keyFormulas,
       contentMarkdown = contentMarkdown,
-      isPublished = isPublished
+      isPublished = isPublished,
+      createdAt = createdAt?.toDate()?.time ?: System.currentTimeMillis()
     )
   }
 }

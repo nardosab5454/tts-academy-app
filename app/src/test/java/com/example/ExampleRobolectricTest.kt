@@ -341,5 +341,59 @@ class ExampleRobolectricTest {
 
     db.close()
   }
+
+  @Test
+  fun `verify room v4 to v5 migration preserves existing courses and notes`(): Unit = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val dbFile = context.getDatabasePath("test_migration_v4_to_v5.db")
+    if (dbFile.exists()) dbFile.delete()
+    dbFile.parentFile?.mkdirs()
+
+    val rawDb = android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(dbFile, null)
+    rawDb.execSQL("CREATE TABLE IF NOT EXISTS `users` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `email` TEXT NOT NULL, `password` TEXT NOT NULL, `studentId` TEXT NOT NULL, `department` TEXT NOT NULL, `role` TEXT NOT NULL, `avatarUrl` TEXT NOT NULL, `streakDays` INTEGER NOT NULL, `lastStudyDate` TEXT NOT NULL, `questionsAnsweredCount` INTEGER NOT NULL, `correctAnswersCount` INTEGER NOT NULL, `isNotificationsEnabled` INTEGER NOT NULL, `studyGoalMinutesPerDay` INTEGER NOT NULL, `isPremium` INTEGER NOT NULL, `activationCode` TEXT, `activatedAt` INTEGER, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+    rawDb.execSQL("CREATE TABLE IF NOT EXISTS `courses` (`id` TEXT NOT NULL, `code` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `category` TEXT NOT NULL, `iconName` TEXT NOT NULL, `totalQuestions` INTEGER NOT NULL, `totalNotes` INTEGER NOT NULL, `isPublished` INTEGER NOT NULL, `orderIndex` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+    rawDb.execSQL("CREATE TABLE IF NOT EXISTS `topics` (`id` TEXT NOT NULL, `courseId` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `orderIndex` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+    rawDb.execSQL("CREATE TABLE IF NOT EXISTS `questions` (`id` TEXT NOT NULL, `courseId` TEXT NOT NULL, `topicId` TEXT NOT NULL, `questionText` TEXT NOT NULL, `optionA` TEXT NOT NULL, `optionB` TEXT NOT NULL, `optionC` TEXT NOT NULL, `optionD` TEXT NOT NULL, `correctAnswer` TEXT NOT NULL, `explanationGeneral` TEXT NOT NULL, `explanationA` TEXT NOT NULL, `explanationB` TEXT NOT NULL, `explanationC` TEXT NOT NULL, `explanationD` TEXT NOT NULL, `difficulty` TEXT NOT NULL, `isPastExam` INTEGER NOT NULL, `examYear` TEXT, `examType` TEXT, `isVerified` INTEGER NOT NULL, `isPublished` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+    // v4 notes table without chapterNumber column
+    rawDb.execSQL("CREATE TABLE IF NOT EXISTS `notes` (`id` TEXT NOT NULL, `courseId` TEXT NOT NULL, `topicId` TEXT NOT NULL, `title` TEXT NOT NULL, `summary` TEXT NOT NULL, `contentMarkdown` TEXT NOT NULL, `keyFormulas` TEXT NOT NULL, `readTimeMinutes` INTEGER NOT NULL, `isPublished` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+    rawDb.execSQL("CREATE TABLE IF NOT EXISTS `past_exams` (`id` TEXT NOT NULL, `courseId` TEXT NOT NULL, `university` TEXT NOT NULL, `academicYear` TEXT NOT NULL, `semester` TEXT NOT NULL, `examType` TEXT NOT NULL, `title` TEXT NOT NULL, `instructions` TEXT NOT NULL, `totalQuestions` INTEGER NOT NULL, `durationMinutes` INTEGER NOT NULL, `isDigitized` INTEGER NOT NULL, `isVerified` INTEGER NOT NULL, `documentSummary` TEXT NOT NULL, `isPublished` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+    rawDb.execSQL("CREATE TABLE IF NOT EXISTS `quiz_attempts` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `courseId` TEXT NOT NULL, `courseTitle` TEXT NOT NULL, `topicId` TEXT, `topicTitle` TEXT, `examId` TEXT, `isExamMode` INTEGER NOT NULL, `totalQuestions` INTEGER NOT NULL, `correctCount` INTEGER NOT NULL, `incorrectCount` INTEGER NOT NULL, `scorePercent` INTEGER NOT NULL, `timeSpentSeconds` INTEGER NOT NULL, `timestamp` INTEGER NOT NULL, `answersJson` TEXT NOT NULL, PRIMARY KEY(`id`))")
+    rawDb.execSQL("CREATE TABLE IF NOT EXISTS `bookmarks` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `itemType` TEXT NOT NULL, `itemId` TEXT NOT NULL, `courseId` TEXT NOT NULL, `courseTitle` TEXT NOT NULL, `title` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+    rawDb.execSQL("CREATE TABLE IF NOT EXISTS `announcements` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `message` TEXT NOT NULL, `category` TEXT NOT NULL, `targetCourseId` TEXT, `targetCourseTitle` TEXT, `isUrgent` INTEGER NOT NULL, `isPublished` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+    rawDb.execSQL("CREATE TABLE IF NOT EXISTS `user_preferences` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))")
+    rawDb.execSQL("CREATE TABLE IF NOT EXISTS `access_codes` (`code` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, `createdByAdminId` TEXT NOT NULL, `isRedeemed` INTEGER NOT NULL, `redeemedByUserId` TEXT, `redeemedByEmail` TEXT, `redeemedAt` INTEGER, `note` TEXT NOT NULL, PRIMARY KEY(`code`))")
+
+    rawDb.execSQL("INSERT INTO `courses` VALUES ('CUSTOM_ECON_101', 'ECON 101', 'Applied Economics', 'Custom added course', 'Social Sciences', 'school', 1, 1, 1, 99)")
+    rawDb.execSQL("INSERT INTO `notes` VALUES ('CUSTOM_NOTE_1', 'CUSTOM_ECON_101', 'T_GEN', 'Supply and Demand Notes', 'Core microeconomics summary', 'Detailed lecture notes added before update', 'Qd = a - bP', 6, 1, 1700000000000)")
+    rawDb.version = 4
+    rawDb.close()
+
+    val upgradedDb = androidx.room.Room.databaseBuilder(
+      context,
+      com.example.data.local.AppDatabase::class.java,
+      "test_migration_v4_to_v5.db"
+    )
+      .addMigrations(
+        com.example.data.local.AppDatabase.MIGRATION_1_5,
+        com.example.data.local.AppDatabase.MIGRATION_2_5,
+        com.example.data.local.AppDatabase.MIGRATION_3_5,
+        com.example.data.local.AppDatabase.MIGRATION_4_5
+      )
+      .allowMainThreadQueries()
+      .build()
+
+    val preservedCourse = upgradedDb.courseDao().getCourseById("CUSTOM_ECON_101")
+    assertNotNull("User-added course must survive v4->v5 upgrade", preservedCourse)
+    assertEquals("Applied Economics", preservedCourse?.title)
+
+    val preservedNote = upgradedDb.noteDao().getNoteById("CUSTOM_NOTE_1")
+    assertNotNull("User-added note must survive v4->v5 upgrade", preservedNote)
+    assertEquals("Supply and Demand Notes", preservedNote?.title)
+    assertEquals(1, preservedNote?.chapterNumber)
+
+    upgradedDb.close()
+    dbFile.delete()
+    Unit
+  }
 }
 

@@ -191,6 +191,9 @@ interface NoteDao {
   @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
   suspend fun getNoteById(id: String): NoteEntity?
 
+  @Query("SELECT * FROM notes ORDER BY chapterNumber ASC, createdAt ASC")
+  suspend fun getAllNotes(): List<NoteEntity>
+
   @Query("SELECT * FROM notes WHERE courseId = :courseId ORDER BY chapterNumber ASC, createdAt ASC")
   suspend fun getNotesForCourse(courseId: String): List<NoteEntity>
 
@@ -235,6 +238,9 @@ interface PastExamDao {
 
   @Query("SELECT * FROM past_exams WHERE id = :id LIMIT 1")
   suspend fun getPastExamById(id: String): PastExamEntity?
+
+  @Query("SELECT * FROM past_exams ORDER BY academicYear DESC")
+  suspend fun getAllPastExams(): List<PastExamEntity>
 
   @Query("SELECT * FROM past_exams WHERE courseId = :courseId")
   suspend fun getPastExamsForCourse(courseId: String): List<PastExamEntity>
@@ -340,6 +346,9 @@ interface UserPreferenceDao {
 interface AccessCodeDao {
   @Query("SELECT * FROM access_codes ORDER BY createdAt DESC")
   fun getAllAccessCodesFlow(): Flow<List<AccessCodeEntity>>
+
+  @Query("SELECT * FROM access_codes ORDER BY createdAt DESC")
+  suspend fun getAllAccessCodes(): List<AccessCodeEntity>
 
   @Query("SELECT * FROM access_codes WHERE code = :code LIMIT 1")
   suspend fun getAccessCode(code: String): AccessCodeEntity?
