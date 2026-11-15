@@ -526,3 +526,159 @@ test("Legacy users doc missing role/createdAt can be promoted/backfilled; bootst
   );
 });
 
+test("Legacy curriculum docs with extra unknown fields & numeric createdAt can be overwritten cleanly by admin", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const rawDb = ctx.firestore();
+    await rawDb.collection("courses").doc("C_LEGACY_101").set({
+      id: "C_LEGACY_101",
+      code: "PHYS 101",
+      title: "Legacy Physics",
+      category: "STEM",
+      isPublished: true,
+      legacyExtraField: "should_be_removed",
+      createdAt: 1710000000000,
+    });
+    await rawDb.collection("notes").doc("NOTE_LEGACY_1").set({
+      id: "NOTE_LEGACY_1",
+      courseId: "C_LEGACY_101",
+      topicId: "T_GEN",
+      title: "Kinematics",
+      chapterNumber: 1,
+      contentMarkdown: "# Motion",
+      isPublished: true,
+      readTimeMinutes: 12,
+      createdAt: 1710000000000,
+    });
+    await rawDb.collection("announcements").doc("ANN_LEGACY_1").set({
+      id: "ANN_LEGACY_1",
+      title: "Old Notice",
+      content: "Legacy body",
+      isUrgent: false,
+      isPublished: true,
+      targetCourseId: "C_LEGACY_101",
+      targetCourseTitle: "Physics",
+      createdAt: 1710000000000,
+    });
+  });
+
+  const adminDb = verifiedAdminContext().firestore();
+  const now = new Date();
+
+  // Clean non-merge overwrite strips legacy extra keys and converts numeric createdAt to Timestamp
+  await assertSucceeds(
+    adminDb.collection("courses").doc("C_LEGACY_101").set({
+      id: "C_LEGACY_101",
+      code: "PHYS 101",
+      title: "General Physics I",
+      description: "Mechanics and Thermodynamics",
+      category: "STEM",
+      iconName: "science",
+      totalQuestions: 10,
+      totalNotes: 2,
+      isPublished: true,
+      orderIndex: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertSucceeds(
+    adminDb.collection("notes").doc("NOTE_LEGACY_1").set({
+      id: "NOTE_LEGACY_1",
+      courseId: "C_LEGACY_101",
+      topicId: "T_GEN",
+      title: "Kinematics Updated",
+      chapterNumber: 1,
+      summary: "Velocity and acceleration",
+      keyFormulas: "v = u + at",
+      contentMarkdown: "# Motion\nv = u + at",
+      content: "# Motion\nv = u + at",
+      isPublished: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertSucceeds(
+    adminDb.collection("announcements").doc("ANN_LEGACY_1").set({
+      id: "ANN_LEGACY_1",
+      title: "Updated Notice",
+      content: "Clean cloud notice",
+      message: "Clean cloud notice",
+      category: "GENERAL",
+      isUrgent: true,
+      isPublished: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Once converted to a real Timestamp, mutating createdAt is still blocked
+  await assertFails(
+    adminDb.collection("courses").doc("C_LEGACY_101").update({
+      createdAt: new Date(Date.now() - 60000),
+    })
+  );
+});
+
+test("Legacy student user doc with extra unknown fields, null fields, and numeric createdAt can be cleaned by owner and promoted by admin", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const rawDb = ctx.firestore();
+    await rawDb.collection("users").doc(ALICE_UID).set({
+      id: ALICE_UID,
+      userId: ALICE_UID,
+      email: "alice@ttsacademy.edu",
+      name: "Alice Legacy",
+      role: null,
+      isPremium: null,
+      activationCode: null,
+      passwordHash: "legacy_hash",
+      avatarUrl: "avatar_1",
+      streakDays: 5,
+      createdAt: 1710000000000,
+    });
+  });
+
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, {
+    email: "alice@ttsacademy.edu",
+    email_verified: true,
+  }).firestore();
+  const now = new Date();
+
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      email: "alice@ttsacademy.edu",
+      name: "Alice Legacy",
+      role: "STUDENT",
+      department: "Computer Science",
+      studentId: "STU-ALICE",
+      isPremium: false,
+      activationCode: "",
+      questionsAnsweredCount: 0,
+      correctAnswersCount: 0,
+      enrolledCourses: ["MATH_101"],
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  const adminDb = verifiedAdminContext().firestore();
+  await assertSucceeds(
+    adminDb.collection("users").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      email: "alice@ttsacademy.edu",
+      name: "Alice Legacy",
+      role: "ADMIN",
+      department: "Computer Science",
+      studentId: "STU-ALICE",
+      isPremium: true,
+      activationCode: "",
+      questionsAnsweredCount: 0,
+      correctAnswersCount: 0,
+      enrolledCourses: ["MATH_101"],
+      createdAt: now,
+      updatedAt: new Date(),
+    })
+  );
+});
+
+

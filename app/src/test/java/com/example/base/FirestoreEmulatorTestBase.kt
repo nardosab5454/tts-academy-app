@@ -33,7 +33,7 @@ abstract class FirestoreEmulatorTestBase {
   open fun setUpFirebase() {
     val emulatorAvailable = try {
       val socket = java.net.Socket()
-      socket.connect(java.net.InetSocketAddress(EMULATOR_HOST, FIRESTORE_PORT), 300)
+      socket.connect(java.net.InetSocketAddress(EMULATOR_HOST, FIRESTORE_PORT), 1500)
       socket.close()
       true
     } catch (_: Exception) {
@@ -111,6 +111,7 @@ abstract class FirestoreEmulatorTestBase {
       val status = conn.responseCode
       conn.disconnect()
       check(status in 200..299) { "Failed to verify emulator user email ($email): HTTP $status" }
+      user.reload().await()
       user.getIdToken(true).await()
       uid
     }

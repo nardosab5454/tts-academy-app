@@ -69,6 +69,7 @@ service cloud.firestore {
     function isImmutableCreatedAt() {
       return !('createdAt' in existing()) ||
         existing().createdAt == null ||
+        !(existing().createdAt is timestamp) ||
         incoming().createdAt == existing().createdAt;
     }
 
@@ -306,13 +307,13 @@ service cloud.firestore {
         isValidUserProfile(incoming(), userId) &&
         isImmutableCreatedAt() && (
           (isOwner(userId) &&
-           (!('userId' in existing()) || incoming().userId == existing().userId) &&
-           (!('email' in existing()) || incoming().email == existing().email) &&
-           ('role' in existing() ? incoming().role == existing().role : incoming().role == 'STUDENT') && (
+           (!('userId' in existing()) || existing().userId == null || incoming().userId == existing().userId) &&
+           (!('email' in existing()) || existing().email == null || existing().email == '' || incoming().email == existing().email) &&
+           (('role' in existing() && existing().role in ['STUDENT', 'ADMIN']) ? incoming().role == existing().role : incoming().role == 'STUDENT') && (
              // Case 1: Normal profile/stats update without escalating premium status
-             (('isPremium' in existing() ? incoming().isPremium == existing().isPremium : incoming().isPremium == false) &&
-              ((!('activationCode' in existing()) && (!('activationCode' in incoming()) || incoming().activationCode == '')) ||
-               ('activationCode' in existing() && 'activationCode' in incoming() && incoming().activationCode == existing().activationCode))) ||
+             ((('isPremium' in existing() && existing().isPremium is bool) ? incoming().isPremium == existing().isPremium : incoming().isPremium == false) &&
+              (((!('activationCode' in existing()) || existing().activationCode == null) && (!('activationCode' in incoming()) || incoming().activationCode == '')) ||
+               ('activationCode' in existing() && existing().activationCode is string && 'activationCode' in incoming() && incoming().activationCode == existing().activationCode))) ||
              // Case 2: Atomic access-code redemption transaction (verifies code doc transitions from unredeemed -> redeemed by caller)
              (incoming().isPremium == true &&
               incoming().activationCode is string &&

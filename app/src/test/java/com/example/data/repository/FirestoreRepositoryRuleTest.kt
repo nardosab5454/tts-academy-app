@@ -337,6 +337,188 @@ class FirestoreRepositoryRuleTest : FirestoreEmulatorTestBase() {
     }
   }
 
+  @Test
+  fun legacyProductionDocs_withExtraFieldsAndNumericCreatedAt_updateCleanly(): Unit = runBlocking {
+    val adminUid = signInVerifiedTestUser(ADMIN_EMAIL)
+    val studentUid = "legacy_stu_${UUID.randomUUID().toString().take(6)}"
+    val suffix = UUID.randomUUID().toString().take(6).uppercase()
+    val courseId = "C_LEGACY_$suffix"
+    val noteId = "NOTE_LEGACY_$suffix"
+    val annId = "ANN_LEGACY_$suffix"
+
+    // Seed legacy documents containing unknown keys and numeric (integer) createdAt via emulator owner REST API
+    seedEmulatorDoc(
+      collection = "users",
+      docId = adminUid,
+      fieldsJson = """
+        "id": {"stringValue": "$adminUid"},
+        "userId": {"stringValue": "$adminUid"},
+        "email": {"stringValue": "$ADMIN_EMAIL"},
+        "name": {"stringValue": "Legacy Admin"},
+        "passwordHash": {"stringValue": "old_hash"},
+        "avatarUrl": {"stringValue": "avatar_admin"},
+        "streakDays": {"integerValue": "7"},
+        "isPremium": {"booleanValue": false},
+        "createdAt": {"integerValue": "1710000000000"}
+      """.trimIndent()
+    )
+    seedEmulatorDoc(
+      collection = "users",
+      docId = studentUid,
+      fieldsJson = """
+        "id": {"stringValue": "$studentUid"},
+        "userId": {"stringValue": "$studentUid"},
+        "email": {"stringValue": "legacy_student_$suffix@ttsacademy.edu"},
+        "name": {"stringValue": "Legacy Student"},
+        "role": {"stringValue": "STUDENT"},
+        "isPremium": {"booleanValue": false},
+        "avatarUrl": {"stringValue": "avatar_1"},
+        "createdAt": {"integerValue": "1710000000000"}
+      """.trimIndent()
+    )
+    seedEmulatorDoc(
+      collection = "courses",
+      docId = courseId,
+      fieldsJson = """
+        "id": {"stringValue": "$courseId"},
+        "code": {"stringValue": "PHYS $suffix"},
+        "title": {"stringValue": "Legacy Physics"},
+        "category": {"stringValue": "STEM"},
+        "isPublished": {"booleanValue": true},
+        "legacyExtraKey": {"stringValue": "drop_me"},
+        "createdAt": {"integerValue": "1710000000000"}
+      """.trimIndent()
+    )
+    seedEmulatorDoc(
+      collection = "notes",
+      docId = noteId,
+      fieldsJson = """
+        "id": {"stringValue": "$noteId"},
+        "courseId": {"stringValue": "$courseId"},
+        "topicId": {"stringValue": "T_GEN"},
+        "title": {"stringValue": "Legacy Kinematics"},
+        "chapterNumber": {"integerValue": "1"},
+        "contentMarkdown": {"stringValue": "# Kinematics"},
+        "isPublished": {"booleanValue": true},
+        "readTimeMinutes": {"integerValue": "15"},
+        "createdAt": {"integerValue": "1710000000000"}
+      """.trimIndent()
+    )
+    seedEmulatorDoc(
+      collection = "announcements",
+      docId = annId,
+      fieldsJson = """
+        "id": {"stringValue": "$annId"},
+        "title": {"stringValue": "Legacy Notice"},
+        "content": {"stringValue": "Old notice"},
+        "isUrgent": {"booleanValue": false},
+        "isPublished": {"booleanValue": true},
+        "targetCourseId": {"stringValue": "$courseId"},
+        "createdAt": {"integerValue": "1710000000000"}
+      """.trimIndent()
+    )
+
+    val repository = FirestoreRepository(firestore)
+
+    // 1. Admin profile sync should clean extra keys, convert createdAt to Timestamp, and promote to ADMIN
+    val profileRes = withTimeout(DEFAULT_TIMEOUT_MS) {
+      repository.getOrCreateUserProfile(adminUid, ADMIN_EMAIL, "Legacy Admin")
+    }
+    assertTrue("getOrCreateUserProfile failed: ${profileRes.exceptionOrNull()?.message}", profileRes.isSuccess)
+    assertEquals("ADMIN", profileRes.getOrThrow().role)
+    val adminSnap = withTimeout(DEFAULT_TIMEOUT_MS) {
+      firestore.collection("users").document(adminUid).get().await()
+    }
+    assertFalse("Legacy extra field avatarUrl should be removed", adminSnap.contains("avatarUrl"))
+    assertNotNull("createdAt should be converted to Timestamp", adminSnap.getTimestamp("createdAt"))
+
+    // 2. Updating legacy course, note, and announcement should succeed and strip unknown keys
+    val courseRes = withTimeout(DEFAULT_TIMEOUT_MS) {
+      repository.saveCourse(
+        CourseEntity(
+          id = courseId,
+          code = "PHYS $suffix",
+          title = "Updated Physics",
+          description = "Clean update",
+          category = "STEM",
+          iconName = "science",
+          totalQuestions = 5,
+          totalNotes = 1,
+          isPublished = true,
+          orderIndex = 2
+        )
+      )
+    }
+    assertTrue("saveCourse failed on legacy doc: ${courseRes.exceptionOrNull()?.message}", courseRes.isSuccess)
+
+    val noteRes = withTimeout(DEFAULT_TIMEOUT_MS) {
+      repository.saveNote(
+        NoteEntity(
+          id = noteId,
+          courseId = courseId,
+          topicId = "T_GEN",
+          title = "Updated Kinematics",
+          chapterNumber = 1,
+          summary = "Clean note update",
+          contentMarkdown = "# Updated Motion",
+          keyFormulas = "v = u + at",
+          isPublished = true
+        )
+      )
+    }
+    assertTrue("saveNote failed on legacy doc: ${noteRes.exceptionOrNull()?.message}", noteRes.isSuccess)
+
+    val annRes = withTimeout(DEFAULT_TIMEOUT_MS) {
+      repository.saveAnnouncement(
+        AnnouncementEntity(
+          id = annId,
+          title = "Updated Broadcast",
+          message = "Clean announcement broadcast",
+          category = "GENERAL",
+          isUrgent = true,
+          isPublished = true
+        )
+      )
+    }
+    assertTrue("saveAnnouncement failed on legacy doc: ${annRes.exceptionOrNull()?.message}", annRes.isSuccess)
+
+    // 3. Promoting legacy student doc with extra keys and numeric createdAt should succeed cleanly
+    val roleRes = withTimeout(DEFAULT_TIMEOUT_MS) {
+      repository.updateUserRole(studentUid, "ADMIN")
+    }
+    assertTrue("updateUserRole failed on legacy user doc: ${roleRes.exceptionOrNull()?.message}", roleRes.isSuccess)
+  }
+
+  private fun seedEmulatorDoc(collection: String, docId: String, fieldsJson: String) {
+    val deleteUrl = java.net.URL(
+      "http://127.0.0.1:8085/v1/projects/demo-no-project/databases/$databaseId/documents/$collection/$docId"
+    )
+    (deleteUrl.openConnection() as java.net.HttpURLConnection).run {
+      requestMethod = "DELETE"
+      setRequestProperty("Authorization", "Bearer owner")
+      responseCode
+      disconnect()
+    }
+
+    val createUrl = java.net.URL(
+      "http://127.0.0.1:8085/v1/projects/demo-no-project/databases/$databaseId/documents/$collection?documentId=$docId"
+    )
+    val conn = (createUrl.openConnection() as java.net.HttpURLConnection).apply {
+      requestMethod = "POST"
+      doOutput = true
+      setRequestProperty("Content-Type", "application/json")
+      setRequestProperty("Authorization", "Bearer owner")
+    }
+    val payload = """{"fields":{$fieldsJson}}"""
+    conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+    val status = conn.responseCode
+    val errText = if (status !in 200..299) {
+      conn.errorStream?.bufferedReader()?.readText() ?: ""
+    } else ""
+    conn.disconnect()
+    check(status in 200..299) { "Failed to seed emulator doc $collection/$docId: HTTP $status $errText" }
+  }
+
   private fun Throwable.unwrapFirestoreException(): FirebaseFirestoreException? {
     var current: Throwable? = this
     while (current != null) {

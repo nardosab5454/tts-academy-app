@@ -28,7 +28,6 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
-import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -67,6 +66,14 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
 
   private val auth = FirebaseAuth.getInstance()
 
+  private val ALLOWED_USER_PROFILE_KEYS = setOf(
+    "userId", "email", "name", "role", "department", "studentId",
+    "isPremium", "activationCode", "questionsAnsweredCount",
+    "correctAnswersCount", "enrolledCourses", "createdAt", "updatedAt"
+  )
+
+  private val DEFAULT_ENROLLED_COURSES = listOf("MATH_101", "PHYS_101", "CHEM_101", "CS_101")
+
   private fun requireUserId(): String {
     return auth.currentUser?.uid
       ?: throw IllegalStateException("User must be signed in before accessing Firestore.")
@@ -86,6 +93,23 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     }
   }
 
+  private suspend fun isCurrentUserEmailVerified(fbUser: com.google.firebase.auth.FirebaseUser?): Boolean {
+    if (fbUser == null) return false
+    if (fbUser.isEmailVerified) return true
+    val claimVerified = try {
+      fbUser.getIdToken(false).await().claims["email_verified"] as? Boolean
+    } catch (_: Exception) {
+      null
+    }
+    if (claimVerified == true) return true
+    return try {
+      fbUser.reload().await()
+      fbUser.isEmailVerified
+    } catch (_: Exception) {
+      false
+    }
+  }
+
   private fun formatCloudError(
     e: Exception,
     operationType: OperationType,
@@ -98,19 +122,18 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
       val verified = fbUser?.isEmailVerified == true
       val reason = when {
         fbUser == null -> "Firebase session is missing. Please sign out and sign in with Google."
-        !verified -> "Google account ($email) email is not verified in auth token."
-        else -> "Firestore rejected ${operationType.value} on '$path' for $email (uid=${fbUser.uid}). Tap Refresh Permissions or ensure this email has ADMIN role in cloud."
+        !verified -> "Google account ($email) email is not verified in auth profile (tap Refresh Permissions)."
+        else -> "Firestore rejected ${operationType.value} on '$path' for $email (uid=${fbUser.uid}, verified=$verified, db=$configuredDatabaseId). Tap Refresh Permissions or ensure this email has ADMIN role in cloud."
       }
       return IllegalStateException("Missing or insufficient permissions: $reason", e)
     }
     return e
   }
 
-  private suspend fun prepareTimestamps(
-    docRef: com.google.firebase.firestore.DocumentReference,
-    payload: MutableMap<String, Any>
-  ) {
-    val snapshot = try {
+  private suspend fun fetchServerFirstSnapshot(
+    docRef: com.google.firebase.firestore.DocumentReference
+  ): DocumentSnapshot? {
+    return try {
       docRef.get(Source.SERVER).await()
     } catch (e: CancellationException) {
       throw e
@@ -130,10 +153,90 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         null
       }
     }
-    if (snapshot == null || !snapshot.exists() || snapshot.getTimestamp("createdAt") == null) {
-      payload["createdAt"] = FieldValue.serverTimestamp()
+  }
+
+  private suspend fun prepareTimestamps(
+    docRef: com.google.firebase.firestore.DocumentReference,
+    payload: MutableMap<String, Any>
+  ): DocumentSnapshot? {
+    val snapshot = fetchServerFirstSnapshot(docRef)
+    val existingCreatedAt = if (snapshot != null && snapshot.exists()) {
+      snapshot.get("createdAt") as? Timestamp
+    } else {
+      null
     }
+    payload["createdAt"] = existingCreatedAt ?: FieldValue.serverTimestamp()
     payload["updatedAt"] = FieldValue.serverTimestamp()
+    return snapshot
+  }
+
+  private fun buildCleanUserPayload(
+    snapshot: DocumentSnapshot?,
+    uid: String,
+    fallbackEmail: String,
+    fallbackName: String,
+    role: String,
+    isPremium: Boolean,
+    fallbackDepartment: String = "General Freshman Studies",
+    overrideDepartment: String? = null,
+    overrideStudentId: String? = null,
+    overrideActivationCode: String? = null,
+    overrideQuestionsAnsweredCount: Long? = null,
+    overrideCorrectAnswersCount: Long? = null
+  ): HashMap<String, Any> {
+    val existingEmail = snapshot?.getString("email")?.trim()?.takeIf { it.length > 3 }
+    val resolvedEmail = (existingEmail ?: fallbackEmail.trim().ifBlank { "student@ttsacademy.edu" }).take(150)
+
+    val existingName = snapshot?.getString("name")?.trim()?.takeIf { it.isNotBlank() }
+    val resolvedName = (existingName ?: fallbackName.trim().ifBlank { "TTS Student" }).take(100)
+
+    val normalizedRole = if (role.equals("ADMIN", ignoreCase = true)) "ADMIN" else "STUDENT"
+    val defaultCode = if (normalizedRole == "ADMIN") "ADM-" + uid.take(6).uppercase() else "STU-" + uid.take(6).uppercase()
+
+    val resolvedDepartment = (overrideDepartment ?: snapshot?.getString("department") ?: fallbackDepartment)
+      .trim()
+      .take(150)
+    val resolvedStudentId = (overrideStudentId?.takeIf { it.isNotBlank() }
+      ?: snapshot?.getString("studentId")?.takeIf { it.isNotBlank() }
+      ?: defaultCode)
+      .trim()
+      .take(50)
+    val resolvedActivationCode = (overrideActivationCode ?: snapshot?.getString("activationCode") ?: "")
+      .trim()
+      .take(20)
+    val resolvedQCount = (overrideQuestionsAnsweredCount
+      ?: (snapshot?.get("questionsAnsweredCount") as? Number)?.toLong()
+      ?: 0L)
+      .coerceIn(0L, 1_000_000L)
+    val resolvedCCount = (overrideCorrectAnswersCount
+      ?: (snapshot?.get("correctAnswersCount") as? Number)?.toLong()
+      ?: 0L)
+      .coerceIn(0L, 1_000_000L)
+    val resolvedCourses = (snapshot?.get("enrolledCourses") as? List<*>)
+      ?.filterIsInstance<String>()
+      ?.take(100)
+      ?: DEFAULT_ENROLLED_COURSES
+    val existingCreatedAt = if (snapshot != null && snapshot.exists()) {
+      snapshot.get("createdAt") as? Timestamp
+    } else {
+      null
+    }
+
+    return hashMapOf(
+      "userId" to uid,
+      "email" to resolvedEmail,
+      "name" to resolvedName,
+      "role" to normalizedRole,
+      "department" to resolvedDepartment,
+      "studentId" to resolvedStudentId,
+      "isPremium" to (isPremium || normalizedRole == "ADMIN"),
+      "activationCode" to resolvedActivationCode,
+      "questionsAnsweredCount" to resolvedQCount,
+      "correctAnswersCount" to resolvedCCount,
+      "enrolledCourses" to resolvedCourses,
+      "createdAt" to (existingCreatedAt ?: FieldValue.serverTimestamp()),
+      "updatedAt" to FieldValue.serverTimestamp()
+    )
   }
 
   private suspend fun isEmailInvitedAdmin(email: String): Boolean {
@@ -161,7 +264,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     }
     val uid = fbUser.uid
     val email = fbUser.email?.trim() ?: ""
-    val verified = fbUser.isEmailVerified
+    val verified = isCurrentUserEmailVerified(fbUser)
     val bootstrapped = isBootstrappedAdminEmail(email)
     val invited = if (!bootstrapped && email.isNotBlank()) isEmailInvitedAdmin(email) else false
 
@@ -234,12 +337,15 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         docRef.get(Source.DEFAULT).await()
       }
 
-      val isVerifiedBootstrapped = isBootstrappedAdminEmail(cleanEmail) && (currentFbUser?.isEmailVerified != false)
+      val isEmailVerified = isCurrentUserEmailVerified(currentFbUser)
+      val isVerifiedBootstrapped = isBootstrappedAdminEmail(cleanEmail) && (currentFbUser == null || isEmailVerified)
       val isInvited = if (!isVerifiedBootstrapped) isEmailInvitedAdmin(cleanEmail) else false
       val shouldBeAdmin = isVerifiedBootstrapped || isInvited || role.equals("ADMIN", ignoreCase = true)
 
       if (snapshot.exists()) {
         val existingProfile = snapshot.toFirestoreUserProfile()
+        val existingCreatedAt = snapshot.get("createdAt") as? Timestamp
+        val hasLegacyUnknownFields = snapshot.data?.keys?.any { it !in ALLOWED_USER_PROFILE_KEYS } == true
         val effectiveRole = if (shouldBeAdmin || existingProfile.role.equals("ADMIN", ignoreCase = true)) "ADMIN" else "STUDENT"
         val effectivePremium = existingProfile.isPremium || effectiveRole == "ADMIN"
         val missingRequiredFields =
@@ -248,31 +354,32 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
           snapshot.getString("name").isNullOrBlank() ||
           snapshot.getString("role").isNullOrBlank() ||
           snapshot.getBoolean("isPremium") == null ||
-          snapshot.getTimestamp("createdAt") == null
+          existingCreatedAt == null
 
         val needsRolePromotion = effectiveRole == "ADMIN" &&
           (!existingProfile.role.equals("ADMIN", ignoreCase = true) || !existingProfile.isPremium)
 
-        if (needsRolePromotion || missingRequiredFields) {
-          val promoteUpdates = hashMapOf<String, Any>(
-            "userId" to uid,
-            "email" to (existingProfile.email.ifBlank { cleanEmail }).take(150),
-            "name" to (existingProfile.name.ifBlank { cleanName }).take(100),
-            "role" to effectiveRole,
-            "isPremium" to effectivePremium,
-            "updatedAt" to FieldValue.serverTimestamp()
+        if (needsRolePromotion || missingRequiredFields || hasLegacyUnknownFields) {
+          val cleanPayload = buildCleanUserPayload(
+            snapshot = snapshot,
+            uid = uid,
+            fallbackEmail = cleanEmail,
+            fallbackName = cleanName,
+            role = effectiveRole,
+            isPremium = effectivePremium,
+            fallbackDepartment = cleanDept
           )
-          if (snapshot.getTimestamp("createdAt") == null) {
-            promoteUpdates["createdAt"] = FieldValue.serverTimestamp()
-          }
-          docRef.set(promoteUpdates, SetOptions.merge()).await()
+          docRef.set(cleanPayload).await()
           Result.success(
             existingProfile.copy(
               userId = uid,
-              email = existingProfile.email.ifBlank { cleanEmail },
-              name = existingProfile.name.ifBlank { cleanName },
+              email = cleanPayload["email"] as? String ?: cleanEmail,
+              name = cleanPayload["name"] as? String ?: cleanName,
               role = effectiveRole,
-              isPremium = effectivePremium
+              department = cleanPayload["department"] as? String ?: cleanDept,
+              studentId = cleanPayload["studentId"] as? String ?: existingProfile.studentId,
+              isPremium = effectivePremium,
+              enrolledCourses = (cleanPayload["enrolledCourses"] as? List<*>)?.filterIsInstance<String>() ?: existingProfile.enrolledCourses
             )
           )
         } else {
@@ -282,20 +389,15 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         val effectiveRole = if (shouldBeAdmin) "ADMIN" else "STUDENT"
         val effectivePremium = shouldBeAdmin
         val studentCode = if (shouldBeAdmin) "ADM-" + uid.take(6).uppercase() else "STU-" + uid.take(6).uppercase()
-        val newProfile = hashMapOf<String, Any>(
-          "userId" to uid,
-          "email" to cleanEmail,
-          "name" to cleanName,
-          "role" to effectiveRole,
-          "department" to cleanDept,
-          "studentId" to studentCode.take(50),
-          "isPremium" to effectivePremium,
-          "activationCode" to "",
-          "questionsAnsweredCount" to 0L,
-          "correctAnswersCount" to 0L,
-          "enrolledCourses" to listOf("MATH_101", "PHYS_101", "CHEM_101", "CS_101"),
-          "createdAt" to FieldValue.serverTimestamp(),
-          "updatedAt" to FieldValue.serverTimestamp()
+        val newProfile = buildCleanUserPayload(
+          snapshot = null,
+          uid = uid,
+          fallbackEmail = cleanEmail,
+          fallbackName = cleanName,
+          role = effectiveRole,
+          isPremium = effectivePremium,
+          fallbackDepartment = cleanDept,
+          overrideStudentId = studentCode
         )
         docRef.set(newProfile).await()
         Result.success(
@@ -308,7 +410,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
             department = cleanDept,
             studentId = studentCode,
             isPremium = effectivePremium,
-            enrolledCourses = listOf("MATH_101", "PHYS_101", "CHEM_101", "CS_101")
+            enrolledCourses = DEFAULT_ENROLLED_COURSES
           )
         )
       }
@@ -323,21 +425,23 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     val uid = sanitizeDocId(user.id, "user")
     val docRef = db.collection("users").document(uid)
     try {
+      val snapshot = fetchServerFirstSnapshot(docRef)
       val normalizedRole = if (user.role.equals("ADMIN", ignoreCase = true)) "ADMIN" else "STUDENT"
-      val payload = hashMapOf<String, Any>(
-        "userId" to uid,
-        "email" to user.email.trim().ifBlank { "student@ttsacademy.edu" }.take(150),
-        "name" to user.name.trim().ifBlank { "TTS Student" }.take(100),
-        "role" to normalizedRole,
-        "department" to user.department.trim().take(150),
-        "studentId" to user.studentId.trim().take(50),
-        "isPremium" to (user.isPremium || normalizedRole == "ADMIN"),
-        "activationCode" to (user.activationCode ?: "").trim().take(20),
-        "questionsAnsweredCount" to user.questionsAnsweredCount.toLong().coerceIn(0L, 1_000_000L),
-        "correctAnswersCount" to user.correctAnswersCount.toLong().coerceIn(0L, 1_000_000L)
+      val payload = buildCleanUserPayload(
+        snapshot = snapshot,
+        uid = uid,
+        fallbackEmail = user.email,
+        fallbackName = user.name,
+        role = normalizedRole,
+        isPremium = user.isPremium || normalizedRole == "ADMIN",
+        fallbackDepartment = user.department,
+        overrideDepartment = user.department.trim().take(150),
+        overrideStudentId = user.studentId.trim().take(50),
+        overrideActivationCode = (user.activationCode ?: "").trim().take(20),
+        overrideQuestionsAnsweredCount = user.questionsAnsweredCount.toLong().coerceIn(0L, 1_000_000L),
+        overrideCorrectAnswersCount = user.correctAnswersCount.toLong().coerceIn(0L, 1_000_000L)
       )
-      prepareTimestamps(docRef, payload)
-      docRef.set(payload, SetOptions.merge()).await()
+      docRef.set(payload).await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
@@ -349,21 +453,37 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
   suspend fun updateUserStats(userId: String, questionsDelta: Int, correctDelta: Int): Result<Unit> = withContext(Dispatchers.IO) {
     val docRef = db.collection("users").document(userId)
     try {
-      val snapshot = docRef.get(Source.SERVER).await()
+      var snapshot = docRef.get(Source.SERVER).await()
       if (!snapshot.exists()) {
         val email = auth.currentUser?.email ?: "student@ttsacademy.edu"
         val name = auth.currentUser?.displayName ?: "TTS Student"
         getOrCreateUserProfile(userId, email, name).getOrThrow()
+        snapshot = docRef.get(Source.SERVER).await()
       }
-      val payload = hashMapOf<String, Any>(
-        "questionsAnsweredCount" to FieldValue.increment(questionsDelta.toLong()),
-        "correctAnswersCount" to FieldValue.increment(correctDelta.toLong()),
-        "updatedAt" to FieldValue.serverTimestamp()
-      )
-      if (snapshot.exists() && snapshot.getTimestamp("createdAt") == null) {
-        payload["createdAt"] = FieldValue.serverTimestamp()
+      val existingCreatedAt = snapshot.get("createdAt") as? Timestamp
+      val hasLegacyUnknownFields = snapshot.data?.keys?.any { it !in ALLOWED_USER_PROFILE_KEYS } == true
+      if (existingCreatedAt == null || hasLegacyUnknownFields) {
+        val prevQ = (snapshot.get("questionsAnsweredCount") as? Number)?.toLong() ?: 0L
+        val prevC = (snapshot.get("correctAnswersCount") as? Number)?.toLong() ?: 0L
+        val cleanPayload = buildCleanUserPayload(
+          snapshot = snapshot,
+          uid = userId,
+          fallbackEmail = auth.currentUser?.email ?: "student@ttsacademy.edu",
+          fallbackName = auth.currentUser?.displayName ?: "TTS Student",
+          role = snapshot.getString("role") ?: "STUDENT",
+          isPremium = snapshot.getBoolean("isPremium") ?: false,
+          overrideQuestionsAnsweredCount = (prevQ + questionsDelta).coerceIn(0L, 1_000_000L),
+          overrideCorrectAnswersCount = (prevC + correctDelta).coerceIn(0L, 1_000_000L)
+        )
+        docRef.set(cleanPayload).await()
+      } else {
+        val payload = hashMapOf<String, Any>(
+          "questionsAnsweredCount" to FieldValue.increment(questionsDelta.toLong()),
+          "correctAnswersCount" to FieldValue.increment(correctDelta.toLong()),
+          "updatedAt" to FieldValue.serverTimestamp()
+        )
+        docRef.update(payload).await()
       }
-      docRef.update(payload).await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
@@ -380,22 +500,17 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
       if (!snapshot.exists()) {
         return@withContext Result.failure(IllegalStateException("User profile '$userId' does not exist in cloud database yet."))
       }
-      val payload = hashMapOf<String, Any>(
-        "userId" to userId,
-        "role" to normalizedRole,
-        "isPremium" to (normalizedRole == "ADMIN"),
-        "updatedAt" to FieldValue.serverTimestamp()
+      val hasActivePass = !snapshot.getString("activationCode").isNullOrBlank()
+      val effectivePremium = normalizedRole == "ADMIN" || hasActivePass
+      val cleanPayload = buildCleanUserPayload(
+        snapshot = snapshot,
+        uid = userId,
+        fallbackEmail = "student@ttsacademy.edu",
+        fallbackName = "TTS Member",
+        role = normalizedRole,
+        isPremium = effectivePremium
       )
-      if (snapshot.getString("email").isNullOrBlank()) {
-        payload["email"] = "student@ttsacademy.edu"
-      }
-      if (snapshot.getString("name").isNullOrBlank()) {
-        payload["name"] = "TTS Member"
-      }
-      if (snapshot.getTimestamp("createdAt") == null) {
-        payload["createdAt"] = FieldValue.serverTimestamp()
-      }
-      docRef.set(payload, SetOptions.merge()).await()
+      docRef.set(cleanPayload).await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
@@ -415,7 +530,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         "invitedBy" to invitedBy
       )
       prepareTimestamps(docRef, payload)
-      docRef.set(payload, SetOptions.merge()).await()
+      docRef.set(payload).await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
@@ -521,7 +636,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         "isPublished" to announcement.isPublished
       )
       prepareTimestamps(docRef, payload)
-      docRef.set(payload, SetOptions.merge()).await()
+      docRef.set(payload).await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
@@ -576,7 +691,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         "orderIndex" to course.orderIndex.toLong().coerceIn(0L, 10_000L)
       )
       prepareTimestamps(docRef, payload)
-      docRef.set(payload, SetOptions.merge()).await()
+      docRef.set(payload).await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
@@ -641,7 +756,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         "orderIndex" to topic.orderIndex.toLong().coerceIn(0L, 10_000L)
       )
       prepareTimestamps(docRef, payload)
-      docRef.set(payload, SetOptions.merge()).await()
+      docRef.set(payload).await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
@@ -707,7 +822,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         "isPublished" to q.isPublished
       )
       prepareTimestamps(docRef, payload)
-      docRef.set(payload, SetOptions.merge()).await()
+      docRef.set(payload).await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
@@ -763,7 +878,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         "isPublished" to note.isPublished
       )
       prepareTimestamps(docRef, payload)
-      docRef.set(payload, SetOptions.merge()).await()
+      docRef.set(payload).await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
@@ -822,7 +937,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         "isPublished" to exam.isPublished
       )
       prepareTimestamps(docRef, payload)
-      docRef.set(payload, SetOptions.merge()).await()
+      docRef.set(payload).await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
@@ -877,8 +992,11 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         "note" to code.note.trim().take(300),
         "expiresAt" to com.google.firebase.Timestamp(java.util.Date(code.expiresAt))
       )
+      if (code.redeemedAt != null) {
+        payload["redeemedAt"] = Timestamp(java.util.Date(code.redeemedAt))
+      }
       prepareTimestamps(docRef, payload)
-      docRef.set(payload, SetOptions.merge()).await()
+      docRef.set(payload).await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
@@ -927,15 +1045,27 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         )
         transaction.update(codeDocRef, codeUpdates)
 
-        val userUpdates = hashMapOf<String, Any>(
-          "isPremium" to true,
-          "activationCode" to clean,
-          "updatedAt" to FieldValue.serverTimestamp()
-        )
-        if (userSnap.getTimestamp("createdAt") == null) {
-          userUpdates["createdAt"] = FieldValue.serverTimestamp()
+        val userExistingCreatedAt = userSnap.get("createdAt") as? Timestamp
+        val hasLegacyUserFields = userSnap.data?.keys?.any { it !in ALLOWED_USER_PROFILE_KEYS } == true
+        if (userExistingCreatedAt == null || hasLegacyUserFields) {
+          val cleanUserPayload = buildCleanUserPayload(
+            snapshot = userSnap,
+            uid = effectiveUid,
+            fallbackEmail = userEmail.ifBlank { auth.currentUser?.email ?: "student@ttsacademy.edu" },
+            fallbackName = auth.currentUser?.displayName ?: "TTS Student",
+            role = userSnap.getString("role") ?: "STUDENT",
+            isPremium = true,
+            overrideActivationCode = clean
+          )
+          transaction.set(userDocRef, cleanUserPayload)
+        } else {
+          val userUpdates = hashMapOf<String, Any>(
+            "isPremium" to true,
+            "activationCode" to clean,
+            "updatedAt" to FieldValue.serverTimestamp()
+          )
+          transaction.update(userDocRef, userUpdates)
         }
-        transaction.update(userDocRef, userUpdates)
         true
       }.await()
 
@@ -943,8 +1073,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      handleFirestoreError(e, OperationType.UPDATE, codeDocRef.path)
-      Result.failure(e)
+      Result.failure(formatCloudError(e, OperationType.UPDATE, codeDocRef.path))
     }
   }
 
@@ -956,8 +1085,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      handleFirestoreError(e, OperationType.DELETE, docRef.path)
-      Result.failure(e)
+      Result.failure(formatCloudError(e, OperationType.DELETE, docRef.path))
     }
   }
 
