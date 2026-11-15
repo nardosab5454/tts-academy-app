@@ -111,23 +111,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
+  private val _isAuthenticating = MutableStateFlow(false)
+  val isAuthenticating: StateFlow<Boolean> = _isAuthenticating.asStateFlow()
+
   fun syncWithFirebaseUser(firebaseUser: FirebaseUser?) {
     if (firebaseUser == null) return
     viewModelScope.launch {
-      val uid = firebaseUser.uid
-      val email = firebaseUser.email ?: "student@ttsacademy.edu"
-      val name = firebaseUser.displayName ?: "TTS Student"
-      val profileResult = firestoreRepository.getOrCreateUserProfile(uid, email, name)
-      profileResult.onSuccess { profile ->
-        repository.syncFirebaseUser(
-          uid = uid,
-          email = email,
-          name = profile.name,
-          role = profile.role,
-          department = profile.department
-        )
-        loadUserData()
+      _isAuthenticating.value = true
+      try {
+        val uid = firebaseUser.uid
+        val email = firebaseUser.email ?: "student@ttsacademy.edu"
+        val name = firebaseUser.displayName ?: "TTS Student"
+        val profileResult = firestoreRepository.getOrCreateUserProfile(uid, email, name)
+        profileResult.onSuccess { profile ->
+          repository.syncFirebaseUser(
+            uid = uid,
+            email = email,
+            name = profile.name.ifBlank { name },
+            role = profile.role,
+            department = profile.department,
+            isPremium = profile.isPremium,
+            studentId = profile.studentId
+          )
+          loadUserData(uid)
+          try {
+            repository.syncFromCloudNow()
+          } catch (_: Exception) {}
+        }.onFailure { err ->
+          val localUser = repository.syncFirebaseUser(
+            uid = uid,
+            email = email,
+            name = name
+          )
+          loadUserData(localUser.id)
+          if (isOnline.value) {
+            showMessage("Signed in locally. Cloud profile sync warning: ${err.message}")
+          }
+        }
+      } finally {
+        _isAuthenticating.value = false
       }
+    }
+  }
+
+  fun clearSessionOnFirebaseSignOut() {
+    viewModelScope.launch {
+      repository.signOut()
+      _currentScreen.value = Screen.DASHBOARD
+      screenBackStack.clear()
     }
   }
 
@@ -404,9 +435,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun updateUserRole(userId: String, newRole: String) {
+    if (currentUser.value?.role != "ADMIN" || !hasFirebaseCloudSession()) {
+      showMessage("Google Administrator session required to update user roles.")
+      return
+    }
     viewModelScope.launch {
-      repository.setUserRole(userId, newRole)
-      showMessage("User role updated to $newRole.")
+      val res = repository.setUserRole(userId, newRole)
+      res.onSuccess {
+        showMessage("User role updated to $newRole.")
+      }.onFailure { err ->
+        showMessage("Failed to update user role: ${err.message}")
+      }
     }
   }
 
@@ -421,17 +460,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun createAdmin(name: String, email: String, password: String, department: String) {
+    if (currentUser.value?.role != "ADMIN" || !hasFirebaseCloudSession()) {
+      showMessage("Google Administrator session required to add administrators.")
+      return
+    }
     viewModelScope.launch {
       val res = repository.createAdminAccount(name, email, password, department)
       res.onSuccess { admin ->
-        showMessage("Admin account created for ${admin.name}.")
+        showMessage("Admin privileges granted for ${admin.email}.")
       }.onFailure { err ->
-        showMessage("Failed to create admin: ${err.message}")
+        showMessage("Failed to add administrator: ${err.message}")
       }
     }
   }
 
   fun promoteUserByEmail(email: String) {
+    if (currentUser.value?.role != "ADMIN" || !hasFirebaseCloudSession()) {
+      showMessage("Google Administrator session required to promote users.")
+      return
+    }
     viewModelScope.launch {
       val res = repository.promoteUserByEmail(email)
       res.onSuccess { user ->
@@ -512,26 +559,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val admin = currentUser.value
     val adminId = admin?.id ?: "admin_1"
     viewModelScope.launch {
-      val newCode = repository.generateAccessCode(adminId, note, format, customCode)
-      showMessage("Generated Access Code: ${newCode.code}")
-      onResult(newCode.code)
+      try {
+        val newCode = repository.generateAccessCode(adminId, note, format, customCode)
+        showMessage("Generated Access Code: ${newCode.code}")
+        onResult(newCode.code)
+      } catch (e: Exception) {
+        showMessage("Failed to generate access code: ${e.message}")
+        onResult("")
+      }
     }
   }
 
-  fun generateQuickAdminAccessCode(onResult: (AccessCodeEntity) -> Unit) {
+  fun generateQuickAdminAccessCode(onResult: (AccessCodeEntity?) -> Unit) {
     val admin = currentUser.value
     val adminId = admin?.id ?: "admin_1"
     viewModelScope.launch {
-      val newCode = repository.generateAccessCode(adminId, "Permanent Academic Pass", "NUMERIC", null)
-      showMessage("Generated Access Code: ${newCode.code}")
-      onResult(newCode)
+      try {
+        val newCode = repository.generateAccessCode(adminId, "Permanent Academic Pass", "NUMERIC", null)
+        showMessage("Generated Access Code: ${newCode.code}")
+        onResult(newCode)
+      } catch (e: Exception) {
+        showMessage("Failed to generate access code: ${e.message}")
+        onResult(null)
+      }
     }
   }
 
   fun deleteAccessCode(code: String) {
+    if (currentUser.value?.role != "ADMIN" || !hasFirebaseCloudSession()) {
+      showMessage("Google Administrator session required to delete access codes.")
+      return
+    }
     viewModelScope.launch {
-      repository.deleteAccessCode(code)
-      showMessage("Removed access code $code.")
+      try {
+        repository.deleteAccessCode(code)
+        showMessage("Removed access code $code.")
+      } catch (e: Exception) {
+        showMessage("Failed to remove access code: ${e.message}")
+      }
     }
   }
 
@@ -1010,35 +1075,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   private fun hasFirebaseCloudSession(): Boolean = FirebaseAuth.getInstance().currentUser != null
 
-  // --- Admin operations ---
-  fun adminSaveCourse(course: CourseEntity) {
+  private fun requireAdminCloudSession(): Boolean {
     if (currentUser.value?.role != "ADMIN") {
       showMessage("Unauthorized: Administrator permissions required.")
+      return false
+    }
+    if (!hasFirebaseCloudSession()) {
+      showMessage("Google Admin sign-in session expired or missing. Please sign out and sign in with Google.")
+      return false
+    }
+    return true
+  }
+
+  // --- Admin operations ---
+  fun adminSaveCourse(course: CourseEntity, onResult: (Boolean) -> Unit = {}) {
+    if (!requireAdminCloudSession()) {
+      onResult(false)
       return
     }
     viewModelScope.launch {
       try {
         repository.saveCourse(course)
-        if (hasFirebaseCloudSession()) {
-          showMessage("Course '${course.title}' published to central cloud database.")
-        } else {
-          showMessage("Course '${course.title}' saved on device. Sign in with Google to sync to cloud.")
-        }
+        showMessage("Course '${course.title}' published to central cloud database.")
+        onResult(true)
       } catch (e: Exception) {
         showMessage("Failed to save course: ${e.message}")
+        onResult(false)
       }
     }
   }
 
   fun adminDeleteCourse(courseId: String) {
-    if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return
-    }
+    if (!requireAdminCloudSession()) return
     viewModelScope.launch {
       try {
         repository.deleteCourse(courseId)
-        showMessage("Course removed.")
+        showMessage("Course removed from central database.")
       } catch (e: Exception) {
         showMessage("Failed to delete course: ${e.message}")
       }
@@ -1046,18 +1118,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminSaveTopic(topic: TopicEntity) {
-    if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return
-    }
+    if (!requireAdminCloudSession()) return
     viewModelScope.launch {
       try {
         repository.saveTopic(topic)
-        if (hasFirebaseCloudSession()) {
-          showMessage("Section '${topic.title}' published to central cloud database.")
-        } else {
-          showMessage("Section '${topic.title}' saved on device. Sign in with Google to sync to cloud.")
-        }
+        showMessage("Section '${topic.title}' published to central cloud database.")
       } catch (e: Exception) {
         showMessage("Failed to save section: ${e.message}")
       }
@@ -1065,14 +1130,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminDeleteTopic(topicId: String) {
-    if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return
-    }
+    if (!requireAdminCloudSession()) return
     viewModelScope.launch {
       try {
         repository.deleteTopic(topicId)
-        showMessage("Section removed.")
+        showMessage("Section removed from central database.")
       } catch (e: Exception) {
         showMessage("Failed to delete section: ${e.message}")
       }
@@ -1080,18 +1142,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminSaveQuestion(question: QuestionEntity) {
-    if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return
-    }
+    if (!requireAdminCloudSession()) return
     viewModelScope.launch {
       try {
         repository.saveQuestion(question)
-        if (hasFirebaseCloudSession()) {
-          showMessage("Question published to central cloud database & synced.")
-        } else {
-          showMessage("Question saved on device. Sign in with Google to sync to cloud.")
-        }
+        showMessage("Question published to central cloud database & synced.")
       } catch (e: Exception) {
         showMessage("Failed to save question: ${e.message}")
       }
@@ -1099,14 +1154,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminDeleteQuestion(questionId: String) {
-    if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return
-    }
+    if (!requireAdminCloudSession()) return
     viewModelScope.launch {
       try {
         repository.deleteQuestion(questionId)
-        showMessage("Question deleted.")
+        showMessage("Question deleted from central database.")
       } catch (e: Exception) {
         showMessage("Failed to delete question: ${e.message}")
       }
@@ -1114,18 +1166,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminSaveNote(note: NoteEntity) {
-    if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return
-    }
+    if (!requireAdminCloudSession()) return
     viewModelScope.launch {
       try {
         repository.saveNote(note)
-        if (hasFirebaseCloudSession()) {
-          showMessage("Revision note '${note.title}' published to central cloud database.")
-        } else {
-          showMessage("Revision note '${note.title}' saved on device. Sign in with Google to sync to cloud.")
-        }
+        showMessage("Revision note '${note.title}' published to central cloud database.")
       } catch (e: Exception) {
         showMessage("Failed to save note: ${e.message}")
       }
@@ -1133,14 +1178,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminDeleteNote(noteId: String) {
-    if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return
-    }
+    if (!requireAdminCloudSession()) return
     viewModelScope.launch {
       try {
         repository.deleteNote(noteId)
-        showMessage("Note deleted.")
+        showMessage("Note deleted from central database.")
       } catch (e: Exception) {
         showMessage("Failed to delete note: ${e.message}")
       }
@@ -1148,18 +1190,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminSavePastExam(exam: PastExamEntity) {
-    if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return
-    }
+    if (!requireAdminCloudSession()) return
     viewModelScope.launch {
       try {
         repository.savePastExam(exam)
-        if (hasFirebaseCloudSession()) {
-          showMessage("Past exam '${exam.title}' published to central cloud database.")
-        } else {
-          showMessage("Past exam '${exam.title}' saved on device. Sign in with Google to sync to cloud.")
-        }
+        showMessage("Past exam '${exam.title}' published to central cloud database.")
       } catch (e: Exception) {
         showMessage("Failed to publish past exam: ${e.message}")
       }
@@ -1167,14 +1202,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminDeletePastExam(examId: String) {
-    if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return
-    }
+    if (!requireAdminCloudSession()) return
     viewModelScope.launch {
       try {
         repository.deletePastExam(examId)
-        showMessage("Past exam removed.")
+        showMessage("Past exam removed from central database.")
       } catch (e: Exception) {
         showMessage("Failed to delete past exam: ${e.message}")
       }
@@ -1182,10 +1214,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminPublishAnnouncement(title: String, message: String, category: String, isUrgent: Boolean) {
-    if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return
-    }
+    if (!requireAdminCloudSession()) return
     viewModelScope.launch {
       try {
         val ann = AnnouncementEntity(
@@ -1197,11 +1226,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         repository.saveAnnouncement(ann)
         repository.syncFromCloudNow()
-        if (hasFirebaseCloudSession()) {
-          showMessage("Announcement broadcasted to all students & central cloud.")
-        } else {
-          showMessage("Announcement saved on device. Sign in with Google to broadcast to cloud.")
-        }
+        showMessage("Announcement broadcasted to all students & central cloud.")
       } catch (e: Exception) {
         showMessage("Failed to broadcast announcement: ${e.message}")
       }
@@ -1209,10 +1234,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminDeleteAnnouncement(id: String) {
-    if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return
-    }
+    if (!requireAdminCloudSession()) return
     viewModelScope.launch {
       try {
         repository.deleteAnnouncement(id)
@@ -1225,14 +1247,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun adminResetData() {
-    if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return
-    }
+    if (!requireAdminCloudSession()) return
     viewModelScope.launch {
-      repository.resetDatabase()
-      loadUserData()
-      showMessage("Platform database re-seeded to factory standard curriculum.")
+      try {
+        repository.resetDatabase()
+        loadUserData()
+        showMessage("Platform database re-seeded to factory standard curriculum.")
+      } catch (e: Exception) {
+        showMessage("Failed to re-seed database: ${e.message}")
+      }
     }
   }
 }

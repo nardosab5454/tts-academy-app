@@ -468,6 +468,7 @@ fun CreateOrEditSectionDialog(
   var title by remember { mutableStateOf(existingSection?.title ?: "") }
   var description by remember { mutableStateOf(existingSection?.description ?: "") }
   var orderStr by remember { mutableStateOf(existingSection?.orderIndex?.toString() ?: (existingCount + 1).toString()) }
+  var validationError by remember { mutableStateOf<String?>(null) }
 
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -476,7 +477,7 @@ fun CreateOrEditSectionDialog(
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
           value = title,
-          onValueChange = { title = it },
+          onValueChange = { title = it; validationError = null },
           label = { Text("Section Title (e.g. Limits & Continuity)") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth()
@@ -495,12 +496,22 @@ fun CreateOrEditSectionDialog(
           singleLine = true,
           modifier = Modifier.fillMaxWidth()
         )
+        if (!validationError.isNullOrBlank()) {
+          Text(
+            text = validationError!!,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall
+          )
+        }
       }
     },
     confirmButton = {
       Button(
         onClick = {
-          if (title.isNotBlank()) {
+          if (title.isBlank()) {
+            validationError = "Please enter a section title."
+          } else {
+            validationError = null
             val order = orderStr.toIntOrNull() ?: (existingCount + 1)
             val section = TopicEntity(
               id = existingSection?.id ?: ("T_" + UUID.randomUUID().toString().take(6).uppercase()),
@@ -535,27 +546,38 @@ fun EditCourseDialog(
   var title by remember { mutableStateOf(course.title) }
   var desc by remember { mutableStateOf(course.description) }
   var category by remember { mutableStateOf(course.category) }
+  var validationError by remember { mutableStateOf<String?>(null) }
 
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text("Edit Course Details") },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(value = code, onValueChange = { code = it }, label = { Text("Course Code (e.g. MATH 101)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Course Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = code, onValueChange = { code = it; validationError = null }, label = { Text("Course Code (e.g. MATH 101)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, label = { Text("Course Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category (STEM, Computing, etc.)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Description") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
+        if (!validationError.isNullOrBlank()) {
+          Text(
+            text = validationError!!,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall
+          )
+        }
       }
     },
     confirmButton = {
       Button(
         onClick = {
-          if (code.isNotBlank() && title.isNotBlank()) {
+          if (code.isBlank() || title.isBlank()) {
+            validationError = "Please enter both course code and title."
+          } else {
+            validationError = null
             onSave(
               course.copy(
                 code = code.trim(),
                 title = title.trim(),
-                category = category.trim(),
+                category = category.trim().ifBlank { "General" },
                 description = desc.trim()
               )
             )
@@ -625,6 +647,7 @@ fun AdminPastExamTab(
 
   var editingQuestion by remember { mutableStateOf<QuestionEntity?>(null) }
   var showSuccessMsg by remember { mutableStateOf(false) }
+  var validationError by remember { mutableStateOf<String?>(null) }
 
   val coursePastQuestions = questions.filter { it.courseId == selectedCourseId && it.isPastExam }
   val selectedCourse = courses.firstOrNull { it.id == selectedCourseId }
@@ -821,68 +844,90 @@ fun AdminPastExamTab(
     item { OutlinedTextField(value = expC, onValueChange = { expC = it }, label = { Text("Explanation for C (Optional)") }, modifier = Modifier.fillMaxWidth()) }
     item { OutlinedTextField(value = expD, onValueChange = { expD = it }, label = { Text("Explanation for D (Optional)") }, modifier = Modifier.fillMaxWidth()) }
 
+    if (!validationError.isNullOrBlank()) {
+      item {
+        Text(
+          text = validationError!!,
+          color = MaterialTheme.colorScheme.error,
+          style = MaterialTheme.typography.bodySmall
+        )
+      }
+    }
+
     // Save button
     item {
       Button(
         onClick = {
-          if (questionText.isNotBlank() && optA.isNotBlank() && optB.isNotBlank()) {
-            val qId = "PQ_" + UUID.randomUUID().toString().take(6)
-            val newQ = QuestionEntity(
-              id = qId,
-              courseId = selectedCourseId,
-              topicId = "T_EXAM",
-              questionText = questionText.trim(),
-              optionA = optA.trim(),
-              optionB = optB.trim(),
-              optionC = optC.trim(),
-              optionD = optD.trim(),
-              correctAnswer = correctChoice,
-              explanationGeneral = generalExplanation.trim().ifBlank { "Choice ($correctChoice) is verified correct based on curriculum standards." },
-              explanationA = expA.trim().ifBlank { if (correctChoice == "A") "Correct solution." else "Incorrect choice." },
-              explanationB = expB.trim().ifBlank { if (correctChoice == "B") "Correct solution." else "Incorrect choice." },
-              explanationC = expC.trim().ifBlank { if (correctChoice == "C") "Correct solution." else "Incorrect choice." },
-              explanationD = expD.trim().ifBlank { if (correctChoice == "D") "Correct solution." else "Incorrect choice." },
-              difficulty = "MEDIUM",
-              isPastExam = true,
-              examYear = examYear.trim(),
-              examType = examType.trim(),
-              isVerified = true,
-              isPublished = true
-            )
-            onSaveQuestion(newQ)
+          val resolvedCourseId = selectedCourseId.ifBlank { courses.firstOrNull()?.id ?: "" }
+          when {
+            resolvedCourseId.isBlank() -> validationError = "Please create or select a course first."
+            examUniversity.isBlank() -> validationError = "Please specify a university or institution."
+            examYear.isBlank() -> validationError = "Please specify an academic year."
+            questionText.isBlank() -> validationError = "Please enter the question statement."
+            optA.isBlank() || optB.isBlank() -> validationError = "Please provide at least Choice (A) and Choice (B)."
+            else -> {
+              validationError = null
+              val qId = "PQ_" + UUID.randomUUID().toString().take(6).uppercase()
+              val newQ = QuestionEntity(
+                id = qId,
+                courseId = resolvedCourseId,
+                topicId = "T_EXAM",
+                questionText = questionText.trim(),
+                optionA = optA.trim(),
+                optionB = optB.trim(),
+                optionC = optC.trim(),
+                optionD = optD.trim(),
+                correctAnswer = correctChoice,
+                explanationGeneral = generalExplanation.trim().ifBlank { "Choice ($correctChoice) is verified correct based on curriculum standards." },
+                explanationA = expA.trim().ifBlank { if (correctChoice == "A") "Correct solution." else "Incorrect choice." },
+                explanationB = expB.trim().ifBlank { if (correctChoice == "B") "Correct solution." else "Incorrect choice." },
+                explanationC = expC.trim().ifBlank { if (correctChoice == "C") "Correct solution." else "Incorrect choice." },
+                explanationD = expD.trim().ifBlank { if (correctChoice == "D") "Correct solution." else "Incorrect choice." },
+                difficulty = "MEDIUM",
+                isPastExam = true,
+                examYear = examYear.trim(),
+                examType = examType.trim(),
+                isVerified = true,
+                isPublished = true
+              )
+              onSaveQuestion(newQ)
 
-            // Also ensure corresponding PastExamEntity exists
-            val examId = "EXAM_${selectedCourseId}_${examYear.take(4)}_${examType}"
-            val examEntity = PastExamEntity(
-              id = examId,
-              courseId = selectedCourseId,
-              university = examUniversity.trim().ifBlank { "Addis Ababa University (AAU)" },
-              academicYear = examYear.trim(),
-              semester = semester.trim(),
-              examType = examType.trim(),
-              title = examTitle.trim().ifBlank { "${selectedCourse?.code ?: "Course"} $examType Examination $examYear" },
-              instructions = "All questions are multiple choice. Choose the single best answer and review official step-by-step reasoning.",
-              totalQuestions = coursePastQuestions.size + 1,
-              durationMinutes = 60,
-              isDigitized = true,
-              isVerified = true,
-              documentSummary = "Official Ethiopian University freshman past exam questions with detailed mathematical and conceptual step-by-step solutions.",
-              isPublished = true
-            )
-            onSavePastExam(examEntity)
+              // Also ensure corresponding PastExamEntity exists with Firestore-safe document ID
+              val safeCoursePart = resolvedCourseId.replace(Regex("[^a-zA-Z0-9_-]"), "_").ifBlank { "COURSE" }
+              val safeYearPart = examYear.trim().take(12).replace(Regex("[^a-zA-Z0-9_-]"), "_").trim('_').ifBlank { "YEAR" }
+              val safeTypePart = examType.trim().replace(Regex("[^a-zA-Z0-9_-]"), "_").trim('_').ifBlank { "FINAL" }
+              val examId = "EXAM_${safeCoursePart}_${safeYearPart}_${safeTypePart}"
+              val examEntity = PastExamEntity(
+                id = examId,
+                courseId = resolvedCourseId,
+                university = examUniversity.trim().ifBlank { "Addis Ababa University (AAU)" },
+                academicYear = examYear.trim(),
+                semester = semester.trim().ifBlank { "Semester 1" },
+                examType = examType.trim().ifBlank { "FINAL" },
+                title = examTitle.trim().ifBlank { "${selectedCourse?.code ?: "Course"} $examType Examination $examYear" },
+                instructions = "All questions are multiple choice. Choose the single best answer and review official step-by-step reasoning.",
+                totalQuestions = coursePastQuestions.size + 1,
+                durationMinutes = 60,
+                isDigitized = true,
+                isVerified = true,
+                documentSummary = "Official Ethiopian University freshman past exam questions with detailed mathematical and conceptual step-by-step solutions.",
+                isPublished = true
+              )
+              onSavePastExam(examEntity)
 
-            // Clear inputs
-            questionText = ""
-            optA = ""
-            optB = ""
-            optC = ""
-            optD = ""
-            generalExplanation = ""
-            expA = ""
-            expB = ""
-            expC = ""
-            expD = ""
-            showSuccessMsg = true
+              // Clear inputs
+              questionText = ""
+              optA = ""
+              optB = ""
+              optC = ""
+              optD = ""
+              generalExplanation = ""
+              expA = ""
+              expB = ""
+              expC = ""
+              expD = ""
+              showSuccessMsg = true
+            }
           }
         },
         modifier = Modifier
@@ -1478,6 +1523,7 @@ fun EditQuestionDialog(
   var optD by remember { mutableStateOf(question.optionD) }
   var correctChoice by remember { mutableStateOf(question.correctAnswer) }
   var explanation by remember { mutableStateOf(question.explanationGeneral) }
+  var validationError by remember { mutableStateOf<String?>(null) }
 
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -1496,14 +1542,14 @@ fun EditQuestionDialog(
         item {
           OutlinedTextField(
             value = questionText,
-            onValueChange = { questionText = it },
+            onValueChange = { questionText = it; validationError = null },
             label = { Text("Question Text") },
             modifier = Modifier.fillMaxWidth(),
             minLines = 3
           )
         }
-        item { OutlinedTextField(value = optA, onValueChange = { optA = it }, label = { Text("Option A") }, modifier = Modifier.fillMaxWidth()) }
-        item { OutlinedTextField(value = optB, onValueChange = { optB = it }, label = { Text("Option B") }, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(value = optA, onValueChange = { optA = it; validationError = null }, label = { Text("Option A") }, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(value = optB, onValueChange = { optB = it; validationError = null }, label = { Text("Option B") }, modifier = Modifier.fillMaxWidth()) }
         item { OutlinedTextField(value = optC, onValueChange = { optC = it }, label = { Text("Option C") }, modifier = Modifier.fillMaxWidth()) }
         item { OutlinedTextField(value = optD, onValueChange = { optD = it }, label = { Text("Option D") }, modifier = Modifier.fillMaxWidth()) }
         item {
@@ -1537,23 +1583,37 @@ fun EditQuestionDialog(
             minLines = 2
           )
         }
+        if (!validationError.isNullOrBlank()) {
+          item {
+            Text(
+              text = validationError!!,
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall
+            )
+          }
+        }
       }
     },
     confirmButton = {
       Button(
         onClick = {
-          onSave(
-            question.copy(
-              topicId = selectedTopicId.ifBlank { question.topicId },
-              questionText = questionText.trim(),
-              optionA = optA.trim(),
-              optionB = optB.trim(),
-              optionC = optC.trim(),
-              optionD = optD.trim(),
-              correctAnswer = correctChoice,
-              explanationGeneral = explanation.trim()
+          if (questionText.isBlank() || optA.isBlank() || optB.isBlank()) {
+            validationError = "Question text and Options A & B are required."
+          } else {
+            validationError = null
+            onSave(
+              question.copy(
+                topicId = selectedTopicId.ifBlank { question.topicId },
+                questionText = questionText.trim(),
+                optionA = optA.trim(),
+                optionB = optB.trim(),
+                optionC = optC.trim(),
+                optionD = optD.trim(),
+                correctAnswer = correctChoice,
+                explanationGeneral = explanation.trim()
+              )
             )
-          )
+          }
         }
       ) {
         Text("Save Changes")
@@ -1581,6 +1641,7 @@ fun EditNoteDialog(
   var summary by remember { mutableStateOf(note.summary) }
   var formulas by remember { mutableStateOf(note.keyFormulas) }
   var markdownContent by remember { mutableStateOf(note.contentMarkdown) }
+  var validationError by remember { mutableStateOf<String?>(null) }
 
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -1655,7 +1716,7 @@ fun EditNoteDialog(
             }
           }
         }
-        item { OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth()) }
         item { OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Summary") }, modifier = Modifier.fillMaxWidth()) }
         item { OutlinedTextField(value = formulas, onValueChange = { formulas = it }, label = { Text("Key Formulas") }, modifier = Modifier.fillMaxWidth()) }
         item {
@@ -1667,21 +1728,35 @@ fun EditNoteDialog(
             minLines = 5
           )
         }
+        if (!validationError.isNullOrBlank()) {
+          item {
+            Text(
+              text = validationError!!,
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall
+            )
+          }
+        }
       }
     },
     confirmButton = {
       Button(
         onClick = {
-          onSave(
-            note.copy(
-              topicId = selectedTopicId.ifBlank { note.topicId },
-              chapterNumber = chapterNumber,
-              title = title.trim(),
-              summary = summary.trim(),
-              keyFormulas = formulas.trim(),
-              contentMarkdown = markdownContent.trim()
+          if (title.isBlank()) {
+            validationError = "Please enter a note title."
+          } else {
+            validationError = null
+            onSave(
+              note.copy(
+                topicId = selectedTopicId.ifBlank { note.topicId },
+                chapterNumber = chapterNumber,
+                title = title.trim(),
+                summary = summary.trim(),
+                keyFormulas = formulas.trim(),
+                contentMarkdown = markdownContent.trim().ifBlank { summary.trim() }
+              )
             )
-          )
+          }
         }
       ) {
         Text("Save Changes")

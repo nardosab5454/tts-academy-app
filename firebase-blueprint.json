@@ -2,7 +2,7 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "User profile containing academic details, role, university, and status",
+      "description": "User profile containing academic details, role, university, and premium access status",
       "type": "object",
       "properties": {
         "userId": {
@@ -16,7 +16,7 @@
         },
         "name": {
           "type": "string",
-          "description": "Display name of student"
+          "description": "Display name of user"
         },
         "role": {
           "type": "string",
@@ -33,7 +33,24 @@
         },
         "isPremium": {
           "type": "boolean",
-          "description": "Device/account unlocked status"
+          "description": "Account unlocked status"
+        },
+        "activationCode": {
+          "type": "string",
+          "description": "6-character redeemed activation code"
+        },
+        "questionsAnsweredCount": {
+          "type": "integer",
+          "description": "Total practice questions answered"
+        },
+        "correctAnswersCount": {
+          "type": "integer",
+          "description": "Total correct answers"
+        },
+        "enrolledCourses": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Course IDs user is enrolled in"
         },
         "createdAt": {
           "type": "string",
@@ -46,7 +63,20 @@
           "description": "Update timestamp via serverTimestamp"
         }
       },
-      "required": ["userId", "email", "name", "role", "createdAt"]
+      "required": ["userId", "email", "name", "role", "isPremium", "createdAt"]
+    },
+    "AdminInvite": {
+      "title": "AdminInvite",
+      "description": "Pre-authorized admin email promotion record resolved on Google Sign-In",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "department": { "type": "string" },
+        "invitedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "department", "invitedBy", "createdAt", "updatedAt"]
     },
     "Announcement": {
       "title": "Announcement",
@@ -56,12 +86,15 @@
         "id": { "type": "string" },
         "title": { "type": "string" },
         "content": { "type": "string" },
+        "message": { "type": "string" },
+        "category": { "type": "string" },
         "author": { "type": "string" },
         "isUrgent": { "type": "boolean" },
         "isPublished": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "title", "content", "createdAt"]
+      "required": ["id", "title", "content", "isUrgent", "isPublished", "createdAt"]
     },
     "Course": {
       "title": "Course",
@@ -78,9 +111,10 @@
         "totalNotes": { "type": "integer" },
         "isPublished": { "type": "boolean" },
         "orderIndex": { "type": "integer" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "code", "title", "category"]
+      "required": ["id", "code", "title", "category", "isPublished", "createdAt"]
     },
     "Topic": {
       "title": "Topic",
@@ -92,9 +126,10 @@
         "title": { "type": "string" },
         "description": { "type": "string" },
         "orderIndex": { "type": "integer" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "courseId", "title"]
+      "required": ["id", "courseId", "title", "orderIndex", "createdAt"]
     },
     "Question": {
       "title": "Question",
@@ -109,15 +144,22 @@
         "optionB": { "type": "string" },
         "optionC": { "type": "string" },
         "optionD": { "type": "string" },
-        "correctAnswer": { "type": "string" },
+        "correctAnswer": { "type": "string", "enum": ["A", "B", "C", "D"] },
         "explanationGeneral": { "type": "string" },
+        "explanationA": { "type": "string" },
+        "explanationB": { "type": "string" },
+        "explanationC": { "type": "string" },
+        "explanationD": { "type": "string" },
+        "difficulty": { "type": "string" },
         "isPastExam": { "type": "boolean" },
         "examYear": { "type": "string" },
         "examType": { "type": "string" },
+        "isVerified": { "type": "boolean" },
         "isPublished": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "courseId", "questionText", "correctAnswer"]
+      "required": ["id", "courseId", "topicId", "questionText", "optionA", "optionB", "correctAnswer", "createdAt"]
     },
     "RevisionNote": {
       "title": "RevisionNote",
@@ -126,13 +168,18 @@
       "properties": {
         "id": { "type": "string" },
         "courseId": { "type": "string" },
+        "topicId": { "type": "string" },
         "title": { "type": "string" },
+        "chapterNumber": { "type": "integer" },
         "summary": { "type": "string" },
+        "keyFormulas": { "type": "string" },
         "contentMarkdown": { "type": "string" },
+        "content": { "type": "string" },
         "isPublished": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "courseId", "title", "contentMarkdown"]
+      "required": ["id", "courseId", "topicId", "title", "chapterNumber", "contentMarkdown", "isPublished", "createdAt"]
     },
     "PastExam": {
       "title": "PastExam",
@@ -141,6 +188,7 @@
       "properties": {
         "id": { "type": "string" },
         "courseId": { "type": "string" },
+        "university": { "type": "string" },
         "academicYear": { "type": "string" },
         "semester": { "type": "string" },
         "examType": { "type": "string" },
@@ -148,18 +196,23 @@
         "instructions": { "type": "string" },
         "totalQuestions": { "type": "integer" },
         "durationMinutes": { "type": "integer" },
+        "isDigitized": { "type": "boolean" },
+        "isVerified": { "type": "boolean" },
+        "documentSummary": { "type": "string" },
         "isPublished": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "courseId", "academicYear", "title"]
+      "required": ["id", "courseId", "university", "academicYear", "examType", "title", "isPublished", "createdAt"]
     },
     "AccessCode": {
       "title": "AccessCode",
-      "description": "6-digit access code for device and account unlock",
+      "description": "6-character single-use access code for account unlock",
       "type": "object",
       "properties": {
         "code": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
         "expiresAt": { "type": "string", "format": "date-time" },
         "createdByAdminId": { "type": "string" },
         "isRedeemed": { "type": "boolean" },
@@ -168,7 +221,7 @@
         "redeemedAt": { "type": "string", "format": "date-time" },
         "note": { "type": "string" }
       },
-      "required": ["code", "createdAt", "expiresAt", "isRedeemed"]
+      "required": ["code", "createdAt", "expiresAt", "createdByAdminId", "isRedeemed", "note"]
     },
     "QuizAttempt": {
       "title": "QuizAttempt",
@@ -184,7 +237,7 @@
         "percentage": { "type": "integer" },
         "completedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "userId", "courseId", "score", "totalQuestions", "completedAt"]
+      "required": ["id", "userId", "courseId", "score", "totalQuestions", "percentage", "completedAt"]
     },
     "Bookmark": {
       "title": "Bookmark",
@@ -198,7 +251,25 @@
         "topicId": { "type": "string" },
         "savedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "userId", "questionId", "savedAt"]
+      "required": ["id", "userId", "questionId", "courseId", "savedAt"]
+    },
+    "UserStudyNote": {
+      "title": "UserStudyNote",
+      "description": "Personal study note created by a student",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "courseId", "title", "content", "createdAt"]
     }
   },
   "firestore": {
@@ -213,6 +284,14 @@
     "/users/{userId}/bookmarks/{bookmarkId}": {
       "schema": "Bookmark",
       "description": "Saved question bookmarks for a student"
+    },
+    "/users/{userId}/notes/{noteId}": {
+      "schema": "UserStudyNote",
+      "description": "Personal study notes created by a student"
+    },
+    "/admin_invites/{inviteEmail}": {
+      "schema": "AdminInvite",
+      "description": "Admin email invites for granting admin access before first login"
     },
     "/announcements/{announcementId}": {
       "schema": "Announcement",

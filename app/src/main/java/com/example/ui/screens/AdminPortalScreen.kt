@@ -96,7 +96,7 @@ fun AdminPortalScreen(
   pastExams: List<PastExamEntity> = emptyList(),
   topics: List<TopicEntity> = emptyList(),
   onBackClick: () -> Unit,
-  onSaveCourse: (CourseEntity) -> Unit,
+  onSaveCourse: (CourseEntity, (Boolean) -> Unit) -> Unit,
   onDeleteCourse: (String) -> Unit,
   onSaveQuestion: (QuestionEntity) -> Unit,
   onDeleteQuestion: (String) -> Unit = {},
@@ -306,46 +306,96 @@ fun AdminPortalScreen(
     var title by remember { mutableStateOf("") }
     var desc by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("STEM") }
+    var validationError by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
 
     AlertDialog(
-      onDismissRequest = { showNewCourseDialog = false },
+      onDismissRequest = { if (!isSaving) showNewCourseDialog = false },
       title = { Text("Create New Course") },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedTextField(value = code, onValueChange = { code = it }, label = { Text("Course Code (e.g. MATH 103)") }, singleLine = true)
-          OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Course Title") }, singleLine = true)
-          OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category (STEM, Humanities, etc.)") }, singleLine = true)
-          OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Description") }, maxLines = 3)
+          OutlinedTextField(
+            value = code,
+            onValueChange = { code = it; validationError = null },
+            label = { Text("Course Code (e.g. MATH 103)") },
+            singleLine = true,
+            enabled = !isSaving
+          )
+          OutlinedTextField(
+            value = title,
+            onValueChange = { title = it; validationError = null },
+            label = { Text("Course Title") },
+            singleLine = true,
+            enabled = !isSaving
+          )
+          OutlinedTextField(
+            value = category,
+            onValueChange = { category = it; validationError = null },
+            label = { Text("Category (STEM, Humanities, etc.)") },
+            singleLine = true,
+            enabled = !isSaving
+          )
+          OutlinedTextField(
+            value = desc,
+            onValueChange = { desc = it; validationError = null },
+            label = { Text("Description") },
+            maxLines = 3,
+            enabled = !isSaving
+          )
+          if (!validationError.isNullOrBlank()) {
+            Text(
+              text = validationError!!,
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall
+            )
+          }
         }
       },
       confirmButton = {
         Button(
+          enabled = !isSaving,
           onClick = {
-            if (code.isNotBlank() && title.isNotBlank()) {
-              val newCourse = CourseEntity(
-                id = "C_" + UUID.randomUUID().toString().take(6).uppercase(),
-                code = code.trim(),
-                title = title.trim(),
-                description = desc.trim(),
-                category = category.trim(),
-                iconName = "school",
-                totalQuestions = 0,
-                totalNotes = 0,
-                isPublished = true,
-                orderIndex = courses.size + 1
-              )
-              onSaveCourse(newCourse)
-              activeCourseIdForAdd = newCourse.id
-              newlyAddedCourse = newCourse
-              showNewCourseDialog = false
+            if (code.isBlank() || title.isBlank()) {
+              validationError = "Please enter both course code and course title."
+              return@Button
+            }
+            isSaving = true
+            validationError = null
+            val newCourse = CourseEntity(
+              id = "C_" + UUID.randomUUID().toString().take(6).uppercase(),
+              code = code.trim(),
+              title = title.trim(),
+              description = desc.trim(),
+              category = category.trim().ifBlank { "General" },
+              iconName = "school",
+              totalQuestions = 0,
+              totalNotes = 0,
+              isPublished = true,
+              orderIndex = courses.size + 1
+            )
+            onSaveCourse(newCourse) { success ->
+              isSaving = false
+              if (success) {
+                activeCourseIdForAdd = newCourse.id
+                newlyAddedCourse = newCourse
+                showNewCourseDialog = false
+              } else {
+                validationError = "Failed to save course to cloud. Check connection and admin permissions."
+              }
             }
           }
         ) {
-          Text("Save Course")
+          if (isSaving) {
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Saving...")
+          } else {
+            Text("Save Course")
+          }
         }
       },
       dismissButton = {
-        TextButton(onClick = { showNewCourseDialog = false }) {
+        TextButton(enabled = !isSaving, onClick = { showNewCourseDialog = false }) {
           Text("Cancel")
         }
       }
@@ -357,26 +407,36 @@ fun AdminPortalScreen(
     var title by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var isUrgent by remember { mutableStateOf(false) }
+    var validationError by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
       onDismissRequest = { showNewAnnouncementDialog = false },
       title = { Text("Publish Announcement") },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, singleLine = true)
-          OutlinedTextField(value = message, onValueChange = { message = it }, label = { Text("Message Body") }, maxLines = 4)
+          OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, label = { Text("Title") }, singleLine = true)
+          OutlinedTextField(value = message, onValueChange = { message = it; validationError = null }, label = { Text("Message Body") }, maxLines = 4)
           Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.clickable { isUrgent = !isUrgent }
           ) {
             Text("Mark as Urgent / Alert Notice: ${if (isUrgent) "YES" else "NO"}", fontWeight = FontWeight.Bold)
           }
+          if (!validationError.isNullOrBlank()) {
+            Text(
+              text = validationError!!,
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall
+            )
+          }
         }
       },
       confirmButton = {
         Button(
           onClick = {
-            if (title.isNotBlank() && message.isNotBlank()) {
+            if (title.isBlank() || message.isBlank()) {
+              validationError = "Please enter both a title and a message body."
+            } else {
               onPublishAnnouncement(title, message, "EXAM", isUrgent)
               showNewAnnouncementDialog = false
             }
@@ -393,34 +453,48 @@ fun AdminPortalScreen(
     )
   }
 
-  // New Administrator Dialog
+  // New Administrator Invite Dialog
   if (showNewAdminDialog) {
     var adminName by remember { mutableStateOf("") }
     var adminEmail by remember { mutableStateOf("") }
-    var adminPassword by remember { mutableStateOf("") }
     var adminDept by remember { mutableStateOf("Academic Directorate") }
+    var validationError by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
       onDismissRequest = { showNewAdminDialog = false },
-      title = { Text("Create New Administrator") },
+      title = { Text("Invite / Add Administrator") },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedTextField(value = adminName, onValueChange = { adminName = it }, label = { Text("Full Name") }, singleLine = true)
-          OutlinedTextField(value = adminEmail, onValueChange = { adminEmail = it }, label = { Text("Email Address") }, singleLine = true)
-          OutlinedTextField(value = adminPassword, onValueChange = { adminPassword = it }, label = { Text("Password") }, singleLine = true)
-          OutlinedTextField(value = adminDept, onValueChange = { adminDept = it }, label = { Text("Department / Directorate") }, singleLine = true)
+          Text(
+            text = "Users sign in with Google Sign-In. When this Google email signs in, they will automatically receive Administrator privileges.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+          OutlinedTextField(value = adminName, onValueChange = { adminName = it; validationError = null }, label = { Text("Full Name") }, singleLine = true)
+          OutlinedTextField(value = adminEmail, onValueChange = { adminEmail = it; validationError = null }, label = { Text("Google Email Address") }, singleLine = true)
+          OutlinedTextField(value = adminDept, onValueChange = { adminDept = it; validationError = null }, label = { Text("Department / Directorate") }, singleLine = true)
+          if (!validationError.isNullOrBlank()) {
+            Text(
+              text = validationError!!,
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall
+            )
+          }
         }
       },
       confirmButton = {
         Button(
           onClick = {
-            if (adminEmail.isNotBlank()) {
-              onCreateAdmin(adminName, adminEmail, adminPassword, adminDept)
+            val trimmedEmail = adminEmail.trim()
+            if (!android.util.Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()) {
+              validationError = "Please enter a valid Google email address."
+            } else {
+              onCreateAdmin(adminName.trim(), trimmedEmail, "", adminDept.trim())
               showNewAdminDialog = false
             }
           }
         ) {
-          Text("Save Admin")
+          Text("Save Admin Invite")
         }
       },
       dismissButton = {
@@ -603,7 +677,7 @@ private fun AdminCoursesTab(
   notes: List<NoteEntity> = emptyList(),
   topics: List<TopicEntity> = emptyList(),
   onAddNew: () -> Unit,
-  onSaveCourse: (CourseEntity) -> Unit = {},
+  onSaveCourse: (CourseEntity, (Boolean) -> Unit) -> Unit = { _, _ -> },
   onDelete: (String) -> Unit,
   onSaveTopic: (TopicEntity) -> Unit = {},
   onDeleteTopic: (String) -> Unit = {},
@@ -782,7 +856,7 @@ private fun AdminCoursesTab(
       course = courseToEdit!!,
       onDismiss = { courseToEdit = null },
       onSave = { updatedCourse ->
-        onSaveCourse(updatedCourse)
+        onSaveCourse(updatedCourse) { _ -> }
         courseToEdit = null
       }
     )
@@ -880,6 +954,7 @@ private fun AdminAddQuestionTab(
   var expB by remember { mutableStateOf("") }
   var expC by remember { mutableStateOf("") }
   var expD by remember { mutableStateOf("") }
+  var validationError by remember { mutableStateOf<String?>(null) }
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -898,6 +973,7 @@ private fun AdminAddQuestionTab(
         selectedCourseId = selectedCourseId,
         onCourseSelected = {
           selectedCourseId = it
+          validationError = null
           onCourseSelected(it)
         }
       )
@@ -916,15 +992,15 @@ private fun AdminAddQuestionTab(
     item {
       OutlinedTextField(
         value = questionText,
-        onValueChange = { questionText = it },
+        onValueChange = { questionText = it; validationError = null },
         label = { Text("Question Text") },
         modifier = Modifier.fillMaxWidth(),
         maxLines = 3
       )
     }
 
-    item { OutlinedTextField(value = optA, onValueChange = { optA = it }, label = { Text("Option A") }, modifier = Modifier.fillMaxWidth()) }
-    item { OutlinedTextField(value = optB, onValueChange = { optB = it }, label = { Text("Option B") }, modifier = Modifier.fillMaxWidth()) }
+    item { OutlinedTextField(value = optA, onValueChange = { optA = it; validationError = null }, label = { Text("Option A") }, modifier = Modifier.fillMaxWidth()) }
+    item { OutlinedTextField(value = optB, onValueChange = { optB = it; validationError = null }, label = { Text("Option B") }, modifier = Modifier.fillMaxWidth()) }
     item { OutlinedTextField(value = optC, onValueChange = { optC = it }, label = { Text("Option C") }, modifier = Modifier.fillMaxWidth()) }
     item { OutlinedTextField(value = optD, onValueChange = { optD = it }, label = { Text("Option D") }, modifier = Modifier.fillMaxWidth()) }
 
@@ -966,38 +1042,58 @@ private fun AdminAddQuestionTab(
     item { OutlinedTextField(value = expC, onValueChange = { expC = it }, label = { Text("Explanation for C") }, modifier = Modifier.fillMaxWidth()) }
     item { OutlinedTextField(value = expD, onValueChange = { expD = it }, label = { Text("Explanation for D") }, modifier = Modifier.fillMaxWidth()) }
 
+    if (!validationError.isNullOrBlank()) {
+      item {
+        Text(
+          text = validationError!!,
+          color = MaterialTheme.colorScheme.error,
+          style = MaterialTheme.typography.bodySmall
+        )
+      }
+    }
+
     item {
       Button(
         onClick = {
-          if (questionText.isNotBlank() && optA.isNotBlank() && optB.isNotBlank()) {
-            val q = QuestionEntity(
-              id = "Q_" + UUID.randomUUID().toString().take(6),
-              courseId = selectedCourseId.ifBlank { courses.firstOrNull()?.id ?: "MATH_101" },
-              topicId = selectedTopicId.ifBlank { "T_GEN" },
-              questionText = questionText.trim(),
-              optionA = optA.trim(),
-              optionB = optB.trim(),
-              optionC = optC.trim(),
-              optionD = optD.trim(),
-              correctAnswer = correctChoice,
-              explanationGeneral = generalExplanation.trim().ifBlank { "Option ($correctChoice) is the mathematically correct derivation." },
-              explanationA = expA.trim().ifBlank { if (correctChoice == "A") "Correct answer." else "Incorrect choice." },
-              explanationB = expB.trim().ifBlank { if (correctChoice == "B") "Correct answer." else "Incorrect choice." },
-              explanationC = expC.trim().ifBlank { if (correctChoice == "C") "Correct answer." else "Incorrect choice." },
-              explanationD = expD.trim().ifBlank { if (correctChoice == "D") "Correct answer." else "Incorrect choice." },
-              difficulty = "MEDIUM",
-              isPastExam = false,
-              isVerified = true,
-              isPublished = true
-            )
-            onSaveQuestion(q)
-            // Clear inputs
-            questionText = ""
-            optA = ""
-            optB = ""
-            optC = ""
-            optD = ""
-            generalExplanation = ""
+          val resolvedCourseId = selectedCourseId.ifBlank { courses.firstOrNull()?.id ?: "" }
+          when {
+            resolvedCourseId.isBlank() -> validationError = "Please create or select a course first."
+            questionText.isBlank() -> validationError = "Please enter the question text."
+            optA.isBlank() || optB.isBlank() -> validationError = "Please provide at least Option A and Option B."
+            else -> {
+              validationError = null
+              val q = QuestionEntity(
+                id = "Q_" + UUID.randomUUID().toString().take(6),
+                courseId = resolvedCourseId,
+                topicId = selectedTopicId.ifBlank { "T_GEN" },
+                questionText = questionText.trim(),
+                optionA = optA.trim(),
+                optionB = optB.trim(),
+                optionC = optC.trim(),
+                optionD = optD.trim(),
+                correctAnswer = correctChoice,
+                explanationGeneral = generalExplanation.trim().ifBlank { "Option ($correctChoice) is the mathematically correct derivation." },
+                explanationA = expA.trim().ifBlank { if (correctChoice == "A") "Correct answer." else "Incorrect choice." },
+                explanationB = expB.trim().ifBlank { if (correctChoice == "B") "Correct answer." else "Incorrect choice." },
+                explanationC = expC.trim().ifBlank { if (correctChoice == "C") "Correct answer." else "Incorrect choice." },
+                explanationD = expD.trim().ifBlank { if (correctChoice == "D") "Correct answer." else "Incorrect choice." },
+                difficulty = "MEDIUM",
+                isPastExam = false,
+                isVerified = true,
+                isPublished = true
+              )
+              onSaveQuestion(q)
+              questionText = ""
+              optA = ""
+              optB = ""
+              optC = ""
+              optD = ""
+              generalExplanation = ""
+              expA = ""
+              expB = ""
+              expC = ""
+              expD = ""
+            }
           }
         },
         modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -1081,6 +1177,7 @@ private fun AdminAddNoteTab(
   var summary by remember { mutableStateOf("") }
   var formulas by remember { mutableStateOf("") }
   var markdownContent by remember { mutableStateOf("") }
+  var validationError by remember { mutableStateOf<String?>(null) }
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -1099,6 +1196,7 @@ private fun AdminAddNoteTab(
         selectedCourseId = selectedCourseId,
         onCourseSelected = {
           selectedCourseId = it
+          validationError = null
           onCourseSelected(it)
         }
       )
@@ -1206,32 +1304,48 @@ private fun AdminAddNoteTab(
       }
     }
 
-    item { OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Note Title (e.g. Limits & Continuity)") }, modifier = Modifier.fillMaxWidth()) }
+    item { OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, label = { Text("Note Title (e.g. Limits & Continuity)") }, modifier = Modifier.fillMaxWidth()) }
     item { OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Concept Summary") }, modifier = Modifier.fillMaxWidth(), maxLines = 2) }
     item { OutlinedTextField(value = formulas, onValueChange = { formulas = it }, label = { Text("Key Formulas") }, modifier = Modifier.fillMaxWidth()) }
     item { OutlinedTextField(value = markdownContent, onValueChange = { markdownContent = it }, label = { Text("Detailed Revision Text / Markdown") }, modifier = Modifier.fillMaxWidth(), minLines = 5) }
 
+    if (!validationError.isNullOrBlank()) {
+      item {
+        Text(
+          text = validationError!!,
+          color = MaterialTheme.colorScheme.error,
+          style = MaterialTheme.typography.bodySmall
+        )
+      }
+    }
+
     item {
       Button(
         onClick = {
-          if (title.isNotBlank()) {
-            val note = NoteEntity(
-              id = "NOTE_" + UUID.randomUUID().toString().take(6),
-              courseId = selectedCourseId.ifBlank { courses.firstOrNull()?.id ?: "MATH_101" },
-              topicId = selectedTopicId.ifBlank { "T_GEN" },
-              title = title.trim(),
-              chapterNumber = chapterNumber,
-              summary = summary.trim(),
-              contentMarkdown = markdownContent.trim(),
-              keyFormulas = formulas.trim(),
-              readTimeMinutes = 5,
-              isPublished = true
-            )
-            onSaveNote(note)
-            title = ""
-            summary = ""
-            formulas = ""
-            markdownContent = ""
+          val resolvedCourseId = selectedCourseId.ifBlank { courses.firstOrNull()?.id ?: "" }
+          when {
+            resolvedCourseId.isBlank() -> validationError = "Please create or select a course first."
+            title.isBlank() -> validationError = "Please enter a note title."
+            else -> {
+              validationError = null
+              val note = NoteEntity(
+                id = "NOTE_" + UUID.randomUUID().toString().take(6),
+                courseId = resolvedCourseId,
+                topicId = selectedTopicId.ifBlank { "T_GEN" },
+                title = title.trim(),
+                chapterNumber = chapterNumber,
+                summary = summary.trim(),
+                contentMarkdown = markdownContent.trim().ifBlank { summary.trim() },
+                keyFormulas = formulas.trim(),
+                readTimeMinutes = 5,
+                isPublished = true
+              )
+              onSaveNote(note)
+              title = ""
+              summary = ""
+              formulas = ""
+              markdownContent = ""
+            }
           }
         },
         modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -1324,6 +1438,7 @@ private fun AdminStudentsTab(
   onPromoteEmail: (String) -> Unit
 ) {
   var targetEmailInput by remember { mutableStateOf("") }
+  var validationError by remember { mutableStateOf<String?>(null) }
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -1338,7 +1453,7 @@ private fun AdminStudentsTab(
       ) {
         Column(modifier = Modifier.weight(1f)) {
           Text("Admin & Role Management (${users.size})", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-          Text("Make any user an administrator anytime, or create new admin profiles.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Text("Make any user an administrator anytime, or create new admin invites.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(modifier = Modifier.width(8.dp))
         Button(onClick = onAddAdminClick) {
@@ -1364,7 +1479,7 @@ private fun AdminStudentsTab(
             color = MaterialTheme.colorScheme.primary
           )
           Text(
-            text = "Type any registered student email address or new staff email to immediately grant full admin rights.",
+            text = "Type any registered student email address or Google staff email to grant full admin rights.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
@@ -1375,8 +1490,8 @@ private fun AdminStudentsTab(
           ) {
             OutlinedTextField(
               value = targetEmailInput,
-              onValueChange = { targetEmailInput = it },
-              placeholder = { Text("e.g. alex.morgan@university.edu") },
+              onValueChange = { targetEmailInput = it; validationError = null },
+              placeholder = { Text("e.g. alex.morgan@gmail.com") },
               singleLine = true,
               modifier = Modifier.weight(1f),
               shape = RoundedCornerShape(10.dp)
@@ -1384,8 +1499,12 @@ private fun AdminStudentsTab(
             Spacer(modifier = Modifier.width(8.dp))
             Button(
               onClick = {
-                if (targetEmailInput.isNotBlank()) {
-                  onPromoteEmail(targetEmailInput.trim())
+                val trimmed = targetEmailInput.trim()
+                if (!android.util.Patterns.EMAIL_ADDRESS.matcher(trimmed).matches()) {
+                  validationError = "Please enter a valid email address."
+                } else {
+                  validationError = null
+                  onPromoteEmail(trimmed)
                   targetEmailInput = ""
                 }
               },
@@ -1394,6 +1513,14 @@ private fun AdminStudentsTab(
             ) {
               Text("Make Admin")
             }
+          }
+          if (!validationError.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+              text = validationError!!,
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall
+            )
           }
         }
       }
@@ -1484,6 +1611,7 @@ private fun AdminAccessCodesTab(
   var customCodeInput by remember { mutableStateOf("") }
   var lastGeneratedCode by remember { mutableStateOf<String?>(null) }
   var isCopied by remember { mutableStateOf(false) }
+  var validationError by remember { mutableStateOf<String?>(null) }
 
   val activeCount = accessCodes.count { !it.isRedeemed }
   val redeemedCount = accessCodes.count { it.isRedeemed }
@@ -1554,7 +1682,7 @@ private fun AdminAccessCodesTab(
             listOf(
               "ALPHANUMERIC" to "Letters & Digits",
               "NUMERIC" to "6 Numbers",
-              "SPECIAL" to "Special Chars"
+              "SPECIAL" to "Letters & (- _)"
             ).forEach { (formatKey, label) ->
               val isSelected = selectedFormat == formatKey
               Surface(
@@ -1578,7 +1706,7 @@ private fun AdminAccessCodesTab(
 
           OutlinedTextField(
             value = noteInput,
-            onValueChange = { noteInput = it },
+            onValueChange = { noteInput = it; validationError = null },
             label = { Text("Note / Batch Label") },
             placeholder = { Text("e.g. Semester 1 Pass / Engineering Batch") },
             modifier = Modifier.fillMaxWidth()
@@ -1588,22 +1716,48 @@ private fun AdminAccessCodesTab(
 
           OutlinedTextField(
             value = customCodeInput,
-            onValueChange = { if (it.length <= 6) customCodeInput = it.uppercase() },
+            onValueChange = { raw ->
+              val sanitized = raw.uppercase().filter { ch ->
+                ch in 'A'..'Z' || ch in '0'..'9' || ch == '_' || ch == '-'
+              }.take(6)
+              customCodeInput = sanitized
+              validationError = null
+            },
             label = { Text("Custom 6-Char Code (Optional)") },
-            placeholder = { Text("Leave blank to auto-generate") },
+            placeholder = { Text("Letters, digits, _ or - (blank = auto)") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
           )
+
+          if (!validationError.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+              text = validationError!!,
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall
+            )
+          }
 
           Spacer(modifier = Modifier.height(14.dp))
 
           Button(
             onClick = {
-              onGenerateCode(noteInput, selectedFormat, customCodeInput.ifBlank { null }) { gen ->
-                lastGeneratedCode = gen
-                isCopied = false
+              val trimmedCustom = customCodeInput.trim()
+              if (trimmedCustom.isNotBlank() && trimmedCustom.length != 6) {
+                validationError = "Custom code must be exactly 6 characters (A-Z, 0-9, _ or -)."
+                return@Button
               }
-              customCodeInput = ""
+              validationError = null
+              onGenerateCode(noteInput.ifBlank { "Freshman Semester Pass" }, selectedFormat, trimmedCustom.ifBlank { null }) { gen ->
+                val clean = gen.takeIf { it.isNotBlank() }
+                lastGeneratedCode = clean
+                isCopied = false
+                if (clean != null) {
+                  customCodeInput = ""
+                } else {
+                  validationError = "Unable to generate access code. Check connection and admin access."
+                }
+              }
             },
             modifier = Modifier.fillMaxWidth().height(48.dp)
           ) {

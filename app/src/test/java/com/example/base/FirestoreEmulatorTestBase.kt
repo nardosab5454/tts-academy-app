@@ -95,6 +95,27 @@ abstract class FirestoreEmulatorTestBase {
     }
   }
 
+  protected suspend fun signInVerifiedTestUser(email: String): String = withContext(Dispatchers.IO) {
+    withTimeout(AUTH_TIMEOUT_MS) {
+      val uid = signInTestUser(email)
+      val user = checkNotNull(auth.currentUser) { "User auth missing after sign-in" }
+      val url = java.net.URL("http://$EMULATOR_HOST:$AUTH_PORT/identitytoolkit.googleapis.com/v1/accounts:update?key=fake-api-key-for-emulator")
+      val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+        requestMethod = "POST"
+        doOutput = true
+        setRequestProperty("Content-Type", "application/json")
+        setRequestProperty("Authorization", "Bearer owner")
+      }
+      val body = """{"localId":"$uid","emailVerified":true}"""
+      conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+      val status = conn.responseCode
+      conn.disconnect()
+      check(status in 200..299) { "Failed to verify emulator user email ($email): HTTP $status" }
+      user.getIdToken(true).await()
+      uid
+    }
+  }
+
   private companion object {
     const val EMULATOR_HOST = "127.0.0.1"
     const val FIRESTORE_PORT = 8085

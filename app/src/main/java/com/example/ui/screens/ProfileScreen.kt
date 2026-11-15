@@ -133,8 +133,6 @@ fun ProfileScreen(
   onThemeSelect: (String) -> Unit,
   onUpdateSettings: (department: String, dailyGoalMinutes: Int) -> Unit = { _, _ -> },
   onRedeemAccessCode: (String, (Boolean, String) -> Unit) -> Unit = { _, _ -> },
-  onLogin: (String, String, (Boolean, String) -> Unit) -> Unit,
-  onSwitchUser: (String) -> Unit,
   onOpenAdminPortal: () -> Unit,
   onBackClick: () -> Unit,
   onSignOut: () -> Unit = {},
@@ -754,7 +752,7 @@ fun ProfileScreen(
               isGeneratingCode = true
               onGenerateCode("Permanent Academic Access Pass", "NUMERIC", null) { code ->
                 isGeneratingCode = false
-                lastAdminGeneratedCode = code
+                lastAdminGeneratedCode = code.takeIf { it.isNotBlank() }
                 isCodeCopied = false
               }
             }
@@ -828,7 +826,7 @@ fun ProfileScreen(
                   isGeneratingCode = true
                   onGenerateCode("Permanent Academic Access Pass", "NUMERIC", null) { code ->
                     isGeneratingCode = false
-                    lastAdminGeneratedCode = code
+                    lastAdminGeneratedCode = code.takeIf { it.isNotBlank() }
                     isCodeCopied = false
                   }
                 }
@@ -1188,64 +1186,6 @@ fun ProfileScreen(
     }
 
 
-
-    // 6. Fast Account Switcher (Strictly for Administrator use)
-    if (user?.role == "ADMIN" && allUsers.size > 1) {
-      item {
-        Card(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-          shape = RoundedCornerShape(20.dp),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-          Column(modifier = Modifier.padding(18.dp)) {
-            Text(
-              text = "Switch Account / Profile",
-              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-              color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-              allUsers.forEach { targetUser ->
-                val isSelected = targetUser.id == user?.id
-                Surface(
-                  onClick = { onSwitchUser(targetUser.id) },
-                  shape = RoundedCornerShape(12.dp),
-                  color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                  modifier = Modifier.fillMaxWidth()
-                ) {
-                  Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                  ) {
-                    Column {
-                      Text(
-                        text = targetUser.name,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                      )
-                      Text(
-                        text = "${targetUser.email} • ${targetUser.role}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                      )
-                    }
-
-                    if (isSelected) {
-                      Icon(Icons.Default.CheckCircle, contentDescription = "Active", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
 
     // 7. Academic System Console (Visible to authenticated administrators)
     if (user?.role == "ADMIN") {

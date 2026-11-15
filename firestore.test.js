@@ -11,9 +11,17 @@ const PROJECT_ID = process.env.GCP_PROJECT || "demo-no-project";
 const ALICE_UID = "alice_student_1";
 const BOB_UID = "bob_student_2";
 const ADMIN_UID = "admin_1";
+const INVITED_ADMIN_UID = "invited_admin_1";
 
 const [emulatorHost, emulatorPortStr] = (process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8085").split(":");
 const emulatorPort = parseInt(emulatorPortStr, 10);
+
+function verifiedAdminContext(uid = ADMIN_UID, email = "abebewottee@gmail.com") {
+  return testEnv.authenticatedContext(uid, {
+    email,
+    email_verified: true,
+  });
+}
 
 before(async () => {
   const rules = fs.readFileSync("./firestore.rules", "utf8");
@@ -39,78 +47,424 @@ beforeEach(async () => {
   }
 });
 
-// --- SECURITY BOUNDS & ZERO-TRUST TESTS ---
+// --- 1. UNAUTHENTICATED DENIAL (FAIL CLOSED) ---
 
-test("Unauthenticated user: cannot read user profile", async () => {
+test("Unauthenticated user: denied read/write across protected and curriculum collections", async () => {
   const unauthDb = testEnv.unauthenticatedContext().firestore();
   await assertFails(unauthDb.collection("users").doc(ALICE_UID).get());
+  await assertFails(unauthDb.collection("users").get());
+  await assertFails(unauthDb.collection("admin_invites").get());
+  await assertFails(unauthDb.collection("courses").get());
+  await assertFails(unauthDb.collection("topics").get());
+  await assertFails(unauthDb.collection("questions").get());
+  await assertFails(unauthDb.collection("notes").get());
+  await assertFails(unauthDb.collection("past_exams").get());
+  await assertFails(unauthDb.collection("announcements").get());
+  await assertFails(unauthDb.collection("access_codes").get());
 });
 
-test("Authenticated student: cannot read another student's profile directly", async () => {
-  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
-  await assertFails(aliceDb.collection("users").doc(BOB_UID).get());
+// --- 2. ADMIN AUTHENTICATION & ANTI-SPOOFING ---
+
+test("Spoofed email substring ('hacker.admin@gmail.com') and unverified bootstrapped email are denied admin privileges", async () => {
+  const spoofedAdminDb = testEnv.authenticatedContext("attacker_1", {
+    email: "hacker.admin@gmail.com",
+    email_verified: true,
+  }).firestore();
+  await assertFails(spoofedAdminDb.collection("users").get());
+  await assertFails(
+    spoofedAdminDb.collection("courses").doc("C_FAKE").set({
+      id: "C_FAKE",
+      code: "FAKE 101",
+      title: "Unauthorized Course",
+      category: "STEM",
+      isPublished: true,
+      createdAt: new Date(),
+    })
+  );
+
+  const unverifiedAdminDb = testEnv.authenticatedContext("attacker_2", {
+    email: "abebewottee@gmail.com",
+    email_verified: false,
+  }).firestore();
+  await assertFails(unverifiedAdminDb.collection("users").get());
+  await assertFails(
+    unverifiedAdminDb.collection("announcements").doc("ANN_FAKE").set({
+      id: "ANN_FAKE",
+      title: "Unverified",
+      content: "Should fail",
+      isUrgent: false,
+      isPublished: true,
+      createdAt: new Date(),
+    })
+  );
 });
 
-test("Authenticated student: cannot list all users", async () => {
-  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
-  await assertFails(aliceDb.collection("users").get());
-});
+// --- 3. STUDENT PROFILE & CROSS-USER ISOLATION ---
 
-test("Authenticated admin: can list all users", async () => {
-  const adminDb = testEnv.authenticatedContext(ADMIN_UID, { email: "spikenarrd@gmail.com" }).firestore();
-  await assertSucceeds(adminDb.collection("users").get());
-});
+test("Authenticated student: can read/create own valid STUDENT profile, cannot escalate role/premium or access other profiles", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@ttsacademy.edu" }).firestore();
 
-test("Authenticated student: can create their own profile with valid schema", async () => {
-  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
   await assertSucceeds(
     aliceDb.collection("users").doc(ALICE_UID).set({
       userId: ALICE_UID,
       email: "alice@ttsacademy.edu",
-      name: "Alice Smith",
+      name: "Alice Freshman",
       role: "STUDENT",
-      department: "Computer Science",
+      department: "Addis Ababa University (AAU)",
+      isPremium: false,
+      activationCode: "",
       createdAt: new Date(),
     })
   );
-});
 
-test("Any user: can read announcements and courses", async () => {
-  const unauthDb = testEnv.unauthenticatedContext().firestore();
-  await assertSucceeds(unauthDb.collection("announcements").get());
-  await assertSucceeds(unauthDb.collection("courses").get());
-});
-
-test("Student: cannot create announcements", async () => {
-  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  // Ghost field rejection
   await assertFails(
-    aliceDb.collection("announcements").doc("ann_1").set({
-      id: "ann_1",
-      title: "Hacked notice",
-      content: "Fake news",
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      hackedField: "oops",
+    })
+  );
+
+  // Self-promotion to ADMIN denied
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      role: "ADMIN",
+    })
+  );
+
+  // Self-grant isPremium without valid atomic code redemption denied
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      isPremium: true,
+      activationCode: "FAKE99",
+    })
+  );
+
+  // Cross-user isolation & listing denied
+  const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@ttsacademy.edu" }).firestore();
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).get());
+  await assertFails(bobDb.collection("users").get());
+});
+
+test("Cross-user isolation enforced on quiz_attempts, bookmarks, and personal notes", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@ttsacademy.edu" }).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@ttsacademy.edu" }).firestore();
+
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).collection("quiz_attempts").doc("att_1").set({
+      id: "att_1",
+      userId: ALICE_UID,
+      courseId: "MATH_101",
+      score: 8,
+      totalQuestions: 10,
+      percentage: 80,
+      completedAt: new Date(),
+    })
+  );
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).collection("bookmarks").doc("bm_1").set({
+      id: "bm_1",
+      userId: ALICE_UID,
+      questionId: "Q_1",
+      courseId: "MATH_101",
+      savedAt: new Date(),
+    })
+  );
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).collection("notes").doc("note_1").set({
+      id: "note_1",
+      userId: ALICE_UID,
+      courseId: "MATH_101",
+      title: "Calculus Note",
+      content: "Chain rule details",
       createdAt: new Date(),
+    })
+  );
+
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("quiz_attempts").doc("att_1").get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("quiz_attempts").get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("bookmarks").doc("bm_1").get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("notes").doc("note_1").get());
+});
+
+// --- 4. ATOMIC ACCESS CODE REDEMPTION ---
+
+test("Atomic access code redemption: allows valid unused code transaction, blocks expired or reused code", async () => {
+  const adminDb = verifiedAdminContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@ttsacademy.edu" }).firestore();
+
+  const future = new Date(Date.now() + 60 * 60 * 1000);
+  const past = new Date(Date.now() - 60 * 1000);
+
+  await assertSucceeds(
+    adminDb.collection("access_codes").doc("PASS12").set({
+      code: "PASS12",
+      createdByAdminId: ADMIN_UID,
+      isRedeemed: false,
+      redeemedByUserId: "",
+      redeemedByEmail: "",
+      note: "Valid Pass",
+      createdAt: new Date(),
+      expiresAt: future,
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("access_codes").doc("OLD123").set({
+      code: "OLD123",
+      createdByAdminId: ADMIN_UID,
+      isRedeemed: false,
+      redeemedByUserId: "",
+      redeemedByEmail: "",
+      note: "Expired Pass",
+      createdAt: new Date(Date.now() - 120 * 1000),
+      expiresAt: past,
+    })
+  );
+
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      email: "alice@ttsacademy.edu",
+      name: "Alice Freshman",
+      role: "STUDENT",
+      department: "AAU",
+      isPremium: false,
+      activationCode: "",
+      createdAt: new Date(),
+    })
+  );
+
+  // Atomic transaction succeeds for PASS12
+  await assertSucceeds(
+    aliceDb.runTransaction(async (tx) => {
+      const codeRef = aliceDb.collection("access_codes").doc("PASS12");
+      const userRef = aliceDb.collection("users").doc(ALICE_UID);
+      await tx.get(codeRef);
+      await tx.get(userRef);
+      tx.update(codeRef, {
+        isRedeemed: true,
+        redeemedByUserId: ALICE_UID,
+        redeemedByEmail: "alice@ttsacademy.edu",
+        redeemedAt: new Date(),
+      });
+      tx.update(userRef, {
+        isPremium: true,
+        activationCode: "PASS12",
+        updatedAt: new Date(),
+      });
+    })
+  );
+
+  // Re-redeeming PASS12 by Bob fails
+  const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@ttsacademy.edu" }).firestore();
+  await assertSucceeds(
+    bobDb.collection("users").doc(BOB_UID).set({
+      userId: BOB_UID,
+      email: "bob@ttsacademy.edu",
+      name: "Bob",
+      role: "STUDENT",
+      department: "AAU",
+      isPremium: false,
+      activationCode: "",
+      createdAt: new Date(),
+    })
+  );
+  await assertFails(
+    bobDb.runTransaction(async (tx) => {
+      const codeRef = bobDb.collection("access_codes").doc("PASS12");
+      const userRef = bobDb.collection("users").doc(BOB_UID);
+      tx.update(codeRef, {
+        isRedeemed: true,
+        redeemedByUserId: BOB_UID,
+        redeemedByEmail: "bob@ttsacademy.edu",
+        redeemedAt: new Date(),
+      });
+      tx.update(userRef, {
+        isPremium: true,
+        activationCode: "PASS12",
+        updatedAt: new Date(),
+      });
+    })
+  );
+
+  // Redeeming expired code fails
+  await assertFails(
+    bobDb.runTransaction(async (tx) => {
+      const codeRef = bobDb.collection("access_codes").doc("OLD123");
+      const userRef = bobDb.collection("users").doc(BOB_UID);
+      tx.update(codeRef, {
+        isRedeemed: true,
+        redeemedByUserId: BOB_UID,
+        redeemedByEmail: "bob@ttsacademy.edu",
+        redeemedAt: new Date(),
+      });
+      tx.update(userRef, {
+        isPremium: true,
+        activationCode: "OLD123",
+        updatedAt: new Date(),
+      });
     })
   );
 });
 
-test("Admin: can create announcements and courses", async () => {
-  const adminDb = testEnv.authenticatedContext(ADMIN_UID, { email: "abebewottee@gmail.com" }).firestore();
+// --- 5. ADMIN PANEL FULL CURRICULUM CRUD & INVITED ADMINS ---
+
+test("Verified admin & invited admin: can CRUD courses, topics, questions, notes, past_exams, announcements, and invites; student denied", async () => {
+  const adminDb = verifiedAdminContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@ttsacademy.edu" }).firestore();
+  const createdTime = new Date(Date.now() - 5000);
+
+  // Invite a secondary admin by verified email
   await assertSucceeds(
-    adminDb.collection("announcements").doc("ann_1").set({
-      id: "ann_1",
-      title: "Midterm Exam Schedule",
-      content: "Freshman calculus exam will take place on Friday.",
+    adminDb.collection("admin_invites").doc("invited@ttsacademy.edu").set({
+      email: "invited@ttsacademy.edu",
+      department: "Mathematics Directorate",
+      invitedBy: ADMIN_UID,
+      createdAt: createdTime,
+      updatedAt: createdTime,
+    })
+  );
+
+  const invitedAdminDb = verifiedAdminContext(INVITED_ADMIN_UID, "invited@ttsacademy.edu").firestore();
+
+  // Create course
+  await assertSucceeds(
+    adminDb.collection("courses").doc("C_CALC2").set({
+      id: "C_CALC2",
+      code: "MATH 102",
+      title: "Calculus II",
+      description: "Integration & Series",
+      category: "STEM",
+      iconName: "school",
+      totalQuestions: 0,
+      totalNotes: 0,
+      isPublished: true,
+      orderIndex: 13,
+      createdAt: createdTime,
+      updatedAt: createdTime,
+    })
+  );
+
+  // Update course preserving createdAt succeeds; mutating createdAt fails
+  await assertSucceeds(
+    invitedAdminDb.collection("courses").doc("C_CALC2").set({
+      id: "C_CALC2",
+      code: "MATH 102",
+      title: "Calculus II Updated",
+      description: "Integration, Series & Differential Eq",
+      category: "STEM",
+      iconName: "school",
+      totalQuestions: 1,
+      totalNotes: 1,
+      isPublished: true,
+      orderIndex: 13,
+      createdAt: createdTime,
+      updatedAt: new Date(),
+    }, { merge: true })
+  );
+  await assertFails(
+    adminDb.collection("courses").doc("C_CALC2").update({
       createdAt: new Date(),
     })
   );
 
+  // Topic, Question, Note, Past Exam, Announcement CRUD
   await assertSucceeds(
-    adminDb.collection("courses").doc("MATH_101").set({
-      id: "MATH_101",
-      code: "MATH 101",
-      title: "Calculus I",
-      category: "STEM",
-      createdAt: new Date(),
+    invitedAdminDb.collection("topics").doc("T_SERIES").set({
+      id: "T_SERIES",
+      courseId: "C_CALC2",
+      title: "Infinite Series",
+      description: "Convergence tests",
+      orderIndex: 1,
+      createdAt: createdTime,
+      updatedAt: createdTime,
     })
   );
+
+  await assertSucceeds(
+    adminDb.collection("questions").doc("Q_TEST1").set({
+      id: "Q_TEST1",
+      courseId: "C_CALC2",
+      topicId: "T_SERIES",
+      questionText: "Integral of 1/x dx?",
+      optionA: "ln|x| + C",
+      optionB: "x + C",
+      optionC: "1/x^2",
+      optionD: "e^x",
+      correctAnswer: "A",
+      explanationGeneral: "Standard logarithmic integral.",
+      isPastExam: false,
+      isVerified: true,
+      isPublished: true,
+      createdAt: createdTime,
+      updatedAt: createdTime,
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("notes").doc("NOTE_CH1").set({
+      id: "NOTE_CH1",
+      courseId: "C_CALC2",
+      topicId: "T_SERIES",
+      title: "Chapter 1: Techniques of Integration",
+      chapterNumber: 1,
+      summary: "Substitution & Integration by Parts",
+      keyFormulas: "udv = uv - vdu",
+      contentMarkdown: "# Integration\nFull summary",
+      content: "# Integration\nFull summary",
+      isPublished: true,
+      createdAt: createdTime,
+      updatedAt: createdTime,
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("past_exams").doc("EXAM_C_CALC2_2016_FINAL").set({
+      id: "EXAM_C_CALC2_2016_FINAL",
+      courseId: "C_CALC2",
+      university: "Addis Ababa University (AAU)",
+      academicYear: "2016 E.C.",
+      semester: "Semester 2",
+      examType: "FINAL",
+      title: "Calculus II Final Examination",
+      totalQuestions: 25,
+      durationMinutes: 90,
+      isDigitized: true,
+      isVerified: true,
+      isPublished: true,
+      createdAt: createdTime,
+      updatedAt: createdTime,
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("announcements").doc("ANN_2025").set({
+      id: "ANN_2025",
+      title: "Midterm Dates",
+      content: "Midterm exams begin Monday.",
+      message: "Midterm exams begin Monday.",
+      category: "EXAM",
+      isUrgent: true,
+      isPublished: true,
+      createdAt: createdTime,
+      updatedAt: createdTime,
+    })
+  );
+
+  // Authenticated students can read curriculum collections, cannot write or delete
+  await assertSucceeds(aliceDb.collection("courses").get());
+  await assertSucceeds(aliceDb.collection("topics").get());
+  await assertSucceeds(aliceDb.collection("questions").get());
+  await assertSucceeds(aliceDb.collection("notes").get());
+  await assertSucceeds(aliceDb.collection("past_exams").get());
+  await assertSucceeds(aliceDb.collection("announcements").get());
+
+  await assertFails(aliceDb.collection("courses").doc("C_CALC2").delete());
+  await assertFails(aliceDb.collection("questions").doc("Q_TEST1").delete());
+  await assertFails(aliceDb.collection("notes").doc("NOTE_CH1").delete());
+  await assertFails(aliceDb.collection("past_exams").doc("EXAM_C_CALC2_2016_FINAL").delete());
+  await assertFails(aliceDb.collection("announcements").doc("ANN_2025").delete());
+
+  // Admin can clean up / delete
+  await assertSucceeds(adminDb.collection("courses").doc("C_CALC2").delete());
 });

@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -83,9 +84,6 @@ fun AppContent(viewModel: MainViewModel) {
   DisposableEffect(Unit) {
     val listener = FirebaseAuth.AuthStateListener { auth ->
       firebaseUser = auth.currentUser
-      auth.currentUser?.let { user ->
-        viewModel.syncWithFirebaseUser(user)
-      }
     }
     FirebaseAuth.getInstance().addAuthStateListener(listener)
     onDispose {
@@ -94,10 +92,20 @@ fun AppContent(viewModel: MainViewModel) {
   }
 
   val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+  val isAuthenticating by viewModel.isAuthenticating.collectAsStateWithLifecycle()
 
-  if (currentUser == null) {
+  LaunchedEffect(firebaseUser?.uid) {
+    val user = firebaseUser
+    if (user != null) {
+      viewModel.syncWithFirebaseUser(user)
+    } else if (currentUser != null) {
+      viewModel.clearSessionOnFirebaseSignOut()
+    }
+  }
+
+  if (firebaseUser == null || currentUser == null) {
     SignInScreen(
-      viewModel = viewModel,
+      isSyncingProfile = firebaseUser != null && (currentUser == null || isAuthenticating),
       onAuthSuccess = {
         val user = FirebaseAuth.getInstance().currentUser
         firebaseUser = user
@@ -105,7 +113,9 @@ fun AppContent(viewModel: MainViewModel) {
       }
     )
   } else {
-    TtsAcademyApp(viewModel = viewModel)
+    key(firebaseUser!!.uid) {
+      TtsAcademyApp(viewModel = viewModel)
+    }
   }
 }
 
@@ -612,8 +622,6 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             onThemeSelect = { viewModel.setAppTheme(it) },
             onUpdateSettings = { dept, goal -> viewModel.updateStudentDepartmentAndGoal(dept, goal) },
             onRedeemAccessCode = { code, cb -> viewModel.redeemAccessCode(code, cb) },
-            onLogin = { email, pass, cb -> viewModel.login(email, pass, cb) },
-            onSwitchUser = { viewModel.switchUser(it) },
             onOpenAdminPortal = { viewModel.navigateTo(Screen.ADMIN_PORTAL) },
             onBackClick = { viewModel.navigateBack() },
             onSignOut = { viewModel.signOut() },
@@ -633,7 +641,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               topics = allTopics,
               pastExams = allPastExams,
               onBackClick = { viewModel.navigateBack() },
-              onSaveCourse = { viewModel.adminSaveCourse(it) },
+              onSaveCourse = { course, onResult -> viewModel.adminSaveCourse(course, onResult) },
               onDeleteCourse = { viewModel.adminDeleteCourse(it) },
               onSaveQuestion = { viewModel.adminSaveQuestion(it) },
               onDeleteQuestion = { viewModel.adminDeleteQuestion(it) },

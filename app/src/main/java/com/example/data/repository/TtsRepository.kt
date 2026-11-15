@@ -204,174 +204,171 @@ class TtsRepository(
 
   fun startRealtimeCloudSync(scope: CoroutineScope) {
     val fs = firestoreRepository ?: return
+    val auth = FirebaseAuth.getInstance()
 
-    val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
-
-    // 1 & 7. Live stream of all users and access codes (admin with active Firebase Auth only)
+    // Attach Firestore snapshot listeners only while signed into Firebase Auth
     scope.launch(Dispatchers.IO) {
       currentUser.collectLatest { user ->
-        if (user?.role == "ADMIN" && auth.currentUser != null) {
+        if (user != null && auth.currentUser != null) {
           coroutineScope {
-            launch {
-              try {
-                fs.observeAllUsers().collect { cloudUsers ->
-                  if (cloudUsers.isNotEmpty()) {
-                    cloudUsers.forEach { profile ->
-                      val cleanId = if (profile.userId.isNotBlank()) profile.userId else profile.id
-                      if (cleanId.isNotBlank()) {
-                        val existing = userDao.getUserById(cleanId)
-                        val isAdmin = profile.role.equals("ADMIN", ignoreCase = true)
-                        val isPrem = profile.isPremium || isAdmin
-                        val currentUid = _currentUser.value?.id
-                        if (existing == null) {
-                          val entity = profile.toEntity().copy(isPremium = isPrem, role = if (isAdmin) "ADMIN" else profile.role)
-                          userDao.insertUser(entity)
-                          if (currentUid == cleanId) {
-                            _currentUser.value = entity
-                          }
-                        } else {
-                          val updated = existing.copy(
-                            name = profile.name.ifBlank { existing.name },
-                            role = if (isAdmin) "ADMIN" else profile.role.ifBlank { existing.role },
-                            department = profile.department.ifBlank { existing.department },
-                            studentId = profile.studentId.ifBlank { existing.studentId },
-                            isPremium = existing.isPremium || isPrem
-                          )
-                          userDao.updateUser(updated)
-                          if (currentUid == cleanId) {
-                            _currentUser.value = updated
+            if (user.role == "ADMIN") {
+              launch {
+                try {
+                  fs.observeAllUsers().collect { cloudUsers ->
+                    if (cloudUsers.isNotEmpty()) {
+                      cloudUsers.forEach { profile ->
+                        val cleanId = if (profile.userId.isNotBlank()) profile.userId else profile.id
+                        if (cleanId.isNotBlank()) {
+                          val existing = userDao.getUserById(cleanId)
+                          val isAdmin = profile.role.equals("ADMIN", ignoreCase = true)
+                          val isPrem = profile.isPremium || isAdmin
+                          val currentUid = _currentUser.value?.id
+                          if (existing == null) {
+                            val entity = profile.toEntity().copy(isPremium = isPrem, role = if (isAdmin) "ADMIN" else profile.role)
+                            userDao.insertUser(entity)
+                            if (currentUid == cleanId) {
+                              _currentUser.value = entity
+                            }
+                          } else {
+                            val updated = existing.copy(
+                              name = profile.name.ifBlank { existing.name },
+                              role = if (isAdmin) "ADMIN" else profile.role.ifBlank { existing.role },
+                              department = profile.department.ifBlank { existing.department },
+                              studentId = profile.studentId.ifBlank { existing.studentId },
+                              isPremium = existing.isPremium || isPrem
+                            )
+                            userDao.updateUser(updated)
+                            if (currentUid == cleanId) {
+                              _currentUser.value = updated
+                            }
                           }
                         }
                       }
                     }
                   }
+                } catch (e: Exception) {
+                  Log.e("TtsRepository", "Cloud users stream error", e)
                 }
-              } catch (e: Exception) {
-                Log.e("TtsRepository", "Cloud users stream error", e)
+              }
+              launch {
+                try {
+                  fs.observeAccessCodes().collect { cloudCodes ->
+                    if (cloudCodes.isNotEmpty()) {
+                      val entities = cloudCodes.map { it.toEntity() }
+                      accessCodeDao.insertAccessCodes(entities)
+                    }
+                  }
+                } catch (e: Exception) {
+                  Log.e("TtsRepository", "Cloud access codes stream error", e)
+                }
+              }
+              launch {
+                try {
+                  if (fs.isCloudDatabaseEmpty()) {
+                    seedDatabaseToCloud(fs)
+                  }
+                } catch (e: Exception) {
+                  Log.e("TtsRepository", "Cloud seed check error", e)
+                }
               }
             }
+
+            // Announcements stream
             launch {
               try {
-                fs.observeAccessCodes().collect { cloudCodes ->
-                  if (cloudCodes.isNotEmpty()) {
-                    val entities = cloudCodes.map { it.toEntity() }
-                    accessCodeDao.insertAccessCodes(entities)
+                fs.observeAnnouncements().collect { cloudAnnouncements ->
+                  if (cloudAnnouncements.isNotEmpty()) {
+                    announcementDao.insertAnnouncements(cloudAnnouncements.map { it.toEntity() })
                   }
                 }
               } catch (e: Exception) {
-                Log.e("TtsRepository", "Cloud access codes stream error", e)
+                Log.e("TtsRepository", "Cloud announcements stream error", e)
+              }
+            }
+
+            // Courses stream
+            launch {
+              try {
+                fs.observeCourses().collect { cloudCourses ->
+                  if (cloudCourses.isNotEmpty()) {
+                    val entities = cloudCourses.map { it.toEntity() }
+                    courseDao.insertCourses(entities)
+                    entities.forEach { courseDao.recalculateCounts(it.id) }
+                  }
+                }
+              } catch (e: Exception) {
+                Log.e("TtsRepository", "Cloud courses stream error", e)
+              }
+            }
+
+            // Topics stream
+            launch {
+              try {
+                fs.observeTopics().collect { cloudTopics ->
+                  if (cloudTopics.isNotEmpty()) {
+                    topicDao.insertTopics(cloudTopics.map { it.toEntity() })
+                  }
+                }
+              } catch (e: Exception) {
+                Log.e("TtsRepository", "Cloud topics stream error", e)
+              }
+            }
+
+            // Questions stream
+            launch {
+              try {
+                fs.observeQuestions().collect { cloudQuestions ->
+                  if (cloudQuestions.isNotEmpty()) {
+                    val entities = cloudQuestions.map { it.toEntity() }
+                    questionDao.insertQuestions(entities)
+                    entities.map { it.courseId }.distinct().forEach { cId ->
+                      courseDao.recalculateCounts(cId)
+                    }
+                  }
+                }
+              } catch (e: Exception) {
+                Log.e("TtsRepository", "Cloud questions stream error", e)
+              }
+            }
+
+            // Notes stream
+            launch {
+              try {
+                fs.observeNotes().collect { cloudNotes ->
+                  if (cloudNotes.isNotEmpty()) {
+                    val entities = cloudNotes.map { it.toEntity() }
+                    noteDao.insertNotes(entities)
+                    entities.map { it.courseId }.distinct().forEach { cId ->
+                      courseDao.recalculateCounts(cId)
+                    }
+                  }
+                }
+              } catch (e: Exception) {
+                Log.e("TtsRepository", "Cloud notes stream error", e)
+              }
+            }
+
+            // Past exams stream
+            launch {
+              try {
+                fs.observePastExams().collect { cloudExams ->
+                  if (cloudExams.isNotEmpty()) {
+                    pastExamDao.insertPastExams(cloudExams.map { it.toEntity() })
+                  }
+                }
+              } catch (e: Exception) {
+                Log.e("TtsRepository", "Cloud past exams stream error", e)
               }
             }
           }
         }
-      }
-    }
-
-    // 2. Live stream of announcements from cloud Firestore to local Room (non-destructive merge)
-    scope.launch(Dispatchers.IO) {
-      try {
-        fs.observeAnnouncements().collect { cloudAnnouncements ->
-          if (cloudAnnouncements.isNotEmpty()) {
-            val entities = cloudAnnouncements.map { it.toEntity() }
-            announcementDao.insertAnnouncements(entities)
-          }
-        }
-      } catch (e: Exception) {
-        Log.e("TtsRepository", "Cloud announcements stream error", e)
-      }
-    }
-
-    // 3. Live stream of courses from cloud Firestore to local Room (non-destructive merge)
-    scope.launch(Dispatchers.IO) {
-      try {
-        fs.observeCourses().collect { cloudCourses ->
-          if (cloudCourses.isNotEmpty()) {
-            val entities = cloudCourses.map { it.toEntity() }
-            courseDao.insertCourses(entities)
-            entities.forEach { courseDao.recalculateCounts(it.id) }
-          }
-        }
-      } catch (e: Exception) {
-        Log.e("TtsRepository", "Cloud courses stream error", e)
-      }
-    }
-
-    // 3b. Live stream of course sections/topics from cloud Firestore to local Room (non-destructive merge)
-    scope.launch(Dispatchers.IO) {
-      try {
-        fs.observeTopics().collect { cloudTopics ->
-          if (cloudTopics.isNotEmpty()) {
-            val entities = cloudTopics.map { it.toEntity() }
-            topicDao.insertTopics(entities)
-          }
-        }
-      } catch (e: Exception) {
-        Log.e("TtsRepository", "Cloud topics stream error", e)
-      }
-    }
-
-    // 4. Live stream of questions from cloud Firestore to local Room (non-destructive merge)
-    scope.launch(Dispatchers.IO) {
-      try {
-        fs.observeQuestions().collect { cloudQuestions ->
-          if (cloudQuestions.isNotEmpty()) {
-            val entities = cloudQuestions.map { it.toEntity() }
-            questionDao.insertQuestions(entities)
-            entities.map { it.courseId }.distinct().forEach { cId ->
-              courseDao.recalculateCounts(cId)
-            }
-          }
-        }
-      } catch (e: Exception) {
-        Log.e("TtsRepository", "Cloud questions stream error", e)
-      }
-    }
-
-    // 5. Live stream of revision notes from cloud Firestore to local Room (non-destructive merge)
-    scope.launch(Dispatchers.IO) {
-      try {
-        fs.observeNotes().collect { cloudNotes ->
-          if (cloudNotes.isNotEmpty()) {
-            val entities = cloudNotes.map { it.toEntity() }
-            noteDao.insertNotes(entities)
-            entities.map { it.courseId }.distinct().forEach { cId ->
-              courseDao.recalculateCounts(cId)
-            }
-          }
-        }
-      } catch (e: Exception) {
-        Log.e("TtsRepository", "Cloud notes stream error", e)
-      }
-    }
-
-    // 6. Live stream of past exams from cloud Firestore to local Room (non-destructive merge)
-    scope.launch(Dispatchers.IO) {
-      try {
-        fs.observePastExams().collect { cloudExams ->
-          if (cloudExams.isNotEmpty()) {
-            val entities = cloudExams.map { it.toEntity() }
-            pastExamDao.insertPastExams(entities)
-          }
-        }
-      } catch (e: Exception) {
-        Log.e("TtsRepository", "Cloud past exams stream error", e)
-      }
-    }
-
-    // 8. One-time upload of local curriculum if cloud Firestore is empty (admin with Firebase Auth only)
-    scope.launch(Dispatchers.IO) {
-      try {
-        if (auth.currentUser != null && _currentUser.value?.role == "ADMIN" && fs.isCloudDatabaseEmpty()) {
-          seedDatabaseToCloud(fs)
-        }
-      } catch (e: Exception) {
-        Log.e("TtsRepository", "Cloud seed check error", e)
       }
     }
   }
 
   suspend fun syncFromCloudNow() = withContext(Dispatchers.IO) {
     val fs = firestoreRepository ?: return@withContext
+    if (FirebaseAuth.getInstance().currentUser == null) return@withContext
     // Sync Announcements (non-destructive merge)
     try {
       val announcements = fs.fetchLatestAnnouncements().getOrNull()
@@ -445,7 +442,7 @@ class TtsRepository(
     }
 
     // Sync Users & Roles (only for authenticated admins)
-    if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null && _currentUser.value?.role == "ADMIN") {
+    if (FirebaseAuth.getInstance().currentUser != null && _currentUser.value?.role == "ADMIN") {
       try {
         val users = fs.fetchLatestUsers().getOrNull()
         if (!users.isNullOrEmpty()) {
@@ -485,24 +482,27 @@ class TtsRepository(
   }
 
   suspend fun seedDatabaseToCloud(fs: FirestoreRepository) = withContext(Dispatchers.IO) {
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Sign-In required to publish curriculum data to cloud.")
+    }
     try {
       val courses = courseDao.getAllCourses().ifEmpty { SeedData.getCourses() }
-      courses.forEach { fs.saveCourse(it) }
+      courses.forEach { fs.saveCourse(it).getOrThrow() }
 
       val topics = topicDao.getAllTopics().ifEmpty { SeedData.getTopics() }
-      topics.forEach { fs.saveTopic(it) }
+      topics.forEach { fs.saveTopic(it).getOrThrow() }
 
       val questions = questionDao.getAllQuestions().ifEmpty { SeedData.getQuestions() }
-      questions.forEach { fs.saveQuestion(it) }
+      questions.forEach { fs.saveQuestion(it).getOrThrow() }
 
       val notes = noteDao.getAllNotes().ifEmpty { SeedData.getNotes() }
-      notes.forEach { fs.saveNote(it) }
+      notes.forEach { fs.saveNote(it).getOrThrow() }
 
       val exams = pastExamDao.getAllPastExams().ifEmpty { SeedData.getPastExams() }
-      exams.forEach { fs.savePastExam(it) }
+      exams.forEach { fs.savePastExam(it).getOrThrow() }
 
       val codes = accessCodeDao.getAllAccessCodes().ifEmpty { SeedData.getAccessCodes() }
-      codes.forEach { fs.saveAccessCode(it) }
+      codes.forEach { fs.saveAccessCode(it).getOrThrow() }
 
       val welcomeAnn = AnnouncementEntity(
         id = "ann_freshman_welcome",
@@ -512,9 +512,10 @@ class TtsRepository(
         isUrgent = false,
         isPublished = true
       )
-      fs.saveAnnouncement(welcomeAnn)
+      fs.saveAnnouncement(welcomeAnn).getOrThrow()
     } catch (e: Exception) {
       Log.e("TtsRepository", "Error seeding database to cloud", e)
+      throw e
     }
   }
 
@@ -579,27 +580,37 @@ class TtsRepository(
     Result.success(entity)
   }
 
-  suspend fun setUserRole(userId: String, newRole: String) = withContext(Dispatchers.IO) {
+  suspend fun setUserRole(userId: String, newRole: String): Result<Unit> = withContext(Dispatchers.IO) {
     val isAdmin = newRole.equals("ADMIN", ignoreCase = true)
-    userDao.updateUserRole(userId, if (isAdmin) "ADMIN" else newRole)
+    val normalizedRole = if (isAdmin) "ADMIN" else "STUDENT"
     val user = userDao.getUserById(userId)
-    if (user != null) {
-      val updated = if (isAdmin) {
-        user.copy(role = "ADMIN", isPremium = true)
-      } else {
-        user.copy(role = newRole)
+    val updated = if (user != null) {
+      user.copy(role = normalizedRole, isPremium = if (isAdmin) true else user.isPremium)
+    } else null
+
+    val fs = firestoreRepository
+    if (fs != null && FirebaseAuth.getInstance().currentUser != null) {
+      val cloudRes = fs.updateUserRole(userId, normalizedRole)
+      if (cloudRes.isFailure) {
+        return@withContext Result.failure(
+          cloudRes.exceptionOrNull() ?: IllegalStateException("Failed to update user role in cloud database.")
+        )
       }
+      if (!isAdmin && user != null && user.email.isNotBlank()) {
+        fs.deleteAdminInvite(user.email)
+      } else if (isAdmin && user != null && user.email.isNotBlank()) {
+        fs.saveAdminInvite(user.email, user.department)
+      }
+    }
+
+    userDao.updateUserRole(userId, normalizedRole)
+    if (updated != null) {
       userDao.updateUser(updated)
       if (_currentUser.value?.id == userId) {
         _currentUser.value = updated
       }
-      try {
-        firestoreRepository?.updateUserRole(userId, if (isAdmin) "ADMIN" else newRole)
-        firestoreRepository?.syncUserToCloud(updated)
-      } catch (e: Exception) {
-        Log.w("TtsRepository", "Could not sync user role to cloud: ${e.message}")
-      }
     }
+    Result.success(Unit)
   }
 
   suspend fun createAdminAccount(
@@ -608,84 +619,105 @@ class TtsRepository(
     password: String,
     department: String
   ): Result<UserEntity> = withContext(Dispatchers.IO) {
-    val cleanEmail = email.trim()
-    val existing = userDao.getUserByEmail(cleanEmail)
-    if (existing != null) {
-      userDao.updateUserRole(existing.id, "ADMIN")
-      val updated = existing.copy(role = "ADMIN", isPremium = true)
-      userDao.updateUser(updated)
-      if (_currentUser.value?.id == existing.id) {
-        _currentUser.value = updated
+    val cleanEmail = email.trim().lowercase()
+    if (!android.util.Patterns.EMAIL_ADDRESS.matcher(cleanEmail).matches()) {
+      return@withContext Result.failure(IllegalArgumentException("Please enter a valid email address."))
+    }
+    val cleanDept = department.trim().ifBlank { "Academic Directorate" }
+    val cleanName = name.trim().ifBlank { cleanEmail.substringBefore("@") }
+
+    val fs = firestoreRepository
+    if (fs != null && FirebaseAuth.getInstance().currentUser != null) {
+      // Check if user already exists in Firestore by email
+      val existingCloud = fs.getUserByEmail(cleanEmail).getOrNull()
+      if (existingCloud != null) {
+        val cleanId = existingCloud.userId.ifBlank { existingCloud.id }
+        fs.updateUserRole(cleanId, "ADMIN").getOrElse {
+          return@withContext Result.failure(it)
+        }
+        val entity = existingCloud.toEntity().copy(
+          role = "ADMIN",
+          isPremium = true,
+          department = cleanDept
+        )
+        userDao.insertUser(entity)
+        if (_currentUser.value?.id == cleanId) {
+          _currentUser.value = entity
+        }
+        return@withContext Result.success(entity)
       }
-      try {
-        firestoreRepository?.updateUserRole(existing.id, "ADMIN")
-        firestoreRepository?.syncUserToCloud(updated)
-      } catch (_: Exception) {}
+
+      // User hasn't signed in with Google yet -> store pre-authorized Admin Invite
+      fs.saveAdminInvite(cleanEmail, cleanDept).getOrElse {
+        return@withContext Result.failure(it)
+      }
+    }
+
+    val existingLocal = userDao.getUserByEmail(cleanEmail)
+    if (existingLocal != null) {
+      val updated = existingLocal.copy(role = "ADMIN", isPremium = true, department = cleanDept)
+      userDao.updateUser(updated)
       return@withContext Result.success(updated)
     }
 
-    val newAdmin = UserEntity(
-      id = "admin_" + UUID.randomUUID().toString().take(8),
-      name = name.trim().ifBlank { "Administrator" },
+    val invitedAdmin = UserEntity(
+      id = "invite_" + UUID.randomUUID().toString().replace("-", "").take(8),
+      name = cleanName,
       email = cleanEmail,
-      password = password.trim().ifBlank { "Admin@123" },
-      studentId = "ADM-" + UUID.randomUUID().toString().take(4).uppercase(),
-      department = department.trim().ifBlank { "Academic Directorate" },
+      password = password.trim(),
+      studentId = "ADM-INVITE",
+      department = cleanDept,
       role = "ADMIN",
       avatarUrl = "avatar_admin",
       streakDays = 1,
-      questionsAnsweredCount = 0,
-      correctAnswersCount = 0,
       isPremium = true
     )
-    userDao.insertUser(newAdmin)
-    try {
-      firestoreRepository?.syncUserToCloud(newAdmin)
-    } catch (_: Exception) {}
-    Result.success(newAdmin)
+    userDao.insertUser(invitedAdmin)
+    Result.success(invitedAdmin)
   }
 
   suspend fun promoteUserByEmail(email: String): Result<UserEntity> = withContext(Dispatchers.IO) {
-    val cleanEmail = email.trim()
-    val existing = userDao.getUserByEmail(cleanEmail)
-    if (existing != null) {
-      userDao.updateUserRole(existing.id, "ADMIN")
-      val updated = existing.copy(role = "ADMIN", isPremium = true)
-      userDao.updateUser(updated)
-      if (_currentUser.value?.id == existing.id) {
-        _currentUser.value = updated
-      }
-      try {
-        firestoreRepository?.updateUserRole(existing.id, "ADMIN")
-        firestoreRepository?.syncUserToCloud(updated)
-      } catch (_: Exception) {}
-      Result.success(updated)
-    } else {
-      // Check cloud Firestore in case the student registered on another device
-      val cloudUser = try {
-        firestoreRepository?.getUserByEmail(cleanEmail)?.getOrNull()
-      } catch (_: Exception) { null }
+    val cleanEmail = email.trim().lowercase()
+    if (!android.util.Patterns.EMAIL_ADDRESS.matcher(cleanEmail).matches()) {
+      return@withContext Result.failure(IllegalArgumentException("Please enter a valid email address."))
+    }
 
+    val fs = firestoreRepository
+    if (fs != null && FirebaseAuth.getInstance().currentUser != null) {
+      val cloudUser = fs.getUserByEmail(cleanEmail).getOrNull()
       if (cloudUser != null) {
-        val cleanId = if (cloudUser.userId.isNotBlank()) cloudUser.userId else cloudUser.id
+        val cleanId = cloudUser.userId.ifBlank { cloudUser.id }
+        fs.updateUserRole(cleanId, "ADMIN").getOrElse {
+          return@withContext Result.failure(it)
+        }
         val updated = cloudUser.toEntity().copy(role = "ADMIN", isPremium = true)
         userDao.insertUser(updated)
         if (_currentUser.value?.id == cleanId) {
           _currentUser.value = updated
         }
-        try {
-          firestoreRepository?.updateUserRole(cleanId, "ADMIN")
-          firestoreRepository?.syncUserToCloud(updated)
-        } catch (_: Exception) {}
-        Result.success(updated)
+        return@withContext Result.success(updated)
       } else {
-        createAdminAccount(
-          name = cleanEmail.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() },
-          email = cleanEmail,
-          password = "Admin@${cleanEmail.take(4)}",
-          department = "University Administration"
-        )
+        fs.saveAdminInvite(cleanEmail, "University Administration").getOrElse {
+          return@withContext Result.failure(it)
+        }
       }
+    }
+
+    val existing = userDao.getUserByEmail(cleanEmail)
+    if (existing != null) {
+      val updated = existing.copy(role = "ADMIN", isPremium = true)
+      userDao.updateUser(updated)
+      if (_currentUser.value?.id == existing.id) {
+        _currentUser.value = updated
+      }
+      Result.success(updated)
+    } else {
+      createAdminAccount(
+        name = cleanEmail.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() },
+        email = cleanEmail,
+        password = "",
+        department = "University Administration"
+      )
     }
   }
 
@@ -768,19 +800,24 @@ class TtsRepository(
     email: String,
     name: String,
     role: String = "STUDENT",
-    department: String = "Computer Science"
+    department: String = "Computer Science",
+    isPremium: Boolean = false,
+    studentId: String = ""
   ): UserEntity = withContext(Dispatchers.IO) {
     val cleanEmail = email.trim()
-    val isAdminEmail = isSystemAdminEmail(cleanEmail)
-    val effectiveRole = if (isAdminEmail) "ADMIN" else role
+    val isAdminEmail = isSystemAdminEmail(cleanEmail) || role.equals("ADMIN", ignoreCase = true)
+    val effectiveRole = if (isAdminEmail) "ADMIN" else "STUDENT"
+    val effectivePremium = isAdminEmail || isPremium
 
     val existing = userDao.getUserById(uid)
     val user = if (existing != null) {
       val updated = existing.copy(
         name = name.ifBlank { existing.name },
         email = cleanEmail.ifBlank { existing.email },
-        role = if (isAdminEmail) "ADMIN" else existing.role,
-        isPremium = if (isAdminEmail) true else existing.isPremium
+        role = if (isAdminEmail) "ADMIN" else effectiveRole,
+        department = department.ifBlank { existing.department },
+        studentId = studentId.ifBlank { existing.studentId },
+        isPremium = effectivePremium || existing.isPremium
       )
       userDao.updateUser(updated)
       updated
@@ -789,15 +826,15 @@ class TtsRepository(
         id = uid,
         name = name.ifBlank { if (isAdminEmail) "System Administrator" else "TTS Student" },
         email = cleanEmail.ifBlank { "student@ttsacademy.edu" },
-        password = if (isAdminEmail) "Spike@6776" else "",
-        studentId = if (isAdminEmail) "SYS-ADMIN-01" else "STU-" + uid.take(6).uppercase(),
-        department = department,
+        password = "",
+        studentId = studentId.ifBlank { if (isAdminEmail) "SYS-ADMIN-01" else "STU-" + uid.take(6).uppercase() },
+        department = department.ifBlank { "General Freshman Studies" },
         role = effectiveRole,
         avatarUrl = if (effectiveRole == "ADMIN") "avatar_admin" else "avatar_1",
         streakDays = 1,
         questionsAnsweredCount = 0,
         correctAnswersCount = 0,
-        isPremium = (effectiveRole == "ADMIN")
+        isPremium = effectivePremium
       )
       userDao.insertUser(newUser)
       newUser
@@ -1171,13 +1208,19 @@ class TtsRepository(
     if (!isNetworkConnected()) {
       throw IllegalStateException("Active internet connection required to generate access codes.")
     }
+    val fbUser = FirebaseAuth.getInstance().currentUser
+      ?: throw IllegalStateException("Please sign in with your Google Admin account to publish access codes.")
     val admin = _currentUser.value
     if (admin?.role != "ADMIN") {
       throw IllegalStateException("Unauthorized: Only system administrators can generate access codes.")
     }
 
     val finalCode = if (!customCode.isNullOrBlank()) {
-      customCode.trim().take(6).uppercase()
+      val sanitized = customCode.trim().uppercase()
+      if (!sanitized.matches(Regex("^[A-Z0-9_-]{6}$"))) {
+        throw IllegalArgumentException("Custom access code must be 6 characters using A-Z, 0-9, '-' or '_'.")
+      }
+      sanitized
     } else {
       generateUnique6CharKey(format)
     }
@@ -1187,7 +1230,7 @@ class TtsRepository(
       code = finalCode,
       createdAt = now,
       expiresAt = now + (365L * 24 * 60 * 60 * 1000L), // 1-year valid redemption window
-      createdByAdminId = adminId,
+      createdByAdminId = fbUser.uid.ifBlank { adminId },
       isRedeemed = false,
       note = note.ifBlank { "Permanent Academic Access Pass" }
     )
@@ -1203,9 +1246,10 @@ class TtsRepository(
 
   private suspend fun generateUnique6CharKey(format: String): String {
     val charPool = when (format) {
+      "ALPHANUMERIC" -> "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
       "NUMERIC" -> "0123456789"
-      "SPECIAL" -> "23456789ABCDEFGHJKLMNPQRSTUVWXYZ#@!*&"
-      else -> "0123456789" // default to 6 digits numeric
+      "SPECIAL" -> "23456789ABCDEFGHJKLMNPQRSTUVWXYZ-_"
+      else -> "0123456789"
     }
     repeat(10) {
       val generated = (1..6).map { charPool.random() }.joinToString("")
@@ -1300,6 +1344,15 @@ class TtsRepository(
   }
 
   suspend fun deleteAccessCode(code: String) = withContext(Dispatchers.IO) {
+    firestoreRepository?.let { fs ->
+      if (FirebaseAuth.getInstance().currentUser != null) {
+        val res = fs.deleteAccessCode(code)
+        if (res.isFailure) {
+          val err = res.exceptionOrNull()?.message ?: "Unknown cloud error"
+          throw IllegalStateException("Failed to delete access code from cloud database: $err")
+        }
+      }
+    }
     accessCodeDao.deleteAccessCode(code)
   }
 
