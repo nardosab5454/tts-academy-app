@@ -79,97 +79,77 @@ class FirestoreRepositoryRuleTest : FirestoreEmulatorTestBase() {
 
     // Topic, Question, Note, PastExam (with sanitized ID), Announcement, Invite, AccessCode
     val topicId = "T_TEST_$suffix"
-    assertTrue(
-      withTimeout(DEFAULT_TIMEOUT_MS) {
-        repository.saveTopic(
-          TopicEntity(
-            id = topicId,
-            courseId = courseId,
-            title = "Limits & Derivatives",
-            description = "Section 1",
-            orderIndex = 1
-          )
-        )
-      }.isSuccess
+    val topic = TopicEntity(
+      id = topicId,
+      courseId = courseId,
+      title = "Limits & Derivatives",
+      description = "Section 1",
+      orderIndex = 1
     )
+    assertTrue(withTimeout(DEFAULT_TIMEOUT_MS) { repository.saveTopic(topic) }.isSuccess)
+    assertTrue(withTimeout(DEFAULT_TIMEOUT_MS) { repository.saveTopic(topic.copy(title = "Limits & Continuity")) }.isSuccess)
 
-    assertTrue(
-      withTimeout(DEFAULT_TIMEOUT_MS) {
-        repository.saveQuestion(
-          QuestionEntity(
-            id = "Q_TEST_$suffix",
-            courseId = courseId,
-            topicId = topicId,
-            questionText = "What is the derivative of x^2?",
-            optionA = "2x",
-            optionB = "x",
-            optionC = "x^2",
-            optionD = "2",
-            correctAnswer = "A",
-            explanationA = "2x by power rule",
-            explanationB = "Incorrect",
-            explanationC = "Incorrect",
-            explanationD = "Incorrect",
-            explanationGeneral = "Power rule d/dx(x^2) = 2x",
-            difficulty = "EASY",
-            isPublished = true
-          )
-        )
-      }.isSuccess
+    val question = QuestionEntity(
+      id = "Q_TEST_$suffix",
+      courseId = courseId,
+      topicId = topicId,
+      questionText = "What is the derivative of x^2?",
+      optionA = "2x",
+      optionB = "x",
+      optionC = "x^2",
+      optionD = "2",
+      correctAnswer = "A",
+      explanationA = "2x by power rule",
+      explanationB = "Incorrect",
+      explanationC = "Incorrect",
+      explanationD = "Incorrect",
+      explanationGeneral = "Power rule d/dx(x^2) = 2x",
+      difficulty = "EASY",
+      isPublished = true
     )
+    assertTrue(withTimeout(DEFAULT_TIMEOUT_MS) { repository.saveQuestion(question) }.isSuccess)
+    assertTrue(withTimeout(DEFAULT_TIMEOUT_MS) { repository.saveQuestion(question.copy(difficulty = "MEDIUM")) }.isSuccess)
 
-    assertTrue(
-      withTimeout(DEFAULT_TIMEOUT_MS) {
-        repository.saveNote(
-          NoteEntity(
-            id = "NOTE_TEST_$suffix",
-            courseId = courseId,
-            topicId = topicId,
-            title = "Chapter 1 Summary",
-            chapterNumber = 1,
-            summary = "Key derivatives",
-            contentMarkdown = "# Derivatives\nd/dx(x^n) = nx^(n-1)",
-            keyFormulas = "d/dx(x^n) = nx^(n-1)",
-            isPublished = true
-          )
-        )
-      }.isSuccess
+    val note = NoteEntity(
+      id = "NOTE_TEST_$suffix",
+      courseId = courseId,
+      topicId = topicId,
+      title = "Chapter 1 Summary",
+      chapterNumber = 1,
+      summary = "Key derivatives",
+      contentMarkdown = "# Derivatives\nd/dx(x^n) = nx^(n-1)",
+      keyFormulas = "d/dx(x^n) = nx^(n-1)",
+      isPublished = true
     )
+    assertTrue(withTimeout(DEFAULT_TIMEOUT_MS) { repository.saveNote(note) }.isSuccess)
+    assertTrue(withTimeout(DEFAULT_TIMEOUT_MS) { repository.saveNote(note.copy(summary = "Updated derivatives")) }.isSuccess)
 
-    assertTrue(
-      withTimeout(DEFAULT_TIMEOUT_MS) {
-        repository.savePastExam(
-          PastExamEntity(
-            id = "EXAM_${courseId}_2016_FINAL",
-            courseId = courseId,
-            university = "Addis Ababa University (AAU)",
-            academicYear = "2016 E.C. (2024)",
-            semester = "Semester 1",
-            examType = "FINAL",
-            title = "Freshman Calculus Final",
-            instructions = "Choose the single best answer.",
-            totalQuestions = 1,
-            durationMinutes = 60,
-            isPublished = true
-          )
-        )
-      }.isSuccess
+    val exam = PastExamEntity(
+      id = "EXAM_${courseId}_2016_FINAL",
+      courseId = courseId,
+      university = "Addis Ababa University (AAU)",
+      academicYear = "2016 E.C. (2024)",
+      semester = "Semester 1",
+      examType = "FINAL",
+      title = "Freshman Calculus Final",
+      instructions = "Choose the single best answer.",
+      totalQuestions = 1,
+      durationMinutes = 60,
+      isPublished = true
     )
+    assertTrue(withTimeout(DEFAULT_TIMEOUT_MS) { repository.savePastExam(exam) }.isSuccess)
+    assertTrue(withTimeout(DEFAULT_TIMEOUT_MS) { repository.savePastExam(exam.copy(totalQuestions = 2)) }.isSuccess)
 
-    assertTrue(
-      withTimeout(DEFAULT_TIMEOUT_MS) {
-        repository.saveAnnouncement(
-          AnnouncementEntity(
-            id = "ANN_TEST_$suffix",
-            title = "Cloud Sync Active",
-            message = "All admin updates synced.",
-            category = "EXAM",
-            isUrgent = false,
-            isPublished = true
-          )
-        )
-      }.isSuccess
+    val ann = AnnouncementEntity(
+      id = "ANN_TEST_$suffix",
+      title = "Cloud Sync Active",
+      message = "All admin updates synced.",
+      category = "EXAM",
+      isUrgent = false,
+      isPublished = true
     )
+    assertTrue(withTimeout(DEFAULT_TIMEOUT_MS) { repository.saveAnnouncement(ann) }.isSuccess)
+    assertTrue(withTimeout(DEFAULT_TIMEOUT_MS) { repository.saveAnnouncement(ann.copy(isUrgent = true)) }.isSuccess)
 
     assertTrue(
       withTimeout(DEFAULT_TIMEOUT_MS) {
@@ -192,6 +172,12 @@ class FirestoreRepositoryRuleTest : FirestoreEmulatorTestBase() {
       }.isSuccess
     )
 
+    // Verify diagnostic reports write-ready admin access
+    val diag = withTimeout(DEFAULT_TIMEOUT_MS) { repository.diagnoseAdminAccess() }
+    assertTrue(diag.hasWriteReadyAuth)
+    assertEquals("ADMIN", diag.userDocRole)
+    assertTrue(diag.isEmailVerified)
+
     // Verify courses list fetch returns the created course
     val coursesResult = withTimeout(DEFAULT_TIMEOUT_MS) { repository.fetchLatestCourses() }
     assertTrue(coursesResult.isSuccess)
@@ -200,8 +186,17 @@ class FirestoreRepositoryRuleTest : FirestoreEmulatorTestBase() {
 
   @Test
   fun student_saveCourse_failsWithPermissionDenied(): Unit = runBlocking {
-    signInVerifiedTestUser(ALICE_EMAIL)
+    val studentUid = signInVerifiedTestUser(ALICE_EMAIL)
     val repository = FirestoreRepository(firestore)
+    assertTrue(
+      withTimeout(DEFAULT_TIMEOUT_MS) {
+        repository.getOrCreateUserProfile(studentUid, ALICE_EMAIL, "Alice Freshman")
+      }.isSuccess
+    )
+
+    val diag = withTimeout(DEFAULT_TIMEOUT_MS) { repository.diagnoseAdminAccess() }
+    assertFalse(diag.hasWriteReadyAuth)
+    assertEquals("STUDENT", diag.userDocRole)
 
     val result = withTimeout(DEFAULT_TIMEOUT_MS) {
       repository.saveCourse(

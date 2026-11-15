@@ -82,7 +82,11 @@ fun CoursesScreen(
   var selectedCategory by remember { mutableStateOf("All") }
   var searchQuery by remember { mutableStateOf("") }
 
-  val categories = listOf("All", "STEM", "Computing", "Humanities", "Engineering", "Social Sciences")
+  val categories = remember(courses) {
+    val defaults = listOf("STEM", "Computing", "Humanities", "Engineering", "Social Sciences")
+    val dynamic = courses.map { it.category.trim() }.filter { it.isNotBlank() }
+    listOf("All") + (dynamic + defaults).distinct()
+  }
 
   val filteredCourses = courses.filter { course ->
     (selectedCategory == "All" || course.category.equals(selectedCategory, ignoreCase = true)) &&

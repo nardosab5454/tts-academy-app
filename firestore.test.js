@@ -468,3 +468,61 @@ test("Verified admin & invited admin: can CRUD courses, topics, questions, notes
   // Admin can clean up / delete
   await assertSucceeds(adminDb.collection("courses").doc("C_CALC2").delete());
 });
+
+// --- 6. LEGACY USER DOCS & CURRICULUM UPDATES REGRESSION ---
+
+test("Legacy users doc missing role/createdAt can be promoted/backfilled; bootstrapped admin without user doc still passes isAdmin()", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const rawDb = ctx.firestore();
+    await rawDb.collection("users").doc("legacy_admin_uid").set({
+      userId: "legacy_admin_uid",
+      email: "spikenarrd@gmail.com",
+      name: "Legacy Admin",
+      department: "Administration",
+      isPremium: true,
+    });
+    await rawDb.collection("users").doc("legacy_student_uid").set({
+      userId: "legacy_student_uid",
+      email: "legacy_student@ttsacademy.edu",
+      name: "Legacy Student",
+    });
+  });
+
+  // Bootstrapped admin with no 'role' field in existing user doc still passes isAdmin() via email claim,
+  // and can backfill their own 'role' + 'createdAt'
+  const spikeDb = verifiedAdminContext("legacy_admin_uid", "spikenarrd@gmail.com").firestore();
+  await assertSucceeds(
+    spikeDb.collection("users").doc("legacy_admin_uid").set({
+      userId: "legacy_admin_uid",
+      email: "spikenarrd@gmail.com",
+      name: "Legacy Admin",
+      role: "ADMIN",
+      isPremium: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }, { merge: true })
+  );
+
+  // Admin can promote legacy student missing role/createdAt
+  await assertSucceeds(
+    spikeDb.collection("users").doc("legacy_student_uid").set({
+      userId: "legacy_student_uid",
+      email: "legacy_student@ttsacademy.edu",
+      name: "Legacy Student",
+      role: "ADMIN",
+      isPremium: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }, { merge: true })
+  );
+
+  // Student without role cannot self-escalate to ADMIN
+  const bobDb = testEnv.authenticatedContext(BOB_UID, {
+    email: "bob@ttsacademy.edu",
+    email_verified: true,
+  }).firestore();
+  await assertFails(
+    bobDb.collection("users").doc("legacy_student_uid").update({ role: "ADMIN" })
+  );
+});
+

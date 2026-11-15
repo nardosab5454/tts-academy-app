@@ -300,7 +300,7 @@ fun ManageSectionsDialog(
   questions: List<QuestionEntity> = emptyList(),
   notes: List<NoteEntity> = emptyList(),
   onDismiss: () -> Unit,
-  onSaveSection: (TopicEntity) -> Unit,
+  onSaveSection: (TopicEntity, (Boolean, String?) -> Unit) -> Unit,
   onDeleteSection: (String) -> Unit
 ) {
   var editingSection by remember { mutableStateOf<TopicEntity?>(null) }
@@ -432,9 +432,11 @@ fun ManageSectionsDialog(
       existingSection = null,
       existingCount = sections.size,
       onDismiss = { showCreateSectionDialog = false },
-      onSave = { newSection ->
-        onSaveSection(newSection)
-        showCreateSectionDialog = false
+      onSave = { newSection, done ->
+        onSaveSection(newSection) { success, err ->
+          done(success, err)
+          if (success) showCreateSectionDialog = false
+        }
       }
     )
   }
@@ -446,9 +448,11 @@ fun ManageSectionsDialog(
       existingSection = editingSection,
       existingCount = sections.size,
       onDismiss = { editingSection = null },
-      onSave = { updatedSection ->
-        onSaveSection(updatedSection)
-        editingSection = null
+      onSave = { updatedSection, done ->
+        onSaveSection(updatedSection) { success, err ->
+          done(success, err)
+          if (success) editingSection = null
+        }
       }
     )
   }
@@ -463,15 +467,16 @@ fun CreateOrEditSectionDialog(
   existingSection: TopicEntity? = null,
   existingCount: Int = 0,
   onDismiss: () -> Unit,
-  onSave: (TopicEntity) -> Unit
+  onSave: (TopicEntity, (Boolean, String?) -> Unit) -> Unit
 ) {
   var title by remember { mutableStateOf(existingSection?.title ?: "") }
   var description by remember { mutableStateOf(existingSection?.description ?: "") }
   var orderStr by remember { mutableStateOf(existingSection?.orderIndex?.toString() ?: (existingCount + 1).toString()) }
   var validationError by remember { mutableStateOf<String?>(null) }
+  var isSaving by remember { mutableStateOf(false) }
 
   AlertDialog(
-    onDismissRequest = onDismiss,
+    onDismissRequest = { if (!isSaving) onDismiss() },
     title = { Text(if (existingSection == null) "Create New Section" else "Edit Section") },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -480,6 +485,7 @@ fun CreateOrEditSectionDialog(
           onValueChange = { title = it; validationError = null },
           label = { Text("Section Title (e.g. Limits & Continuity)") },
           singleLine = true,
+          enabled = !isSaving,
           modifier = Modifier.fillMaxWidth()
         )
         OutlinedTextField(
@@ -487,6 +493,7 @@ fun CreateOrEditSectionDialog(
           onValueChange = { description = it },
           label = { Text("Section Description / Scope") },
           maxLines = 3,
+          enabled = !isSaving,
           modifier = Modifier.fillMaxWidth()
         )
         OutlinedTextField(
@@ -494,6 +501,7 @@ fun CreateOrEditSectionDialog(
           onValueChange = { orderStr = it },
           label = { Text("Order Index (1, 2, 3...)") },
           singleLine = true,
+          enabled = !isSaving,
           modifier = Modifier.fillMaxWidth()
         )
         if (!validationError.isNullOrBlank()) {
@@ -507,12 +515,14 @@ fun CreateOrEditSectionDialog(
     },
     confirmButton = {
       Button(
+        enabled = !isSaving,
         onClick = {
           if (title.isBlank()) {
             validationError = "Please enter a section title."
           } else {
             validationError = null
-            val order = orderStr.toIntOrNull() ?: (existingCount + 1)
+            isSaving = true
+            val order = (orderStr.toIntOrNull() ?: (existingCount + 1)).coerceIn(0, 10000)
             val section = TopicEntity(
               id = existingSection?.id ?: ("T_" + UUID.randomUUID().toString().take(6).uppercase()),
               courseId = courseId,
@@ -520,15 +530,20 @@ fun CreateOrEditSectionDialog(
               description = description.trim(),
               orderIndex = order
             )
-            onSave(section)
+            onSave(section) { success, err ->
+              isSaving = false
+              if (!success) {
+                validationError = err ?: "Failed to save section to cloud."
+              }
+            }
           }
         }
       ) {
-        Text("Save Section")
+        Text(if (isSaving) "Saving..." else "Save Section")
       }
     },
     dismissButton = {
-      TextButton(onClick = onDismiss) { Text("Cancel") }
+      TextButton(enabled = !isSaving, onClick = onDismiss) { Text("Cancel") }
     }
   )
 }
@@ -540,23 +555,24 @@ fun CreateOrEditSectionDialog(
 fun EditCourseDialog(
   course: CourseEntity,
   onDismiss: () -> Unit,
-  onSave: (CourseEntity) -> Unit
+  onSave: (CourseEntity, (Boolean, String?) -> Unit) -> Unit
 ) {
   var code by remember { mutableStateOf(course.code) }
   var title by remember { mutableStateOf(course.title) }
   var desc by remember { mutableStateOf(course.description) }
   var category by remember { mutableStateOf(course.category) }
   var validationError by remember { mutableStateOf<String?>(null) }
+  var isSaving by remember { mutableStateOf(false) }
 
   AlertDialog(
-    onDismissRequest = onDismiss,
+    onDismissRequest = { if (!isSaving) onDismiss() },
     title = { Text("Edit Course Details") },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(value = code, onValueChange = { code = it; validationError = null }, label = { Text("Course Code (e.g. MATH 101)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, label = { Text("Course Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category (STEM, Computing, etc.)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Description") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = code, onValueChange = { code = it; validationError = null }, label = { Text("Course Code (e.g. MATH 101)") }, singleLine = true, enabled = !isSaving, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, label = { Text("Course Title") }, singleLine = true, enabled = !isSaving, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category (STEM, Computing, etc.)") }, singleLine = true, enabled = !isSaving, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Description") }, maxLines = 3, enabled = !isSaving, modifier = Modifier.fillMaxWidth())
         if (!validationError.isNullOrBlank()) {
           Text(
             text = validationError!!,
@@ -568,11 +584,13 @@ fun EditCourseDialog(
     },
     confirmButton = {
       Button(
+        enabled = !isSaving,
         onClick = {
           if (code.isBlank() || title.isBlank()) {
             validationError = "Please enter both course code and title."
           } else {
             validationError = null
+            isSaving = true
             onSave(
               course.copy(
                 code = code.trim(),
@@ -580,15 +598,20 @@ fun EditCourseDialog(
                 category = category.trim().ifBlank { "General" },
                 description = desc.trim()
               )
-            )
+            ) { success, err ->
+              isSaving = false
+              if (!success) {
+                validationError = err ?: "Failed to update course in cloud."
+              }
+            }
           }
         }
       ) {
-        Text("Save Changes")
+        Text(if (isSaving) "Saving..." else "Save Changes")
       }
     },
     dismissButton = {
-      TextButton(onClick = onDismiss) { Text("Cancel") }
+      TextButton(enabled = !isSaving, onClick = onDismiss) { Text("Cancel") }
     }
   )
 }
@@ -602,8 +625,8 @@ fun AdminPastExamTab(
   questions: List<QuestionEntity>,
   initialCourseId: String = "",
   onCourseSelected: (String) -> Unit = {},
-  onSaveQuestion: (QuestionEntity) -> Unit,
-  onSavePastExam: (PastExamEntity) -> Unit,
+  onSaveQuestion: (QuestionEntity, (Boolean, String?) -> Unit) -> Unit,
+  onSavePastExam: (PastExamEntity, (Boolean, String?) -> Unit) -> Unit,
   onDeleteQuestion: (String) -> Unit
 ) {
   var selectedCourseId by remember {
@@ -617,13 +640,9 @@ fun AdminPastExamTab(
   }
 
   LaunchedEffect(courses) {
-    if (courses.isNotEmpty()) {
-      if (selectedCourseId.isBlank() || courses.none { it.id == selectedCourseId }) {
-        if (selectedCourseId.isBlank()) {
-          selectedCourseId = courses.first().id
-          onCourseSelected(selectedCourseId)
-        }
-      }
+    if (courses.isNotEmpty() && (selectedCourseId.isBlank() || courses.none { it.id == selectedCourseId })) {
+      selectedCourseId = courses.first().id
+      onCourseSelected(selectedCourseId)
     }
   }
 
@@ -647,6 +666,7 @@ fun AdminPastExamTab(
 
   var editingQuestion by remember { mutableStateOf<QuestionEntity?>(null) }
   var showSuccessMsg by remember { mutableStateOf(false) }
+  var isSaving by remember { mutableStateOf(false) }
   var validationError by remember { mutableStateOf<String?>(null) }
 
   val coursePastQuestions = questions.filter { it.courseId == selectedCourseId && it.isPastExam }
@@ -854,9 +874,28 @@ fun AdminPastExamTab(
       }
     }
 
+    if (showSuccessMsg) {
+      item {
+        Surface(
+          color = SuccessGreen.copy(alpha = 0.14f),
+          shape = RoundedCornerShape(10.dp),
+          border = BorderStroke(1.dp, SuccessGreen.copy(alpha = 0.45f)),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Text(
+            text = "Past exam question published to central cloud database.",
+            color = SuccessGreen,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.padding(12.dp)
+          )
+        }
+      }
+    }
+
     // Save button
     item {
       Button(
+        enabled = !isSaving,
         onClick = {
           val resolvedCourseId = selectedCourseId.ifBlank { courses.firstOrNull()?.id ?: "" }
           when {
@@ -867,6 +906,8 @@ fun AdminPastExamTab(
             optA.isBlank() || optB.isBlank() -> validationError = "Please provide at least Choice (A) and Choice (B)."
             else -> {
               validationError = null
+              showSuccessMsg = false
+              isSaving = true
               val qId = "PQ_" + UUID.randomUUID().toString().take(6).uppercase()
               val newQ = QuestionEntity(
                 id = qId,
@@ -890,9 +931,7 @@ fun AdminPastExamTab(
                 isVerified = true,
                 isPublished = true
               )
-              onSaveQuestion(newQ)
 
-              // Also ensure corresponding PastExamEntity exists with Firestore-safe document ID
               val safeCoursePart = resolvedCourseId.replace(Regex("[^a-zA-Z0-9_-]"), "_").ifBlank { "COURSE" }
               val safeYearPart = examYear.trim().take(12).replace(Regex("[^a-zA-Z0-9_-]"), "_").trim('_').ifBlank { "YEAR" }
               val safeTypePart = examType.trim().replace(Regex("[^a-zA-Z0-9_-]"), "_").trim('_').ifBlank { "FINAL" }
@@ -913,20 +952,32 @@ fun AdminPastExamTab(
                 documentSummary = "Official Ethiopian University freshman past exam questions with detailed mathematical and conceptual step-by-step solutions.",
                 isPublished = true
               )
-              onSavePastExam(examEntity)
 
-              // Clear inputs
-              questionText = ""
-              optA = ""
-              optB = ""
-              optC = ""
-              optD = ""
-              generalExplanation = ""
-              expA = ""
-              expB = ""
-              expC = ""
-              expD = ""
-              showSuccessMsg = true
+              onSaveQuestion(newQ) { qOk, qErr ->
+                if (!qOk) {
+                  isSaving = false
+                  validationError = qErr ?: "Failed to save past exam question to cloud."
+                } else {
+                  onSavePastExam(examEntity) { eOk, eErr ->
+                    isSaving = false
+                    if (!eOk) {
+                      validationError = eErr ?: "Question saved, but failed to update Past Exam header."
+                    } else {
+                      questionText = ""
+                      optA = ""
+                      optB = ""
+                      optC = ""
+                      optD = ""
+                      generalExplanation = ""
+                      expA = ""
+                      expB = ""
+                      expC = ""
+                      expD = ""
+                      showSuccessMsg = true
+                    }
+                  }
+                }
+              }
             }
           }
         },
@@ -937,7 +988,7 @@ fun AdminPastExamTab(
       ) {
         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(8.dp))
-        Text("Save & Publish Past Year Question", fontWeight = FontWeight.Bold)
+        Text(if (isSaving) "Publishing to Cloud..." else "Save & Publish Past Year Question", fontWeight = FontWeight.Bold)
       }
     }
 
@@ -1054,9 +1105,11 @@ fun AdminPastExamTab(
     EditQuestionDialog(
       question = editingQuestion!!,
       onDismiss = { editingQuestion = null },
-      onSave = { updatedQ ->
-        onSaveQuestion(updatedQ)
-        editingQuestion = null
+      onSave = { updatedQ, done ->
+        onSaveQuestion(updatedQ) { success, err ->
+          done(success, err)
+          if (success) editingQuestion = null
+        }
       }
     )
   }
@@ -1074,11 +1127,11 @@ fun AdminManageContentTab(
   topics: List<TopicEntity> = emptyList(),
   initialCourseId: String = "",
   onCourseSelected: (String) -> Unit = {},
-  onSaveQuestion: (QuestionEntity) -> Unit,
+  onSaveQuestion: (QuestionEntity, (Boolean, String?) -> Unit) -> Unit,
   onDeleteQuestion: (String) -> Unit,
-  onSaveNote: (NoteEntity) -> Unit,
+  onSaveNote: (NoteEntity, (Boolean, String?) -> Unit) -> Unit,
   onDeleteNote: (String) -> Unit,
-  onSaveTopic: (TopicEntity) -> Unit = {},
+  onSaveTopic: (TopicEntity, (Boolean, String?) -> Unit) -> Unit = { _, cb -> cb(true, null) },
   onDeleteTopic: (String) -> Unit = {},
   onSwitchToAddQuestion: (String) -> Unit,
   onSwitchToAddNote: (String) -> Unit
@@ -1094,13 +1147,9 @@ fun AdminManageContentTab(
   }
 
   LaunchedEffect(courses) {
-    if (courses.isNotEmpty()) {
-      if (selectedCourseId.isBlank() || courses.none { it.id == selectedCourseId }) {
-        if (selectedCourseId.isBlank()) {
-          selectedCourseId = courses.first().id
-          onCourseSelected(selectedCourseId)
-        }
-      }
+    if (courses.isNotEmpty() && (selectedCourseId.isBlank() || courses.none { it.id == selectedCourseId })) {
+      selectedCourseId = courses.first().id
+      onCourseSelected(selectedCourseId)
     }
   }
 
@@ -1484,9 +1533,11 @@ fun AdminManageContentTab(
       question = editingQuestion!!,
       sections = courseTopics,
       onDismiss = { editingQuestion = null },
-      onSave = { updatedQ ->
-        onSaveQuestion(updatedQ)
-        editingQuestion = null
+      onSave = { updatedQ, done ->
+        onSaveQuestion(updatedQ) { success, err ->
+          done(success, err)
+          if (success) editingQuestion = null
+        }
       }
     )
   }
@@ -1497,9 +1548,11 @@ fun AdminManageContentTab(
       note = editingNote!!,
       sections = courseTopics,
       onDismiss = { editingNote = null },
-      onSave = { updatedNote ->
-        onSaveNote(updatedNote)
-        editingNote = null
+      onSave = { updatedNote, done ->
+        onSaveNote(updatedNote) { success, err ->
+          done(success, err)
+          if (success) editingNote = null
+        }
       }
     )
   }
@@ -1513,7 +1566,7 @@ fun EditQuestionDialog(
   question: QuestionEntity,
   sections: List<TopicEntity> = emptyList(),
   onDismiss: () -> Unit,
-  onSave: (QuestionEntity) -> Unit
+  onSave: (QuestionEntity, (Boolean, String?) -> Unit) -> Unit
 ) {
   var questionText by remember { mutableStateOf(question.questionText) }
   var selectedTopicId by remember { mutableStateOf(question.topicId) }
@@ -1524,9 +1577,10 @@ fun EditQuestionDialog(
   var correctChoice by remember { mutableStateOf(question.correctAnswer) }
   var explanation by remember { mutableStateOf(question.explanationGeneral) }
   var validationError by remember { mutableStateOf<String?>(null) }
+  var isSaving by remember { mutableStateOf(false) }
 
   AlertDialog(
-    onDismissRequest = onDismiss,
+    onDismissRequest = { if (!isSaving) onDismiss() },
     title = { Text("Customize / Edit Question") },
     text = {
       LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1545,13 +1599,14 @@ fun EditQuestionDialog(
             onValueChange = { questionText = it; validationError = null },
             label = { Text("Question Text") },
             modifier = Modifier.fillMaxWidth(),
+            enabled = !isSaving,
             minLines = 3
           )
         }
-        item { OutlinedTextField(value = optA, onValueChange = { optA = it; validationError = null }, label = { Text("Option A") }, modifier = Modifier.fillMaxWidth()) }
-        item { OutlinedTextField(value = optB, onValueChange = { optB = it; validationError = null }, label = { Text("Option B") }, modifier = Modifier.fillMaxWidth()) }
-        item { OutlinedTextField(value = optC, onValueChange = { optC = it }, label = { Text("Option C") }, modifier = Modifier.fillMaxWidth()) }
-        item { OutlinedTextField(value = optD, onValueChange = { optD = it }, label = { Text("Option D") }, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(value = optA, onValueChange = { optA = it; validationError = null }, label = { Text("Option A") }, enabled = !isSaving, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(value = optB, onValueChange = { optB = it; validationError = null }, label = { Text("Option B") }, enabled = !isSaving, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(value = optC, onValueChange = { optC = it }, label = { Text("Option C") }, enabled = !isSaving, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(value = optD, onValueChange = { optD = it }, label = { Text("Option D") }, enabled = !isSaving, modifier = Modifier.fillMaxWidth()) }
         item {
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Correct Choice:", fontWeight = FontWeight.Bold)
@@ -1560,7 +1615,7 @@ fun EditQuestionDialog(
               Surface(
                 modifier = Modifier
                   .padding(horizontal = 4.dp)
-                  .clickable { correctChoice = choice },
+                  .clickable(enabled = !isSaving) { correctChoice = choice },
                 color = if (correctChoice == choice) SuccessGreen else MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(6.dp)
               ) {
@@ -1580,6 +1635,7 @@ fun EditQuestionDialog(
             onValueChange = { explanation = it },
             label = { Text("Explanation") },
             modifier = Modifier.fillMaxWidth(),
+            enabled = !isSaving,
             minLines = 2
           )
         }
@@ -1596,11 +1652,13 @@ fun EditQuestionDialog(
     },
     confirmButton = {
       Button(
+        enabled = !isSaving,
         onClick = {
           if (questionText.isBlank() || optA.isBlank() || optB.isBlank()) {
             validationError = "Question text and Options A & B are required."
           } else {
             validationError = null
+            isSaving = true
             onSave(
               question.copy(
                 topicId = selectedTopicId.ifBlank { question.topicId },
@@ -1612,15 +1670,20 @@ fun EditQuestionDialog(
                 correctAnswer = correctChoice,
                 explanationGeneral = explanation.trim()
               )
-            )
+            ) { success, err ->
+              isSaving = false
+              if (!success) {
+                validationError = err ?: "Failed to update question in cloud."
+              }
+            }
           }
         }
       ) {
-        Text("Save Changes")
+        Text(if (isSaving) "Saving..." else "Save Changes")
       }
     },
     dismissButton = {
-      TextButton(onClick = onDismiss) { Text("Cancel") }
+      TextButton(enabled = !isSaving, onClick = onDismiss) { Text("Cancel") }
     }
   )
 }
@@ -1633,7 +1696,7 @@ fun EditNoteDialog(
   note: NoteEntity,
   sections: List<TopicEntity> = emptyList(),
   onDismiss: () -> Unit,
-  onSave: (NoteEntity) -> Unit
+  onSave: (NoteEntity, (Boolean, String?) -> Unit) -> Unit
 ) {
   var title by remember { mutableStateOf(note.title) }
   var chapterNumber by remember { mutableIntStateOf(note.chapterNumber) }
@@ -1642,9 +1705,10 @@ fun EditNoteDialog(
   var formulas by remember { mutableStateOf(note.keyFormulas) }
   var markdownContent by remember { mutableStateOf(note.contentMarkdown) }
   var validationError by remember { mutableStateOf<String?>(null) }
+  var isSaving by remember { mutableStateOf(false) }
 
   AlertDialog(
-    onDismissRequest = onDismiss,
+    onDismissRequest = { if (!isSaving) onDismiss() },
     title = { Text("Customize / Edit Revision Note") },
     text = {
       LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1686,6 +1750,7 @@ fun EditNoteDialog(
               Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedButton(
                   onClick = { if (chapterNumber > 1) chapterNumber-- },
+                  enabled = !isSaving,
                   shape = RoundedCornerShape(6.dp),
                   contentPadding = PaddingValues(horizontal = 6.dp),
                   modifier = Modifier.height(30.dp)
@@ -1706,6 +1771,7 @@ fun EditNoteDialog(
                 }
                 OutlinedButton(
                   onClick = { chapterNumber++ },
+                  enabled = !isSaving,
                   shape = RoundedCornerShape(6.dp),
                   contentPadding = PaddingValues(horizontal = 6.dp),
                   modifier = Modifier.height(30.dp)
@@ -1716,15 +1782,16 @@ fun EditNoteDialog(
             }
           }
         }
-        item { OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth()) }
-        item { OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Summary") }, modifier = Modifier.fillMaxWidth()) }
-        item { OutlinedTextField(value = formulas, onValueChange = { formulas = it }, label = { Text("Key Formulas") }, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, label = { Text("Title") }, enabled = !isSaving, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("Summary") }, enabled = !isSaving, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(value = formulas, onValueChange = { formulas = it }, label = { Text("Key Formulas") }, enabled = !isSaving, modifier = Modifier.fillMaxWidth()) }
         item {
           OutlinedTextField(
             value = markdownContent,
             onValueChange = { markdownContent = it },
             label = { Text("Content / Markdown Body") },
             modifier = Modifier.fillMaxWidth(),
+            enabled = !isSaving,
             minLines = 5
           )
         }
@@ -1741,11 +1808,13 @@ fun EditNoteDialog(
     },
     confirmButton = {
       Button(
+        enabled = !isSaving,
         onClick = {
           if (title.isBlank()) {
             validationError = "Please enter a note title."
           } else {
             validationError = null
+            isSaving = true
             onSave(
               note.copy(
                 topicId = selectedTopicId.ifBlank { note.topicId },
@@ -1755,15 +1824,20 @@ fun EditNoteDialog(
                 keyFormulas = formulas.trim(),
                 contentMarkdown = markdownContent.trim().ifBlank { summary.trim() }
               )
-            )
+            ) { success, err ->
+              isSaving = false
+              if (!success) {
+                validationError = err ?: "Failed to update note in cloud."
+              }
+            }
           }
         }
       ) {
-        Text("Save Changes")
+        Text(if (isSaving) "Saving..." else "Save Changes")
       }
     },
     dismissButton = {
-      TextButton(onClick = onDismiss) { Text("Cancel") }
+      TextButton(enabled = !isSaving, onClick = onDismiss) { Text("Cancel") }
     }
   )
 }

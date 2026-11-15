@@ -47,6 +47,7 @@ import com.example.ui.screens.ReviewAnswersScreen
 import com.example.ui.screens.SearchScreen
 import com.example.ui.screens.SignInScreen
 import com.example.ui.components.UnlockMaterialsDialog
+import com.example.util.configureAppCheck
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.Screen
@@ -55,6 +56,7 @@ import com.google.firebase.auth.FirebaseAuth
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    configureAppCheck(this, intent)
     window.setFlags(
       android.view.WindowManager.LayoutParams.FLAG_SECURE,
       android.view.WindowManager.LayoutParams.FLAG_SECURE
@@ -160,6 +162,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
   val downloadedKeys by viewModel.downloadedKeys.collectAsStateWithLifecycle()
   val isDownloading by viewModel.isDownloading.collectAsStateWithLifecycle()
   val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+  val cloudAdminDiagnostic by viewModel.cloudAdminDiagnostic.collectAsStateWithLifecycle()
 
   val context = LocalContext.current
   val snackbarHostState = remember { SnackbarHostState() }
@@ -249,7 +252,7 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
           },
           onSearchClick = { viewModel.navigateTo(Screen.SEARCH) },
           onProfileClick = { viewModel.navigateTo(Screen.PROFILE) },
-          onAiTutorClick = { viewModel.navigateTo(Screen.AI_TUTOR) },
+          onAiTutorClick = { viewModel.openContextAwareChat(course = selectedCourse) },
           currentTheme = appTheme,
           onToggleTheme = {
             val isDark = when (appTheme) {
@@ -405,7 +408,13 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               } else {
                 "Explain this freshman question step-by-step with formulas, intuitive analogies, and key exam tips."
               }
-              viewModel.askGeminiTutor(prompt, activeQuiz.courseTitle, context)
+              viewModel.selectChatCourse(activeQuiz.courseId)
+              viewModel.askGeminiTutor(
+                prompt = prompt,
+                courseTitle = activeQuiz.courseTitle,
+                contextInfo = context,
+                contextLabel = "Quiz Question • ${activeQuiz.courseTitle}"
+              )
               viewModel.navigateTo(Screen.AI_TUTOR)
             }
           )
@@ -429,7 +438,13 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             onBackClick = { viewModel.navigateBack() },
             onAskAiTutor = { q, selectedAns ->
               val context = "Question: ${q.questionText}\nOption A: ${q.optionA}\nOption B: ${q.optionB}\nOption C: ${q.optionC}\nOption D: ${q.optionD}\nCorrect Answer: (${q.correctAnswer})" + (if (selectedAns != null) "\nStudent Selected: ($selectedAns)" else "") + "\nExplanation: ${q.explanationGeneral}"
-              viewModel.askGeminiTutor("Provide deep academic analysis of this exam question.", activeQuiz.courseTitle, context)
+              viewModel.selectChatCourse(activeQuiz.courseId)
+              viewModel.askGeminiTutor(
+                prompt = "Provide deep academic analysis of this exam question.",
+                courseTitle = activeQuiz.courseTitle,
+                contextInfo = context,
+                contextLabel = "Exam Review • ${activeQuiz.courseTitle}"
+              )
               viewModel.navigateTo(Screen.AI_TUTOR)
             }
           )
@@ -527,11 +542,13 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
                 )
               },
               onAskAiTutor = { n ->
-                val context = "Course: ${course?.title ?: ""}\nTopic: ${n.title}\nKey Formulas: ${n.keyFormulas}\nSummary: ${n.summary}\nFull Content: ${n.contentMarkdown.take(600)}"
+                val context = "Course: ${course?.title ?: ""}\nChapter ${n.chapterNumber} Topic: ${n.title}\nKey Formulas: ${n.keyFormulas}\nSummary: ${n.summary}\nFull Content: ${n.contentMarkdown.take(900)}"
+                viewModel.selectChatCourse(n.courseId)
                 viewModel.askGeminiTutor(
                   prompt = "Provide an in-depth pedagogical explanation of '${n.title}', break down the core formulas, and give practical university exam tips.",
                   courseTitle = course?.title,
-                  contextInfo = context
+                  contextInfo = context,
+                  contextLabel = "Ch.${n.chapterNumber}: ${n.title}"
                 )
                 viewModel.navigateTo(Screen.AI_TUTOR)
               }
@@ -631,6 +648,11 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
 
         Screen.ADMIN_PORTAL -> {
           if (currentUser?.role == "ADMIN") {
+            LaunchedEffect(Unit) {
+              if (cloudAdminDiagnostic == null) {
+                viewModel.refreshAdminSession(showStatus = false)
+              }
+            }
             AdminPortalScreen(
               courses = allCourses,
               allUsers = allUsers,
@@ -640,18 +662,22 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               notes = allNotes,
               topics = allTopics,
               pastExams = allPastExams,
+              cloudDiagnostic = cloudAdminDiagnostic,
+              onRefreshPermissions = { viewModel.refreshAdminSession(showStatus = true) },
               onBackClick = { viewModel.navigateBack() },
               onSaveCourse = { course, onResult -> viewModel.adminSaveCourse(course, onResult) },
               onDeleteCourse = { viewModel.adminDeleteCourse(it) },
-              onSaveQuestion = { viewModel.adminSaveQuestion(it) },
+              onSaveQuestion = { question, onResult -> viewModel.adminSaveQuestion(question, onResult) },
               onDeleteQuestion = { viewModel.adminDeleteQuestion(it) },
-              onSaveNote = { viewModel.adminSaveNote(it) },
+              onSaveNote = { note, onResult -> viewModel.adminSaveNote(note, onResult) },
               onDeleteNote = { viewModel.adminDeleteNote(it) },
-              onSaveTopic = { viewModel.adminSaveTopic(it) },
+              onSaveTopic = { topic, onResult -> viewModel.adminSaveTopic(topic, onResult) },
               onDeleteTopic = { viewModel.adminDeleteTopic(it) },
-              onSavePastExam = { viewModel.adminSavePastExam(it) },
+              onSavePastExam = { exam, onResult -> viewModel.adminSavePastExam(exam, onResult) },
               onDeletePastExam = { viewModel.adminDeletePastExam(it) },
-              onPublishAnnouncement = { t, m, c, u -> viewModel.adminPublishAnnouncement(t, m, c, u) },
+              onPublishAnnouncement = { t, m, c, u, onResult ->
+                viewModel.adminPublishAnnouncement(t, m, c, u, onResult)
+              },
               onResetSeedData = { viewModel.adminResetData() },
               onUpdateUserRole = { userId, role -> viewModel.updateUserRole(userId, role) },
               onCreateAdmin = { name, email, pass, dept -> viewModel.createAdmin(name, email, pass, dept) },
@@ -673,19 +699,35 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
         }
 
         Screen.AI_TUTOR -> {
-          val aiResponse by viewModel.aiResponse.collectAsStateWithLifecycle()
           val isAiLoading by viewModel.isAiLoading.collectAsStateWithLifecycle()
-          val aiContext by viewModel.aiActiveContext.collectAsStateWithLifecycle()
+          val aiChatUiState by viewModel.aiChatUiState.collectAsStateWithLifecycle()
+          val selectedTutorMode by viewModel.selectedTutorMode.collectAsStateWithLifecycle()
+          val chatCourseId by viewModel.chatCourseId.collectAsStateWithLifecycle()
+          val includeAppContext by viewModel.includeAppContext.collectAsStateWithLifecycle()
+          val pinnedContextTitle by viewModel.pinnedContextTitle.collectAsStateWithLifecycle()
+          val pinnedContextSnippet by viewModel.pinnedContextSnippet.collectAsStateWithLifecycle()
           val tutorConversation by viewModel.tutorConversation.collectAsStateWithLifecycle()
 
           AiTutorScreen(
             courses = publishedCourses,
-            initialContext = aiContext,
-            aiResponse = aiResponse,
+            selectedCourseId = chatCourseId,
+            selectedMode = selectedTutorMode,
+            includeAppContext = includeAppContext,
+            pinnedContextTitle = pinnedContextTitle,
+            pinnedContextSnippet = pinnedContextSnippet,
+            weakTopics = weakTopics,
+            aiChatUiState = aiChatUiState,
             isLoading = isAiLoading,
             conversation = tutorConversation,
+            onSelectCourse = { viewModel.selectChatCourse(it) },
+            onSelectMode = { viewModel.switchTutorMode(it) },
+            onToggleAppContext = { viewModel.setIncludeAppContext(it) },
+            onClearPinnedContext = { viewModel.clearPinnedContext() },
             onAskGemini = { prompt, courseTitle, context ->
               viewModel.askGeminiTutor(prompt, courseTitle, context)
+            },
+            onRetryLast = { fallbackToHydrogen ->
+              viewModel.retryLastGeminiMessage(fallbackToHydrogen)
             },
             onClearConversation = { viewModel.clearAiTutorState() },
             onBackClick = { viewModel.navigateBack() },

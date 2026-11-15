@@ -14,16 +14,21 @@ import com.example.data.local.model.QuestionEntity
 import com.example.data.local.model.QuizAttemptEntity
 import com.example.data.local.model.TopicEntity
 import com.example.data.local.model.UserEntity
+import com.example.data.firestore.CloudAdminDiagnostic
 import com.example.data.firestore.FirestoreRepository
 import com.example.data.firestore.model.FirestoreBookmark
 import com.example.data.firestore.model.FirestoreQuizAttempt
 import com.example.data.firestore.model.FirestoreUserProfile
+import com.example.data.remote.GeminiTutorService
+import com.example.data.remote.TutorContextPayload
+import com.example.data.remote.TutorMode
 import com.example.data.repository.OfflineCacheStats
 import com.example.data.repository.TtsRepository
 import com.example.data.repository.WeakTopicSummary
 import com.example.util.NetworkConnectivityObserver
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +36,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
 enum class Screen {
@@ -55,11 +61,24 @@ enum class Screen {
   PREMIUM_GATE
 }
 
+sealed interface AiChatUiState {
+  data object Idle : AiChatUiState
+  data object Loading : AiChatUiState
+  data class Streaming(val partialText: String) : AiChatUiState
+  data class Success(val text: String) : AiChatUiState
+  data class Error(val message: String, val failedPrompt: String? = null) : AiChatUiState
+}
+
 data class TutorMessage(
   val id: String = UUID.randomUUID().toString(),
   val isUser: Boolean,
   val text: String,
-  val timestamp: Long = System.currentTimeMillis()
+  val timestamp: Long = System.currentTimeMillis(),
+  val modeLabel: String = TutorMode.HYDROGEN.label,
+  val modelName: String = TutorMode.HYDROGEN.modelName,
+  val contextBadge: String? = null,
+  val isStreaming: Boolean = false,
+  val isError: Boolean = false
 )
 
 data class ActiveQuizState(
@@ -114,11 +133,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private val _isAuthenticating = MutableStateFlow(false)
   val isAuthenticating: StateFlow<Boolean> = _isAuthenticating.asStateFlow()
 
+  private val _cloudAdminDiagnostic = MutableStateFlow<CloudAdminDiagnostic?>(null)
+  val cloudAdminDiagnostic: StateFlow<CloudAdminDiagnostic?> = _cloudAdminDiagnostic.asStateFlow()
+
   fun syncWithFirebaseUser(firebaseUser: FirebaseUser?) {
     if (firebaseUser == null) return
     viewModelScope.launch {
       _isAuthenticating.value = true
       try {
+        initJob.join()
+        try {
+          firebaseUser.getIdToken(true).await()
+        } catch (e: CancellationException) {
+          throw e
+        } catch (_: Exception) {}
+
         val uid = firebaseUser.uid
         val email = firebaseUser.email ?: "student@ttsacademy.edu"
         val name = firebaseUser.displayName ?: "TTS Student"
@@ -134,18 +163,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             studentId = profile.studentId
           )
           loadUserData(uid)
-          try {
-            repository.syncFromCloudNow()
-          } catch (_: Exception) {}
+          val report = repository.syncFromCloudNow()
+          if (profile.role == "ADMIN") {
+            _cloudAdminDiagnostic.value = firestoreRepository.diagnoseAdminAccess()
+          } else {
+            _cloudAdminDiagnostic.value = null
+          }
+          if (report.errors.isNotEmpty() && isOnline.value) {
+            showMessage("Cloud sync warning: ${report.errors.first()}")
+          }
         }.onFailure { err ->
           val localUser = repository.syncFirebaseUser(
             uid = uid,
             email = email,
-            name = name
+            name = name,
+            role = "STUDENT"
           )
           loadUserData(localUser.id)
+          _cloudAdminDiagnostic.value = firestoreRepository.diagnoseAdminAccess()
           if (isOnline.value) {
-            showMessage("Signed in locally. Cloud profile sync warning: ${err.message}")
+            showMessage("Cloud profile sync failed: ${err.message}")
           }
         }
       } finally {
@@ -154,8 +191,73 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
+  fun refreshAdminSession(showStatus: Boolean = true) {
+    viewModelScope.launch {
+      _isSyncing.value = true
+      try {
+        initJob.join()
+        val fbUser = FirebaseAuth.getInstance().currentUser
+        if (fbUser == null) {
+          _cloudAdminDiagnostic.value = firestoreRepository.diagnoseAdminAccess()
+          if (showStatus) {
+            showMessage("Firebase Google session missing. Please sign out and sign in with Google.")
+          }
+          return@launch
+        }
+
+        try {
+          fbUser.getIdToken(true).await()
+        } catch (e: CancellationException) {
+          throw e
+        } catch (_: Exception) {}
+
+        val email = fbUser.email ?: currentUser.value?.email ?: ""
+        val name = fbUser.displayName ?: currentUser.value?.name ?: "TTS Admin"
+        val profileResult = firestoreRepository.getOrCreateUserProfile(fbUser.uid, email, name)
+        profileResult.onSuccess { profile ->
+          repository.syncFirebaseUser(
+            uid = fbUser.uid,
+            email = email,
+            name = profile.name.ifBlank { name },
+            role = profile.role,
+            department = profile.department,
+            isPremium = profile.isPremium,
+            studentId = profile.studentId
+          )
+          loadUserData(fbUser.uid)
+        }.onFailure { err ->
+          if (showStatus) {
+            showMessage("Admin cloud verification failed: ${err.message}")
+          }
+        }
+
+        val report = repository.syncFromCloudNow()
+        val diag = firestoreRepository.diagnoseAdminAccess()
+        _cloudAdminDiagnostic.value = diag
+
+        if (showStatus) {
+          val summary = if (diag.hasWriteReadyAuth) {
+            "Cloud Admin verified (${diag.signedInEmail}, role=${diag.userDocRole}). Synced ${report.coursesCount} courses."
+          } else {
+            diag.diagnosticMessage
+          }
+          showMessage(summary)
+        }
+      } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        _cloudAdminDiagnostic.value = firestoreRepository.diagnoseAdminAccess()
+        if (showStatus) {
+          showMessage("Permission check failed: ${e.message}")
+        }
+      } finally {
+        _isSyncing.value = false
+      }
+    }
+  }
+
   fun clearSessionOnFirebaseSignOut() {
     viewModelScope.launch {
+      _cloudAdminDiagnostic.value = null
       repository.signOut()
       _currentScreen.value = Screen.DASHBOARD
       screenBackStack.clear()
@@ -266,9 +368,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private val _searchQuestionResults = MutableStateFlow<List<QuestionEntity>>(emptyList())
   val searchQuestionResults: StateFlow<List<QuestionEntity>> = _searchQuestionResults.asStateFlow()
 
-  // Gemini AI Tutor state
+  // Gemini AI Tutor state (Firebase AI Logic real-time streaming & context-aware)
   private val _isAiLoading = MutableStateFlow(false)
   val isAiLoading: StateFlow<Boolean> = _isAiLoading.asStateFlow()
+
+  private val _aiChatUiState = MutableStateFlow<AiChatUiState>(AiChatUiState.Idle)
+  val aiChatUiState: StateFlow<AiChatUiState> = _aiChatUiState.asStateFlow()
 
   private val _aiResponse = MutableStateFlow<String?>(null)
   val aiResponse: StateFlow<String?> = _aiResponse.asStateFlow()
@@ -276,8 +381,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private val _aiActiveContext = MutableStateFlow<String?>(null)
   val aiActiveContext: StateFlow<String?> = _aiActiveContext.asStateFlow()
 
+  private val _pinnedContextTitle = MutableStateFlow<String?>(null)
+  val pinnedContextTitle: StateFlow<String?> = _pinnedContextTitle.asStateFlow()
+
+  private val _pinnedContextSnippet = MutableStateFlow<String?>(null)
+  val pinnedContextSnippet: StateFlow<String?> = _pinnedContextSnippet.asStateFlow()
+
+  private val _selectedTutorMode = MutableStateFlow(TutorMode.HYDROGEN)
+  val selectedTutorMode: StateFlow<TutorMode> = _selectedTutorMode.asStateFlow()
+
+  private val _chatCourseId = MutableStateFlow<String?>(null)
+  val chatCourseId: StateFlow<String?> = _chatCourseId.asStateFlow()
+
+  private val _includeAppContext = MutableStateFlow(true)
+  val includeAppContext: StateFlow<Boolean> = _includeAppContext.asStateFlow()
+
   private val _tutorConversation = MutableStateFlow<List<TutorMessage>>(emptyList())
   val tutorConversation: StateFlow<List<TutorMessage>> = _tutorConversation.asStateFlow()
+
+  private var aiStreamJob: Job? = null
 
   // Feedback banner / snackbar
   private val _message = MutableStateFlow<String?>(null)
@@ -297,10 +419,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       _isSyncing.value = true
       try {
-        repository.syncFromCloudNow()
-        val qCount = allQuestions.value.size
-        val cCount = allCourses.value.size
-        showMessage("Synchronized with cloud database: $qCount questions, $cCount courses.")
+        initJob.join()
+        val report = repository.syncFromCloudNow()
+        when {
+          !report.isAuthenticated -> {
+            showMessage("Please sign in with Google to synchronize with the central cloud database.")
+          }
+          report.errors.isNotEmpty() -> {
+            showMessage("Cloud sync error: ${report.errors.first()}")
+          }
+          report.coursesCount == 0 && report.notesCount == 0 && report.questionsCount == 0 -> {
+            showMessage("Connected to cloud database, but no courses or notes were found in Firestore.")
+          }
+          else -> {
+            showMessage("Synced from cloud: ${report.coursesCount} courses, ${report.notesCount} notes, ${report.questionsCount} questions.")
+          }
+        }
       } catch (e: Exception) {
         showMessage("Sync failed: ${e.message}")
       } finally {
@@ -425,6 +559,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun signOut() {
     viewModelScope.launch {
+      _cloudAdminDiagnostic.value = null
       try {
         FirebaseAuth.getInstance().signOut()
       } catch (_: Exception) {}
@@ -489,45 +624,257 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
-  // --- Gemini AI Student Clarification & Research ---
+  // --- Gemini AI Context-Aware Realtime Chatbot ---
+  fun switchTutorMode(mode: TutorMode) {
+    _selectedTutorMode.value = mode
+  }
+
+  fun selectChatCourse(courseId: String?) {
+    _chatCourseId.value = courseId
+  }
+
+  fun setIncludeAppContext(enabled: Boolean) {
+    _includeAppContext.value = enabled
+  }
+
+  fun clearPinnedContext() {
+    _pinnedContextTitle.value = null
+    _pinnedContextSnippet.value = null
+  }
+
+  fun openContextAwareChat(
+    course: CourseEntity? = null,
+    contextTitle: String? = null,
+    contextSnippet: String? = null
+  ) {
+    if (course != null) {
+      _chatCourseId.value = course.id
+    } else if (_chatCourseId.value == null) {
+      _chatCourseId.value = _selectedCourse.value?.id ?: publishedCourses.value.firstOrNull()?.id
+    }
+    if (!contextSnippet.isNullOrBlank()) {
+      _pinnedContextTitle.value = contextTitle ?: "Pinned Study Material"
+      _pinnedContextSnippet.value = contextSnippet
+      _aiActiveContext.value = contextTitle
+    }
+    navigateTo(Screen.AI_TUTOR)
+  }
+
+  private fun resolveActiveChatCourse(overrideCourseTitle: String?): CourseEntity? {
+    val available = publishedCourses.value
+    if (!overrideCourseTitle.isNullOrBlank()) {
+      available.find { it.title.equals(overrideCourseTitle, ignoreCase = true) }?.let { return it }
+    }
+    val explicitId = _chatCourseId.value ?: _selectedCourse.value?.id
+    if (!explicitId.isNullOrBlank()) {
+      available.find { it.id == explicitId }?.let { return it }
+    }
+    return available.firstOrNull()
+  }
+
+  private fun buildStudentChatContext(
+    overrideCourseTitle: String?,
+    overrideContextSnippet: String?
+  ): TutorContextPayload {
+    val user = currentUser.value
+    val attempts = _userAttempts.value
+    val totalAttemptQ = attempts.sumOf { it.totalQuestions }.coerceAtLeast(user?.questionsAnsweredCount ?: 0)
+    val correctAttemptQ = attempts.sumOf { it.correctCount }.coerceAtLeast(user?.correctAnswersCount ?: 0)
+    val accuracy = if (totalAttemptQ > 0) ((correctAttemptQ * 100) / totalAttemptQ).coerceIn(0, 100) else 0
+
+    val weakSummary = _weakTopics.value.take(5).joinToString("; ") {
+      "${it.topicTitle} (${it.accuracyPercent}% accuracy)"
+    }
+
+    val course = resolveActiveChatCourse(overrideCourseTitle)
+    val topicsForCourse = if (course != null) {
+      allTopics.value.filter { it.courseId == course.id }.sortedBy { it.orderIndex }
+    } else emptyList()
+    val notesForCourse = if (course != null) {
+      allPublishedNotes.value.filter { it.courseId == course.id }.sortedBy { it.chapterNumber }
+    } else emptyList()
+    val examsForCourse = if (course != null) {
+      allPastExams.value.filter { it.courseId == course.id }
+    } else emptyList()
+
+    val topicsSummary = topicsForCourse.take(10).joinToString(", ") { it.title }
+    val notesSummary = notesForCourse.take(6).joinToString("\n") { n ->
+      val formulas = if (n.keyFormulas.isNotBlank()) " | Formulas: ${n.keyFormulas.take(140)}" else ""
+      "- Ch.${n.chapterNumber} ${n.title}: ${n.summary.take(160)}$formulas"
+    }
+    val examsSummary = examsForCourse.take(4).joinToString(", ") { "${it.university} ${it.academicYear} ${it.examType}" }
+
+    val effectiveSnippet = overrideContextSnippet?.takeIf { it.isNotBlank() } ?: _pinnedContextSnippet.value
+    val effectiveTitle = when {
+      !overrideContextSnippet.isNullOrBlank() -> _pinnedContextTitle.value ?: overrideCourseTitle ?: "Focused Study Item"
+      else -> _pinnedContextTitle.value
+    }
+
+    return TutorContextPayload(
+      studentName = user?.name ?: "Student",
+      department = user?.department ?: "Freshman University",
+      dailyGoalMinutes = user?.studyGoalMinutesPerDay ?: 45,
+      streakDays = user?.streakDays ?: 1,
+      questionsAnswered = totalAttemptQ,
+      overallAccuracyPercent = accuracy,
+      weakTopicsSummary = weakSummary,
+      activeCourseCode = course?.code,
+      activeCourseTitle = course?.title ?: overrideCourseTitle,
+      activeCourseCategory = course?.category,
+      activeCourseDescription = course?.description,
+      courseTopicsSummary = topicsSummary,
+      courseNotesSummary = notesSummary,
+      coursePastExamsSummary = examsSummary,
+      pinnedContextTitle = effectiveTitle,
+      pinnedContextSnippet = effectiveSnippet,
+      includeAppContext = _includeAppContext.value
+    )
+  }
+
   fun askGeminiTutor(
     prompt: String,
     courseTitle: String? = null,
     contextInfo: String? = null,
+    contextLabel: String? = null,
     onResult: ((String) -> Unit)? = null
   ) {
     val cleanPrompt = prompt.trim()
     if (cleanPrompt.isBlank()) return
 
-    viewModelScope.launch {
-      // Append student question immediately to the interactive conversation
-      val userMsg = TutorMessage(isUser = true, text = cleanPrompt)
-      _tutorConversation.value = _tutorConversation.value + userMsg
+    if (!contextInfo.isNullOrBlank()) {
+      _pinnedContextTitle.value = contextLabel ?: courseTitle ?: "Focused Academic Item"
+      _pinnedContextSnippet.value = contextInfo
+    }
+    val resolvedCourse = resolveActiveChatCourse(courseTitle)
+    if (resolvedCourse != null && _chatCourseId.value == null) {
+      _chatCourseId.value = resolvedCourse.id
+    }
 
-      _isAiLoading.value = true
-      _aiActiveContext.value = courseTitle ?: "Freshman University Topic"
+    val activeMode = _selectedTutorMode.value
+    val contextPayload = buildStudentChatContext(courseTitle, contextInfo)
+    val badgeText = buildString {
+      if (_includeAppContext.value) {
+        append(resolvedCourse?.code ?: contextPayload.activeCourseTitle ?: "Live Context")
+        if (!contextPayload.pinnedContextSnippet.isNullOrBlank()) {
+          append(" • Pinned")
+        }
+      } else {
+        append("General Chat")
+      }
+    }
 
-      val history = _tutorConversation.value.dropLast(1).map { it.text to it.isUser }
-      val explanation = com.example.data.remote.GeminiTutorService.askTutor(
-        prompt = cleanPrompt,
-        courseTitle = courseTitle,
-        contextInfo = contextInfo,
-        history = history
+    aiStreamJob?.cancel()
+    aiStreamJob = viewModelScope.launch {
+      val priorHistory = _tutorConversation.value
+        .filter { !it.isStreaming && !it.isError && it.text.isNotBlank() }
+        .map { it.text to it.isUser }
+
+      val userMsg = TutorMessage(
+        isUser = true,
+        text = cleanPrompt,
+        modeLabel = activeMode.label,
+        modelName = activeMode.modelName,
+        contextBadge = badgeText
+      )
+      val streamingAiId = UUID.randomUUID().toString()
+      val initialAiMsg = TutorMessage(
+        id = streamingAiId,
+        isUser = false,
+        text = "",
+        modeLabel = activeMode.label,
+        modelName = activeMode.modelName,
+        contextBadge = badgeText,
+        isStreaming = true
       )
 
-      val aiMsg = TutorMessage(isUser = false, text = explanation)
-      _tutorConversation.value = _tutorConversation.value + aiMsg
-      _aiResponse.value = explanation
-      _isAiLoading.value = false
-      onResult?.invoke(explanation)
+      _tutorConversation.value = _tutorConversation.value + userMsg + initialAiMsg
+      _isAiLoading.value = true
+      _aiChatUiState.value = AiChatUiState.Loading
+      _aiActiveContext.value = badgeText
+
+      if (!isOnline.value) {
+        val offlineMsg = "You appear to be offline. Connect to the internet to chat with Gemini AI in real time."
+        _tutorConversation.value = _tutorConversation.value.map { msg ->
+          if (msg.id == streamingAiId) {
+            msg.copy(text = offlineMsg, isStreaming = false, isError = true)
+          } else msg
+        }
+        _isAiLoading.value = false
+        _aiChatUiState.value = AiChatUiState.Error(offlineMsg, cleanPrompt)
+        return@launch
+      }
+
+      try {
+        var finalOutput = ""
+        GeminiTutorService.streamTutorResponse(
+          prompt = cleanPrompt,
+          mode = activeMode,
+          contextPayload = contextPayload,
+          history = priorHistory
+        ).collect { accumulated ->
+          finalOutput = accumulated
+          _aiChatUiState.value = AiChatUiState.Streaming(accumulated)
+          _tutorConversation.value = _tutorConversation.value.map { msg ->
+            if (msg.id == streamingAiId) {
+              msg.copy(text = accumulated, isStreaming = true, isError = false)
+            } else msg
+          }
+        }
+
+        _tutorConversation.value = _tutorConversation.value.map { msg ->
+          if (msg.id == streamingAiId) {
+            msg.copy(text = finalOutput, isStreaming = false, isError = false)
+          } else msg
+        }
+        _aiResponse.value = finalOutput
+        _aiChatUiState.value = AiChatUiState.Success(finalOutput)
+        _isAiLoading.value = false
+        onResult?.invoke(finalOutput)
+      } catch (e: CancellationException) {
+        _tutorConversation.value = _tutorConversation.value.filterNot { it.id == streamingAiId && it.text.isBlank() }
+        _isAiLoading.value = false
+        throw e
+      } catch (e: Exception) {
+        val errorMsg = e.localizedMessage?.takeIf { it.isNotBlank() }
+          ?: "Gemini (${activeMode.modelName}) could not respond right now. Please retry or switch to Hydrogen (General)."
+        _tutorConversation.value = _tutorConversation.value.map { msg ->
+          if (msg.id == streamingAiId) {
+            msg.copy(text = errorMsg, isStreaming = false, isError = true)
+          } else msg
+        }
+        _isAiLoading.value = false
+        _aiChatUiState.value = AiChatUiState.Error(errorMsg, cleanPrompt)
+      }
     }
   }
 
+  fun retryLastGeminiMessage(fallbackToHydrogen: Boolean = false) {
+    val errState = _aiChatUiState.value as? AiChatUiState.Error ?: return
+    val prompt = errState.failedPrompt ?: return
+    if (fallbackToHydrogen) {
+      _selectedTutorMode.value = TutorMode.HYDROGEN
+    }
+    // Remove the trailing failed error exchange before retrying cleanly
+    val list = _tutorConversation.value.toMutableList()
+    if (list.lastOrNull()?.isError == true) {
+      list.removeAt(list.lastIndex)
+    }
+    if (list.lastOrNull()?.isUser == true && list.lastOrNull()?.text == prompt) {
+      list.removeAt(list.lastIndex)
+    }
+    _tutorConversation.value = list
+    askGeminiTutor(prompt = prompt)
+  }
+
   fun clearAiTutorState() {
+    aiStreamJob?.cancel()
     _tutorConversation.value = emptyList()
     _aiResponse.value = null
     _isAiLoading.value = false
+    _aiChatUiState.value = AiChatUiState.Idle
     _aiActiveContext.value = null
+    _pinnedContextTitle.value = null
+    _pinnedContextSnippet.value = null
   }
 
   // --- Access Code & Premium Management ---
@@ -1075,32 +1422,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   private fun hasFirebaseCloudSession(): Boolean = FirebaseAuth.getInstance().currentUser != null
 
-  private fun requireAdminCloudSession(): Boolean {
+  private fun validateAdminCloudSession(): String? {
     if (currentUser.value?.role != "ADMIN") {
-      showMessage("Unauthorized: Administrator permissions required.")
-      return false
+      val msg = "Unauthorized: Administrator permissions required."
+      showMessage(msg)
+      return msg
     }
     if (!hasFirebaseCloudSession()) {
-      showMessage("Google Admin sign-in session expired or missing. Please sign out and sign in with Google.")
-      return false
+      val msg = "Google Admin sign-in session expired or missing. Please sign out and sign in with Google."
+      showMessage(msg)
+      return msg
     }
-    return true
+    return null
+  }
+
+  private fun requireAdminCloudSession(): Boolean = validateAdminCloudSession() == null
+
+  private suspend fun refreshDiagnosticIfPermissionError(e: Exception) {
+    if (e.message?.contains("permission", ignoreCase = true) == true) {
+      _cloudAdminDiagnostic.value = firestoreRepository.diagnoseAdminAccess()
+    }
   }
 
   // --- Admin operations ---
-  fun adminSaveCourse(course: CourseEntity, onResult: (Boolean) -> Unit = {}) {
-    if (!requireAdminCloudSession()) {
-      onResult(false)
+  fun adminSaveCourse(course: CourseEntity, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+    validateAdminCloudSession()?.let { err ->
+      onResult(false, err)
       return
     }
     viewModelScope.launch {
       try {
         repository.saveCourse(course)
         showMessage("Course '${course.title}' published to central cloud database.")
-        onResult(true)
+        onResult(true, null)
       } catch (e: Exception) {
-        showMessage("Failed to save course: ${e.message}")
-        onResult(false)
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
+        val msg = e.localizedMessage ?: e.message ?: "Failed to save course."
+        showMessage("Failed to save course: $msg")
+        onResult(false, msg)
       }
     }
   }
@@ -1112,19 +1472,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.deleteCourse(courseId)
         showMessage("Course removed from central database.")
       } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
         showMessage("Failed to delete course: ${e.message}")
       }
     }
   }
 
-  fun adminSaveTopic(topic: TopicEntity) {
-    if (!requireAdminCloudSession()) return
+  fun adminSaveTopic(topic: TopicEntity, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+    validateAdminCloudSession()?.let { err ->
+      onResult(false, err)
+      return
+    }
     viewModelScope.launch {
       try {
         repository.saveTopic(topic)
         showMessage("Section '${topic.title}' published to central cloud database.")
+        onResult(true, null)
       } catch (e: Exception) {
-        showMessage("Failed to save section: ${e.message}")
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
+        val msg = e.localizedMessage ?: e.message ?: "Failed to save section."
+        showMessage("Failed to save section: $msg")
+        onResult(false, msg)
       }
     }
   }
@@ -1136,19 +1506,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.deleteTopic(topicId)
         showMessage("Section removed from central database.")
       } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
         showMessage("Failed to delete section: ${e.message}")
       }
     }
   }
 
-  fun adminSaveQuestion(question: QuestionEntity) {
-    if (!requireAdminCloudSession()) return
+  fun adminSaveQuestion(question: QuestionEntity, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+    validateAdminCloudSession()?.let { err ->
+      onResult(false, err)
+      return
+    }
     viewModelScope.launch {
       try {
         repository.saveQuestion(question)
         showMessage("Question published to central cloud database & synced.")
+        onResult(true, null)
       } catch (e: Exception) {
-        showMessage("Failed to save question: ${e.message}")
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
+        val msg = e.localizedMessage ?: e.message ?: "Failed to save question."
+        showMessage("Failed to save question: $msg")
+        onResult(false, msg)
       }
     }
   }
@@ -1160,19 +1540,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.deleteQuestion(questionId)
         showMessage("Question deleted from central database.")
       } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
         showMessage("Failed to delete question: ${e.message}")
       }
     }
   }
 
-  fun adminSaveNote(note: NoteEntity) {
-    if (!requireAdminCloudSession()) return
+  fun adminSaveNote(note: NoteEntity, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+    validateAdminCloudSession()?.let { err ->
+      onResult(false, err)
+      return
+    }
     viewModelScope.launch {
       try {
         repository.saveNote(note)
         showMessage("Revision note '${note.title}' published to central cloud database.")
+        onResult(true, null)
       } catch (e: Exception) {
-        showMessage("Failed to save note: ${e.message}")
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
+        val msg = e.localizedMessage ?: e.message ?: "Failed to save note."
+        showMessage("Failed to save note: $msg")
+        onResult(false, msg)
       }
     }
   }
@@ -1184,19 +1574,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.deleteNote(noteId)
         showMessage("Note deleted from central database.")
       } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
         showMessage("Failed to delete note: ${e.message}")
       }
     }
   }
 
-  fun adminSavePastExam(exam: PastExamEntity) {
-    if (!requireAdminCloudSession()) return
+  fun adminSavePastExam(exam: PastExamEntity, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+    validateAdminCloudSession()?.let { err ->
+      onResult(false, err)
+      return
+    }
     viewModelScope.launch {
       try {
         repository.savePastExam(exam)
         showMessage("Past exam '${exam.title}' published to central cloud database.")
+        onResult(true, null)
       } catch (e: Exception) {
-        showMessage("Failed to publish past exam: ${e.message}")
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
+        val msg = e.localizedMessage ?: e.message ?: "Failed to publish past exam."
+        showMessage("Failed to publish past exam: $msg")
+        onResult(false, msg)
       }
     }
   }
@@ -1208,13 +1608,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.deletePastExam(examId)
         showMessage("Past exam removed from central database.")
       } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
         showMessage("Failed to delete past exam: ${e.message}")
       }
     }
   }
 
-  fun adminPublishAnnouncement(title: String, message: String, category: String, isUrgent: Boolean) {
-    if (!requireAdminCloudSession()) return
+  fun adminPublishAnnouncement(
+    title: String,
+    message: String,
+    category: String,
+    isUrgent: Boolean,
+    onResult: (Boolean, String?) -> Unit = { _, _ -> }
+  ) {
+    validateAdminCloudSession()?.let { err ->
+      onResult(false, err)
+      return
+    }
     viewModelScope.launch {
       try {
         val ann = AnnouncementEntity(
@@ -1227,8 +1638,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.saveAnnouncement(ann)
         repository.syncFromCloudNow()
         showMessage("Announcement broadcasted to all students & central cloud.")
+        onResult(true, null)
       } catch (e: Exception) {
-        showMessage("Failed to broadcast announcement: ${e.message}")
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
+        val msg = e.localizedMessage ?: e.message ?: "Failed to broadcast announcement."
+        showMessage("Failed to broadcast announcement: $msg")
+        onResult(false, msg)
       }
     }
   }
@@ -1241,6 +1657,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.syncFromCloudNow()
         showMessage("Announcement removed from central cloud database.")
       } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
         showMessage("Failed to remove announcement: ${e.message}")
       }
     }
@@ -1254,6 +1672,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         loadUserData()
         showMessage("Platform database re-seeded to factory standard curriculum.")
       } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        refreshDiagnosticIfPermissionError(e)
         showMessage("Failed to re-seed database: ${e.message}")
       }
     }

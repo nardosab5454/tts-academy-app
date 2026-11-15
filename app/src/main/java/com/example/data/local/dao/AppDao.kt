@@ -116,6 +116,9 @@ interface TopicDao {
   @Query("DELETE FROM topics WHERE id NOT IN (:validIds)")
   suspend fun deleteTopicsNotIn(validIds: List<String>)
 
+  @Query("DELETE FROM topics WHERE courseId NOT IN (:validCourseIds)")
+  suspend fun deleteTopicsForCoursesNotIn(validCourseIds: List<String>)
+
   @Query("SELECT * FROM topics ORDER BY orderIndex ASC")
   fun getAllTopicsFlow(): Flow<List<TopicEntity>>
 
@@ -170,6 +173,9 @@ interface QuestionDao {
   @Query("DELETE FROM questions WHERE courseId = :courseId")
   suspend fun deleteQuestionsForCourse(courseId: String)
 
+  @Query("DELETE FROM questions WHERE courseId NOT IN (:validCourseIds)")
+  suspend fun deleteQuestionsForCoursesNotIn(validCourseIds: List<String>)
+
   @Query("SELECT COUNT(*) FROM questions")
   suspend fun getCount(): Int
 
@@ -218,6 +224,9 @@ interface NoteDao {
   @Query("DELETE FROM notes WHERE courseId = :courseId")
   suspend fun deleteNotesForCourse(courseId: String)
 
+  @Query("DELETE FROM notes WHERE courseId NOT IN (:validCourseIds)")
+  suspend fun deleteNotesForCoursesNotIn(validCourseIds: List<String>)
+
   @Query("SELECT COUNT(*) FROM notes")
   suspend fun getCount(): Int
 
@@ -262,6 +271,9 @@ interface PastExamDao {
 
   @Query("DELETE FROM past_exams WHERE courseId = :courseId")
   suspend fun deletePastExamsForCourse(courseId: String)
+
+  @Query("DELETE FROM past_exams WHERE courseId NOT IN (:validCourseIds)")
+  suspend fun deletePastExamsForCoursesNotIn(validCourseIds: List<String>)
 
   @Query("SELECT COUNT(*) FROM past_exams")
   suspend fun getCount(): Int

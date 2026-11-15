@@ -51,6 +51,17 @@ data class OfflineCacheStats(
   val lastCacheVerifiedAt: Long = System.currentTimeMillis()
 )
 
+data class CloudSyncReport(
+  val coursesCount: Int = 0,
+  val topicsCount: Int = 0,
+  val questionsCount: Int = 0,
+  val notesCount: Int = 0,
+  val pastExamsCount: Int = 0,
+  val announcementsCount: Int = 0,
+  val errors: List<String> = emptyList(),
+  val isAuthenticated: Boolean = true
+)
+
 class TtsRepository(
   private val database: AppDatabase,
   val connectivityObserver: NetworkConnectivityObserver? = null,
@@ -202,6 +213,18 @@ class TtsRepository(
     accessCodeDao.insertAccessCodes(codes)
   }
 
+  private suspend fun reconcileCoursesFromCloud(entities: List<CourseEntity>) {
+    if (entities.isEmpty()) return
+    courseDao.insertCourses(entities)
+    val validCourseIds = entities.map { it.id }
+    courseDao.deleteCoursesNotIn(validCourseIds)
+    topicDao.deleteTopicsForCoursesNotIn(validCourseIds)
+    questionDao.deleteQuestionsForCoursesNotIn(validCourseIds)
+    noteDao.deleteNotesForCoursesNotIn(validCourseIds)
+    pastExamDao.deletePastExamsForCoursesNotIn(validCourseIds)
+    validCourseIds.forEach { courseDao.recalculateCounts(it) }
+  }
+
   fun startRealtimeCloudSync(scope: CoroutineScope) {
     val fs = firestoreRepository ?: return
     val auth = FirebaseAuth.getInstance()
@@ -256,19 +279,11 @@ class TtsRepository(
                     if (cloudCodes.isNotEmpty()) {
                       val entities = cloudCodes.map { it.toEntity() }
                       accessCodeDao.insertAccessCodes(entities)
+                      accessCodeDao.deleteAccessCodesNotIn(entities.map { it.code })
                     }
                   }
                 } catch (e: Exception) {
                   Log.e("TtsRepository", "Cloud access codes stream error", e)
-                }
-              }
-              launch {
-                try {
-                  if (fs.isCloudDatabaseEmpty()) {
-                    seedDatabaseToCloud(fs)
-                  }
-                } catch (e: Exception) {
-                  Log.e("TtsRepository", "Cloud seed check error", e)
                 }
               }
             }
@@ -278,7 +293,9 @@ class TtsRepository(
               try {
                 fs.observeAnnouncements().collect { cloudAnnouncements ->
                   if (cloudAnnouncements.isNotEmpty()) {
-                    announcementDao.insertAnnouncements(cloudAnnouncements.map { it.toEntity() })
+                    val entities = cloudAnnouncements.map { it.toEntity() }
+                    announcementDao.insertAnnouncements(entities)
+                    announcementDao.deleteAnnouncementsNotIn(entities.map { it.id })
                   }
                 }
               } catch (e: Exception) {
@@ -291,9 +308,7 @@ class TtsRepository(
               try {
                 fs.observeCourses().collect { cloudCourses ->
                   if (cloudCourses.isNotEmpty()) {
-                    val entities = cloudCourses.map { it.toEntity() }
-                    courseDao.insertCourses(entities)
-                    entities.forEach { courseDao.recalculateCounts(it.id) }
+                    reconcileCoursesFromCloud(cloudCourses.map { it.toEntity() })
                   }
                 }
               } catch (e: Exception) {
@@ -306,7 +321,9 @@ class TtsRepository(
               try {
                 fs.observeTopics().collect { cloudTopics ->
                   if (cloudTopics.isNotEmpty()) {
-                    topicDao.insertTopics(cloudTopics.map { it.toEntity() })
+                    val entities = cloudTopics.map { it.toEntity() }
+                    topicDao.insertTopics(entities)
+                    topicDao.deleteTopicsNotIn(entities.map { it.id })
                   }
                 }
               } catch (e: Exception) {
@@ -321,8 +338,9 @@ class TtsRepository(
                   if (cloudQuestions.isNotEmpty()) {
                     val entities = cloudQuestions.map { it.toEntity() }
                     questionDao.insertQuestions(entities)
-                    entities.map { it.courseId }.distinct().forEach { cId ->
-                      courseDao.recalculateCounts(cId)
+                    questionDao.deleteQuestionsNotIn(entities.map { it.id })
+                    courseDao.getAllCourses().forEach { c ->
+                      courseDao.recalculateCounts(c.id)
                     }
                   }
                 }
@@ -338,8 +356,9 @@ class TtsRepository(
                   if (cloudNotes.isNotEmpty()) {
                     val entities = cloudNotes.map { it.toEntity() }
                     noteDao.insertNotes(entities)
-                    entities.map { it.courseId }.distinct().forEach { cId ->
-                      courseDao.recalculateCounts(cId)
+                    noteDao.deleteNotesNotIn(entities.map { it.id })
+                    courseDao.getAllCourses().forEach { c ->
+                      courseDao.recalculateCounts(c.id)
                     }
                   }
                 }
@@ -353,7 +372,9 @@ class TtsRepository(
               try {
                 fs.observePastExams().collect { cloudExams ->
                   if (cloudExams.isNotEmpty()) {
-                    pastExamDao.insertPastExams(cloudExams.map { it.toEntity() })
+                    val entities = cloudExams.map { it.toEntity() }
+                    pastExamDao.insertPastExams(entities)
+                    pastExamDao.deletePastExamsNotIn(entities.map { it.id })
                   }
                 }
               } catch (e: Exception) {
@@ -366,86 +387,131 @@ class TtsRepository(
     }
   }
 
-  suspend fun syncFromCloudNow() = withContext(Dispatchers.IO) {
-    val fs = firestoreRepository ?: return@withContext
-    if (FirebaseAuth.getInstance().currentUser == null) return@withContext
-    // Sync Announcements (non-destructive merge)
-    try {
-      val announcements = fs.fetchLatestAnnouncements().getOrNull()
-      if (!announcements.isNullOrEmpty()) {
+  suspend fun syncFromCloudNow(): CloudSyncReport = withContext(Dispatchers.IO) {
+    val fs = firestoreRepository ?: return@withContext CloudSyncReport(
+      isAuthenticated = false,
+      errors = listOf("Cloud repository unavailable.")
+    )
+    val fbUser = FirebaseAuth.getInstance().currentUser ?: return@withContext CloudSyncReport(
+      isAuthenticated = false,
+      errors = listOf("Google sign-in session required to sync from cloud.")
+    )
+
+    // Refresh signed-in user's own cloud profile so role promotions/invites apply immediately
+    fs.getOrCreateUserProfile(
+      userId = fbUser.uid,
+      email = fbUser.email ?: (_currentUser.value?.email ?: ""),
+      name = fbUser.displayName ?: (_currentUser.value?.name ?: "TTS Student")
+    ).onSuccess { cloudSelf ->
+      val isAdmin = cloudSelf.role.equals("ADMIN", ignoreCase = true)
+      val existingSelf = userDao.getUserById(fbUser.uid)
+      if (existingSelf != null) {
+        val updatedSelf = existingSelf.copy(
+          role = if (isAdmin) "ADMIN" else "STUDENT",
+          isPremium = existingSelf.isPremium || isAdmin || cloudSelf.isPremium,
+          department = cloudSelf.department.ifBlank { existingSelf.department },
+          studentId = cloudSelf.studentId.ifBlank { existingSelf.studentId }
+        )
+        userDao.updateUser(updatedSelf)
+        if (_currentUser.value?.id == fbUser.uid) {
+          _currentUser.value = updatedSelf
+        }
+      }
+    }
+
+    val errors = mutableListOf<String>()
+    var coursesCount = 0
+    var topicsCount = 0
+    var questionsCount = 0
+    var notesCount = 0
+    var pastExamsCount = 0
+    var announcementsCount = 0
+
+    // Sync Announcements
+    fs.fetchLatestAnnouncements().onSuccess { announcements ->
+      announcementsCount = announcements.size
+      if (announcements.isNotEmpty()) {
         val entities = announcements.map { it.toEntity() }
         announcementDao.insertAnnouncements(entities)
+        announcementDao.deleteAnnouncementsNotIn(entities.map { it.id })
       }
-    } catch (e: Exception) {
+    }.onFailure { e ->
       Log.e("TtsRepository", "Announcements sync error", e)
+      errors.add("Announcements: ${e.message ?: "sync failed"}")
     }
 
-    // Sync Courses (non-destructive merge)
-    try {
-      val courses = fs.fetchLatestCourses().getOrNull()
-      if (!courses.isNullOrEmpty()) {
-        val entities = courses.map { it.toEntity() }
-        courseDao.insertCourses(entities)
+    // Sync Courses (reconcile local Room with authoritative cloud courses when non-empty)
+    fs.fetchLatestCourses().onSuccess { courses ->
+      coursesCount = courses.size
+      if (courses.isNotEmpty()) {
+        reconcileCoursesFromCloud(courses.map { it.toEntity() })
       }
-    } catch (e: Exception) {
+    }.onFailure { e ->
       Log.e("TtsRepository", "Courses sync error", e)
+      errors.add("Courses: ${e.message ?: "sync failed"}")
     }
 
-    // Sync Sections / Topics (non-destructive merge)
-    try {
-      val topics = fs.fetchLatestTopics().getOrNull()
-      if (!topics.isNullOrEmpty()) {
+    // Sync Sections / Topics
+    fs.fetchLatestTopics().onSuccess { topics ->
+      topicsCount = topics.size
+      if (topics.isNotEmpty()) {
         val entities = topics.map { it.toEntity() }
         topicDao.insertTopics(entities)
+        topicDao.deleteTopicsNotIn(entities.map { it.id })
       }
-    } catch (e: Exception) {
+    }.onFailure { e ->
       Log.e("TtsRepository", "Topics sync error", e)
+      errors.add("Topics: ${e.message ?: "sync failed"}")
     }
 
-    // Sync Questions (non-destructive merge)
-    try {
-      val questions = fs.fetchLatestQuestions().getOrNull()
-      if (!questions.isNullOrEmpty()) {
+    // Sync Questions
+    fs.fetchLatestQuestions().onSuccess { questions ->
+      questionsCount = questions.size
+      if (questions.isNotEmpty()) {
         val entities = questions.map { it.toEntity() }
         questionDao.insertQuestions(entities)
-        entities.map { it.courseId }.distinct().forEach { cId ->
-          courseDao.recalculateCounts(cId)
-        }
+        questionDao.deleteQuestionsNotIn(entities.map { it.id })
       }
-    } catch (e: Exception) {
+    }.onFailure { e ->
       Log.e("TtsRepository", "Questions sync error", e)
+      errors.add("Questions: ${e.message ?: "sync failed"}")
     }
 
-    // Sync Revision Notes (non-destructive merge)
-    try {
-      val notes = fs.fetchLatestNotes().getOrNull()
-      if (!notes.isNullOrEmpty()) {
+    // Sync Revision Notes
+    fs.fetchLatestNotes().onSuccess { notes ->
+      notesCount = notes.size
+      if (notes.isNotEmpty()) {
         val entities = notes.map { it.toEntity() }
         noteDao.insertNotes(entities)
-        entities.map { it.courseId }.distinct().forEach { cId ->
-          courseDao.recalculateCounts(cId)
-        }
+        noteDao.deleteNotesNotIn(entities.map { it.id })
       }
-    } catch (e: Exception) {
+    }.onFailure { e ->
       Log.e("TtsRepository", "Notes sync error", e)
+      errors.add("Notes: ${e.message ?: "sync failed"}")
     }
 
-    // Sync Past Exams (non-destructive merge)
-    try {
-      val exams = fs.fetchLatestPastExams().getOrNull()
-      if (!exams.isNullOrEmpty()) {
+    // Sync Past Exams
+    fs.fetchLatestPastExams().onSuccess { exams ->
+      pastExamsCount = exams.size
+      if (exams.isNotEmpty()) {
         val entities = exams.map { it.toEntity() }
         pastExamDao.insertPastExams(entities)
+        pastExamDao.deletePastExamsNotIn(entities.map { it.id })
       }
-    } catch (e: Exception) {
+    }.onFailure { e ->
       Log.e("TtsRepository", "Past exams sync error", e)
+      errors.add("Past exams: ${e.message ?: "sync failed"}")
+    }
+
+    // Refresh note/question counters on all synced courses
+    courseDao.getAllCourses().forEach { c ->
+      courseDao.recalculateCounts(c.id)
     }
 
     // Sync Users & Roles (only for authenticated admins)
     if (FirebaseAuth.getInstance().currentUser != null && _currentUser.value?.role == "ADMIN") {
-      try {
-        val users = fs.fetchLatestUsers().getOrNull()
-        if (!users.isNullOrEmpty()) {
+      fs.fetchLatestUsers().onSuccess { users ->
+        if (users.isNotEmpty()) {
           users.forEach { profile ->
             val cleanId = if (profile.userId.isNotBlank()) profile.userId else profile.id
             if (cleanId.isNotBlank()) {
@@ -475,10 +541,21 @@ class TtsRepository(
             }
           }
         }
-      } catch (e: Exception) {
+      }.onFailure { e ->
         Log.e("TtsRepository", "Users sync error", e)
       }
     }
+
+    CloudSyncReport(
+      coursesCount = coursesCount,
+      topicsCount = topicsCount,
+      questionsCount = questionsCount,
+      notesCount = notesCount,
+      pastExamsCount = pastExamsCount,
+      announcementsCount = announcementsCount,
+      errors = errors,
+      isAuthenticated = true
+    )
   }
 
   suspend fun seedDatabaseToCloud(fs: FirestoreRepository) = withContext(Dispatchers.IO) {
@@ -878,31 +955,25 @@ class TtsRepository(
   }
 
   suspend fun saveCourse(course: CourseEntity) = withContext(Dispatchers.IO) {
-    courseDao.insertCourse(course)
-    firestoreRepository?.let { fs ->
-      if (FirebaseAuth.getInstance().currentUser != null) {
-        val res = fs.saveCourse(course)
-        if (res.isFailure) {
-          val err = res.exceptionOrNull()?.message ?: "Unknown cloud write failure"
-          throw IllegalStateException("Saved locally, but failed to publish course to cloud: $err")
-        }
-      }
+    val fs = firestoreRepository
+      ?: throw IllegalStateException("Cloud database repository unavailable.")
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Administrator sign-in required to save courses to cloud.")
     }
+    fs.saveCourse(course).getOrElse { throw it }
+    courseDao.insertCourse(course)
   }
 
   suspend fun deleteCourse(courseId: String) = withContext(Dispatchers.IO) {
+    val fs = firestoreRepository
+      ?: throw IllegalStateException("Cloud database repository unavailable.")
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Administrator sign-in required to delete courses from cloud.")
+    }
     val courseTopics = topicDao.getTopicsForCourse(courseId)
-    firestoreRepository?.let { fs ->
-      if (FirebaseAuth.getInstance().currentUser != null) {
-        val res = fs.deleteCourse(courseId)
-        if (res.isFailure) {
-          val err = res.exceptionOrNull()?.message ?: "Unknown cloud error"
-          throw IllegalStateException("Failed to delete course from central database: $err")
-        }
-        courseTopics.forEach { topic ->
-          try { fs.deleteTopic(topic.id) } catch (_: Exception) {}
-        }
-      }
+    fs.deleteCourse(courseId).getOrElse { throw it }
+    courseTopics.forEach { topic ->
+      try { fs.deleteTopic(topic.id) } catch (_: Exception) {}
     }
     courseDao.deleteCourse(courseId)
     questionDao.deleteQuestionsForCourse(courseId)
@@ -914,28 +985,22 @@ class TtsRepository(
   fun getAllTopicsFlow(): Flow<List<TopicEntity>> = topicDao.getAllTopicsFlow()
 
   suspend fun saveTopic(topic: TopicEntity) = withContext(Dispatchers.IO) {
-    topicDao.insertTopic(topic)
-    firestoreRepository?.let { fs ->
-      if (FirebaseAuth.getInstance().currentUser != null) {
-        val res = fs.saveTopic(topic)
-        if (res.isFailure) {
-          val err = res.exceptionOrNull()?.message ?: "Unknown cloud write failure"
-          throw IllegalStateException("Saved locally, but failed to publish section to cloud: $err")
-        }
-      }
+    val fs = firestoreRepository
+      ?: throw IllegalStateException("Cloud database repository unavailable.")
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Administrator sign-in required to save sections to cloud.")
     }
+    fs.saveTopic(topic).getOrElse { throw it }
+    topicDao.insertTopic(topic)
   }
 
   suspend fun deleteTopic(topicId: String) = withContext(Dispatchers.IO) {
-    firestoreRepository?.let { fs ->
-      if (FirebaseAuth.getInstance().currentUser != null) {
-        val res = fs.deleteTopic(topicId)
-        if (res.isFailure) {
-          val err = res.exceptionOrNull()?.message ?: "Unknown cloud error"
-          throw IllegalStateException("Failed to delete section from central database: $err")
-        }
-      }
+    val fs = firestoreRepository
+      ?: throw IllegalStateException("Cloud database repository unavailable.")
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Administrator sign-in required to delete sections from cloud.")
     }
+    fs.deleteTopic(topicId).getOrElse { throw it }
     topicDao.deleteTopic(topicId)
   }
 
@@ -963,29 +1028,23 @@ class TtsRepository(
   }
 
   suspend fun saveQuestion(question: QuestionEntity) = withContext(Dispatchers.IO) {
+    val fs = firestoreRepository
+      ?: throw IllegalStateException("Cloud database repository unavailable.")
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Administrator sign-in required to save questions to cloud.")
+    }
+    fs.saveQuestion(question).getOrElse { throw it }
     questionDao.insertQuestion(question)
     courseDao.recalculateCounts(question.courseId)
-    firestoreRepository?.let { fs ->
-      if (FirebaseAuth.getInstance().currentUser != null) {
-        val res = fs.saveQuestion(question)
-        if (res.isFailure) {
-          val err = res.exceptionOrNull()?.message ?: "Unknown cloud write failure"
-          throw IllegalStateException("Saved locally, but failed to publish question to cloud: $err")
-        }
-      }
-    }
   }
 
   suspend fun deleteQuestion(questionId: String, courseId: String? = null) = withContext(Dispatchers.IO) {
-    firestoreRepository?.let { fs ->
-      if (FirebaseAuth.getInstance().currentUser != null) {
-        val res = fs.deleteQuestion(questionId)
-        if (res.isFailure) {
-          val err = res.exceptionOrNull()?.message ?: "Unknown cloud error"
-          throw IllegalStateException("Failed to delete question from central database: $err")
-        }
-      }
+    val fs = firestoreRepository
+      ?: throw IllegalStateException("Cloud database repository unavailable.")
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Administrator sign-in required to delete questions from cloud.")
     }
+    fs.deleteQuestion(questionId).getOrElse { throw it }
     val q = if (courseId == null) questionDao.getQuestionById(questionId) else null
     val targetCourseId = courseId ?: q?.courseId
     questionDao.deleteQuestion(questionId)
@@ -1012,29 +1071,23 @@ class TtsRepository(
   }
 
   suspend fun saveNote(note: NoteEntity) = withContext(Dispatchers.IO) {
+    val fs = firestoreRepository
+      ?: throw IllegalStateException("Cloud database repository unavailable.")
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Administrator sign-in required to save notes to cloud.")
+    }
+    fs.saveNote(note).getOrElse { throw it }
     noteDao.insertNote(note)
     courseDao.recalculateCounts(note.courseId)
-    firestoreRepository?.let { fs ->
-      if (FirebaseAuth.getInstance().currentUser != null) {
-        val res = fs.saveNote(note)
-        if (res.isFailure) {
-          val err = res.exceptionOrNull()?.message ?: "Unknown cloud write failure"
-          throw IllegalStateException("Saved locally, but failed to publish revision note to cloud: $err")
-        }
-      }
-    }
   }
 
   suspend fun deleteNote(noteId: String, courseId: String? = null) = withContext(Dispatchers.IO) {
-    firestoreRepository?.let { fs ->
-      if (FirebaseAuth.getInstance().currentUser != null) {
-        val res = fs.deleteNote(noteId)
-        if (res.isFailure) {
-          val err = res.exceptionOrNull()?.message ?: "Unknown cloud error"
-          throw IllegalStateException("Failed to delete revision note from central database: $err")
-        }
-      }
+    val fs = firestoreRepository
+      ?: throw IllegalStateException("Cloud database repository unavailable.")
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Administrator sign-in required to delete notes from cloud.")
     }
+    fs.deleteNote(noteId).getOrElse { throw it }
     val n = if (courseId == null) noteDao.getNoteById(noteId) else null
     val targetCourseId = courseId ?: n?.courseId
     noteDao.deleteNote(noteId)
@@ -1053,28 +1106,22 @@ class TtsRepository(
   }
 
   suspend fun savePastExam(exam: PastExamEntity) = withContext(Dispatchers.IO) {
-    pastExamDao.insertPastExam(exam)
-    firestoreRepository?.let { fs ->
-      if (FirebaseAuth.getInstance().currentUser != null) {
-        val res = fs.savePastExam(exam)
-        if (res.isFailure) {
-          val err = res.exceptionOrNull()?.message ?: "Unknown cloud write failure"
-          throw IllegalStateException("Saved locally, but failed to publish past exam to cloud: $err")
-        }
-      }
+    val fs = firestoreRepository
+      ?: throw IllegalStateException("Cloud database repository unavailable.")
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Administrator sign-in required to save past exams to cloud.")
     }
+    fs.savePastExam(exam).getOrElse { throw it }
+    pastExamDao.insertPastExam(exam)
   }
 
   suspend fun deletePastExam(examId: String) = withContext(Dispatchers.IO) {
-    firestoreRepository?.let { fs ->
-      if (FirebaseAuth.getInstance().currentUser != null) {
-        val res = fs.deletePastExam(examId)
-        if (res.isFailure) {
-          val err = res.exceptionOrNull()?.message ?: "Unknown cloud error"
-          throw IllegalStateException("Failed to delete past exam from central database: $err")
-        }
-      }
+    val fs = firestoreRepository
+      ?: throw IllegalStateException("Cloud database repository unavailable.")
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Administrator sign-in required to delete past exams from cloud.")
     }
+    fs.deletePastExam(examId).getOrElse { throw it }
     pastExamDao.deletePastExam(examId)
   }
 
@@ -1171,28 +1218,22 @@ class TtsRepository(
   fun getAllAnnouncementsFlow(): Flow<List<AnnouncementEntity>> = announcementDao.getAllAnnouncementsFlow()
 
   suspend fun saveAnnouncement(announcement: AnnouncementEntity) = withContext(Dispatchers.IO) {
-    announcementDao.insertAnnouncement(announcement)
-    firestoreRepository?.let { fs ->
-      if (FirebaseAuth.getInstance().currentUser != null) {
-        val res = fs.saveAnnouncement(announcement)
-        if (res.isFailure) {
-          val err = res.exceptionOrNull()?.message ?: "Unknown cloud write failure"
-          throw IllegalStateException("Saved locally, but failed to broadcast announcement to cloud: $err")
-        }
-      }
+    val fs = firestoreRepository
+      ?: throw IllegalStateException("Cloud database repository unavailable.")
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Administrator sign-in required to broadcast announcements to cloud.")
     }
+    fs.saveAnnouncement(announcement).getOrElse { throw it }
+    announcementDao.insertAnnouncement(announcement)
   }
 
   suspend fun deleteAnnouncement(id: String) = withContext(Dispatchers.IO) {
-    firestoreRepository?.let { fs ->
-      if (FirebaseAuth.getInstance().currentUser != null) {
-        val res = fs.deleteAnnouncement(id)
-        if (res.isFailure) {
-          val err = res.exceptionOrNull()?.message ?: "Unknown cloud delete failure"
-          throw IllegalStateException("Failed to delete announcement from central cloud database: $err")
-        }
-      }
+    val fs = firestoreRepository
+      ?: throw IllegalStateException("Cloud database repository unavailable.")
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      throw IllegalStateException("Google Administrator sign-in required to delete announcements from cloud.")
     }
+    fs.deleteAnnouncement(id).getOrElse { throw it }
     announcementDao.deleteAnnouncement(id)
   }
 

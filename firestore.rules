@@ -40,6 +40,7 @@ service cloud.firestore {
         isInvitedAdmin() ||
         (isSignedIn() &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         'role' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN');
     }
 
@@ -66,7 +67,9 @@ service cloud.firestore {
     }
 
     function isImmutableCreatedAt() {
-      return !('createdAt' in existing()) || incoming().createdAt == existing().createdAt;
+      return !('createdAt' in existing()) ||
+        existing().createdAt == null ||
+        incoming().createdAt == existing().createdAt;
     }
 
     function isValidUserProfile(data, docId) {
@@ -287,27 +290,28 @@ service cloud.firestore {
 
     // User profiles & student registrations (strict owner/admin zero-trust isolation)
     match /users/{userId} {
-      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin());
       allow list: if isAdmin();
-      allow create: if isValidId(userId) &&
+      allow create: if isSignedIn() &&
+        isValidId(userId) &&
         isValidUserProfile(incoming(), userId) && (
-          isAdmin() ||
           (isOwner(userId) &&
            incoming().role == 'STUDENT' &&
            incoming().isPremium == false &&
-           (!('activationCode' in incoming()) || incoming().activationCode == ''))
+           (!('activationCode' in incoming()) || incoming().activationCode == '')) ||
+          isAdmin()
         );
-      allow update: if isValidId(userId) &&
+      allow update: if isSignedIn() &&
+        isValidId(userId) &&
         isValidUserProfile(incoming(), userId) &&
         isImmutableCreatedAt() && (
-          isAdmin() ||
           (isOwner(userId) &&
-           incoming().userId == existing().userId &&
-           incoming().email == existing().email &&
-           incoming().role == existing().role && (
+           (!('userId' in existing()) || incoming().userId == existing().userId) &&
+           (!('email' in existing()) || incoming().email == existing().email) &&
+           ('role' in existing() ? incoming().role == existing().role : incoming().role == 'STUDENT') && (
              // Case 1: Normal profile/stats update without escalating premium status
              (('isPremium' in existing() ? incoming().isPremium == existing().isPremium : incoming().isPremium == false) &&
-              ((!('activationCode' in existing()) && !('activationCode' in incoming())) ||
+              ((!('activationCode' in existing()) && (!('activationCode' in incoming()) || incoming().activationCode == '')) ||
                ('activationCode' in existing() && 'activationCode' in incoming() && incoming().activationCode == existing().activationCode))) ||
              // Case 2: Atomic access-code redemption transaction (verifies code doc transitions from unredeemed -> redeemed by caller)
              (incoming().isPremium == true &&
@@ -318,9 +322,10 @@ service cloud.firestore {
               get(/databases/$(database)/documents/access_codes/$(incoming().activationCode)).data.expiresAt > request.time &&
               getAfter(/databases/$(database)/documents/access_codes/$(incoming().activationCode)).data.isRedeemed == true &&
               getAfter(/databases/$(database)/documents/access_codes/$(incoming().activationCode)).data.redeemedByUserId == request.auth.uid)
-           ))
+           )) ||
+          isAdmin()
         );
-      allow delete: if isAdmin() && isValidId(userId);
+      allow delete: if isSignedIn() && isValidId(userId) && isAdmin();
 
       // Quiz attempts subcollection
       match /quiz_attempts/{attemptId} {
@@ -367,81 +372,80 @@ service cloud.firestore {
 
     // Admin invites for email promotion
     match /admin_invites/{inviteEmail} {
-      allow get: if isValidEmailDocId(inviteEmail) && (
+      allow get: if isSignedIn() && isValidEmailDocId(inviteEmail) && (
         (hasVerifiedEmail() && request.auth.token.email.lower() == inviteEmail.lower()) ||
         isAdmin()
       );
       allow list: if isAdmin();
-      allow create: if isAdmin() && isValidEmailDocId(inviteEmail) && isValidAdminInvite(incoming(), inviteEmail);
-      allow update: if isAdmin() && isValidEmailDocId(inviteEmail) && isValidAdminInvite(incoming(), inviteEmail) && isImmutableCreatedAt();
-      allow delete: if isAdmin() && isValidEmailDocId(inviteEmail);
+      allow create: if isSignedIn() && isValidEmailDocId(inviteEmail) && isValidAdminInvite(incoming(), inviteEmail) && isAdmin();
+      allow update: if isSignedIn() && isValidEmailDocId(inviteEmail) && isValidAdminInvite(incoming(), inviteEmail) && isImmutableCreatedAt() && isAdmin();
+      allow delete: if isSignedIn() && isValidEmailDocId(inviteEmail) && isAdmin();
     }
 
     // Global announcements (authenticated read, admin write)
     match /announcements/{announcementId} {
       allow get: if isSignedIn() && isValidId(announcementId);
       allow list: if isSignedIn();
-      allow create: if isAdmin() && isValidId(announcementId) && isValidAnnouncement(incoming(), announcementId);
-      allow update: if isAdmin() && isValidId(announcementId) && isValidAnnouncement(incoming(), announcementId) && isImmutableCreatedAt();
-      allow delete: if isAdmin() && isValidId(announcementId);
+      allow create: if isSignedIn() && isValidId(announcementId) && isValidAnnouncement(incoming(), announcementId) && isAdmin();
+      allow update: if isSignedIn() && isValidId(announcementId) && isValidAnnouncement(incoming(), announcementId) && isImmutableCreatedAt() && isAdmin();
+      allow delete: if isSignedIn() && isValidId(announcementId) && isAdmin();
     }
 
     // Courses (authenticated read, admin write)
     match /courses/{courseId} {
       allow get: if isSignedIn() && isValidId(courseId);
       allow list: if isSignedIn();
-      allow create: if isAdmin() && isValidId(courseId) && isValidCourse(incoming(), courseId);
-      allow update: if isAdmin() && isValidId(courseId) && isValidCourse(incoming(), courseId) && isImmutableCreatedAt();
-      allow delete: if isAdmin() && isValidId(courseId);
+      allow create: if isSignedIn() && isValidId(courseId) && isValidCourse(incoming(), courseId) && isAdmin();
+      allow update: if isSignedIn() && isValidId(courseId) && isValidCourse(incoming(), courseId) && isImmutableCreatedAt() && isAdmin();
+      allow delete: if isSignedIn() && isValidId(courseId) && isAdmin();
     }
 
     // Course Sections / Topics (authenticated read, admin write)
     match /topics/{topicId} {
       allow get: if isSignedIn() && isValidId(topicId);
       allow list: if isSignedIn();
-      allow create: if isAdmin() && isValidId(topicId) && isValidTopic(incoming(), topicId);
-      allow update: if isAdmin() && isValidId(topicId) && isValidTopic(incoming(), topicId) && isImmutableCreatedAt();
-      allow delete: if isAdmin() && isValidId(topicId);
+      allow create: if isSignedIn() && isValidId(topicId) && isValidTopic(incoming(), topicId) && isAdmin();
+      allow update: if isSignedIn() && isValidId(topicId) && isValidTopic(incoming(), topicId) && isImmutableCreatedAt() && isAdmin();
+      allow delete: if isSignedIn() && isValidId(topicId) && isAdmin();
     }
 
     // Questions & past exam questions (authenticated read, admin write)
     match /questions/{questionId} {
       allow get: if isSignedIn() && isValidId(questionId);
       allow list: if isSignedIn();
-      allow create: if isAdmin() && isValidId(questionId) && isValidQuestion(incoming(), questionId);
-      allow update: if isAdmin() && isValidId(questionId) && isValidQuestion(incoming(), questionId) && isImmutableCreatedAt();
-      allow delete: if isAdmin() && isValidId(questionId);
+      allow create: if isSignedIn() && isValidId(questionId) && isValidQuestion(incoming(), questionId) && isAdmin();
+      allow update: if isSignedIn() && isValidId(questionId) && isValidQuestion(incoming(), questionId) && isImmutableCreatedAt() && isAdmin();
+      allow delete: if isSignedIn() && isValidId(questionId) && isAdmin();
     }
 
     // Official revision notes (authenticated read, admin write)
     match /notes/{noteId} {
       allow get: if isSignedIn() && isValidId(noteId);
       allow list: if isSignedIn();
-      allow create: if isAdmin() && isValidId(noteId) && isValidNote(incoming(), noteId);
-      allow update: if isAdmin() && isValidId(noteId) && isValidNote(incoming(), noteId) && isImmutableCreatedAt();
-      allow delete: if isAdmin() && isValidId(noteId);
+      allow create: if isSignedIn() && isValidId(noteId) && isValidNote(incoming(), noteId) && isAdmin();
+      allow update: if isSignedIn() && isValidId(noteId) && isValidNote(incoming(), noteId) && isImmutableCreatedAt() && isAdmin();
+      allow delete: if isSignedIn() && isValidId(noteId) && isAdmin();
     }
 
     // Past examination documents (authenticated read, admin write)
     match /past_exams/{examId} {
       allow get: if isSignedIn() && isValidId(examId);
       allow list: if isSignedIn();
-      allow create: if isAdmin() && isValidId(examId) && isValidPastExam(incoming(), examId);
-      allow update: if isAdmin() && isValidId(examId) && isValidPastExam(incoming(), examId) && isImmutableCreatedAt();
-      allow delete: if isAdmin() && isValidId(examId);
+      allow create: if isSignedIn() && isValidId(examId) && isValidPastExam(incoming(), examId) && isAdmin();
+      allow update: if isSignedIn() && isValidId(examId) && isValidPastExam(incoming(), examId) && isImmutableCreatedAt() && isAdmin();
+      allow delete: if isSignedIn() && isValidId(examId) && isAdmin();
     }
 
     // 6-character access codes for single-use unlock verification
     match /access_codes/{code} {
       allow get: if isSignedIn() && isValidId(code);
       allow list: if isAdmin();
-      allow create: if isAdmin() && isValidId(code) && isValidAccessCode(incoming(), code);
-      allow update: if isValidId(code) &&
+      allow create: if isSignedIn() && isValidId(code) && isValidAccessCode(incoming(), code) && isAdmin();
+      allow update: if isSignedIn() &&
+        isValidId(code) &&
         isValidAccessCode(incoming(), code) &&
         isImmutableCreatedAt() && (
-          isAdmin() ||
-          (isSignedIn() &&
-           existing().isRedeemed == false &&
+          (existing().isRedeemed == false &&
            existing().expiresAt > request.time &&
            incoming().isRedeemed == true &&
            incoming().redeemedByUserId == request.auth.uid &&
@@ -452,9 +456,10 @@ service cloud.firestore {
              'isRedeemed', 'redeemedByUserId', 'redeemedByEmail', 'redeemedAt'
            ]) &&
            incoming().redeemedAt is timestamp &&
-           incoming().redeemedAt <= request.time)
+           incoming().redeemedAt <= request.time) ||
+          isAdmin()
         );
-      allow delete: if isAdmin() && isValidId(code);
+      allow delete: if isSignedIn() && isValidId(code) && isAdmin();
     }
   }
 }

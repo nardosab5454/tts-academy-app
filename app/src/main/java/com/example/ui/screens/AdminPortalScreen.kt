@@ -67,6 +67,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.firestore.CloudAdminDiagnostic
 import com.example.data.local.model.AccessCodeEntity
 import com.example.data.local.model.AnnouncementEntity
 import com.example.data.local.model.CourseEntity
@@ -95,18 +96,20 @@ fun AdminPortalScreen(
   notes: List<NoteEntity> = emptyList(),
   pastExams: List<PastExamEntity> = emptyList(),
   topics: List<TopicEntity> = emptyList(),
+  cloudDiagnostic: CloudAdminDiagnostic? = null,
+  onRefreshPermissions: () -> Unit = {},
   onBackClick: () -> Unit,
-  onSaveCourse: (CourseEntity, (Boolean) -> Unit) -> Unit,
+  onSaveCourse: (CourseEntity, (Boolean, String?) -> Unit) -> Unit,
   onDeleteCourse: (String) -> Unit,
-  onSaveQuestion: (QuestionEntity) -> Unit,
+  onSaveQuestion: (QuestionEntity, (Boolean, String?) -> Unit) -> Unit,
   onDeleteQuestion: (String) -> Unit = {},
-  onSaveNote: (NoteEntity) -> Unit,
+  onSaveNote: (NoteEntity, (Boolean, String?) -> Unit) -> Unit,
   onDeleteNote: (String) -> Unit = {},
-  onSavePastExam: (PastExamEntity) -> Unit,
+  onSavePastExam: (PastExamEntity, (Boolean, String?) -> Unit) -> Unit,
   onDeletePastExam: (String) -> Unit = {},
-  onSaveTopic: (TopicEntity) -> Unit = {},
+  onSaveTopic: (TopicEntity, (Boolean, String?) -> Unit) -> Unit = { _, cb -> cb(true, null) },
   onDeleteTopic: (String) -> Unit = {},
-  onPublishAnnouncement: (String, String, String, Boolean) -> Unit,
+  onPublishAnnouncement: (String, String, String, Boolean, (Boolean, String?) -> Unit) -> Unit,
   onResetSeedData: () -> Unit,
   onUpdateUserRole: (String, String) -> Unit,
   onCreateAdmin: (String, String, String, String) -> Unit,
@@ -125,12 +128,8 @@ fun AdminPortalScreen(
 
   // Preserve user's course preference and only initialize or fallback if blank or non-existent
   LaunchedEffect(courses) {
-    if (courses.isNotEmpty()) {
-      if (activeCourseIdForAdd.isBlank() || courses.none { it.id == activeCourseIdForAdd }) {
-        if (activeCourseIdForAdd.isBlank()) {
-          activeCourseIdForAdd = courses.first().id
-        }
-      }
+    if (courses.isNotEmpty() && (activeCourseIdForAdd.isBlank() || courses.none { it.id == activeCourseIdForAdd })) {
+      activeCourseIdForAdd = courses.first().id
     }
   }
 
@@ -179,7 +178,17 @@ fun AdminPortalScreen(
     }
 
     when (selectedTab) {
-      0 -> AdminOverviewTab(courses, allUsers, announcements, accessCodes, onResetSeedData, onSyncCloud, isSyncing)
+      0 -> AdminOverviewTab(
+        courses = courses,
+        users = allUsers,
+        announcements = announcements,
+        accessCodes = accessCodes,
+        cloudDiagnostic = cloudDiagnostic,
+        onRefreshPermissions = onRefreshPermissions,
+        onResetSeedData = onResetSeedData,
+        onSyncCloud = onSyncCloud,
+        isSyncing = isSyncing
+      )
       1 -> AdminCoursesTab(
         courses = courses,
         questions = questions,
@@ -373,14 +382,14 @@ fun AdminPortalScreen(
               isPublished = true,
               orderIndex = courses.size + 1
             )
-            onSaveCourse(newCourse) { success ->
+            onSaveCourse(newCourse) { success, errMsg ->
               isSaving = false
               if (success) {
                 activeCourseIdForAdd = newCourse.id
                 newlyAddedCourse = newCourse
                 showNewCourseDialog = false
               } else {
-                validationError = "Failed to save course to cloud. Check connection and admin permissions."
+                validationError = errMsg ?: "Failed to save course to cloud. Check connection and admin permissions."
               }
             }
           }
@@ -408,17 +417,18 @@ fun AdminPortalScreen(
     var message by remember { mutableStateOf("") }
     var isUrgent by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
 
     AlertDialog(
-      onDismissRequest = { showNewAnnouncementDialog = false },
+      onDismissRequest = { if (!isSaving) showNewAnnouncementDialog = false },
       title = { Text("Publish Announcement") },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, label = { Text("Title") }, singleLine = true)
-          OutlinedTextField(value = message, onValueChange = { message = it; validationError = null }, label = { Text("Message Body") }, maxLines = 4)
+          OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, label = { Text("Title") }, singleLine = true, enabled = !isSaving)
+          OutlinedTextField(value = message, onValueChange = { message = it; validationError = null }, label = { Text("Message Body") }, maxLines = 4, enabled = !isSaving)
           Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.clickable { isUrgent = !isUrgent }
+            modifier = Modifier.clickable(enabled = !isSaving) { isUrgent = !isUrgent }
           ) {
             Text("Mark as Urgent / Alert Notice: ${if (isUrgent) "YES" else "NO"}", fontWeight = FontWeight.Bold)
           }
@@ -433,20 +443,29 @@ fun AdminPortalScreen(
       },
       confirmButton = {
         Button(
+          enabled = !isSaving,
           onClick = {
             if (title.isBlank() || message.isBlank()) {
               validationError = "Please enter both a title and a message body."
             } else {
-              onPublishAnnouncement(title, message, "EXAM", isUrgent)
-              showNewAnnouncementDialog = false
+              validationError = null
+              isSaving = true
+              onPublishAnnouncement(title, message, "EXAM", isUrgent) { success, errMsg ->
+                isSaving = false
+                if (success) {
+                  showNewAnnouncementDialog = false
+                } else {
+                  validationError = errMsg ?: "Failed to broadcast announcement."
+                }
+              }
             }
           }
         ) {
-          Text("Broadcast")
+          Text(if (isSaving) "Publishing..." else "Broadcast")
         }
       },
       dismissButton = {
-        TextButton(onClick = { showNewAnnouncementDialog = false }) {
+        TextButton(enabled = !isSaving, onClick = { showNewAnnouncementDialog = false }) {
           Text("Cancel")
         }
       }
@@ -512,6 +531,8 @@ private fun AdminOverviewTab(
   users: List<UserEntity>,
   announcements: List<AnnouncementEntity>,
   accessCodes: List<AccessCodeEntity> = emptyList(),
+  cloudDiagnostic: CloudAdminDiagnostic? = null,
+  onRefreshPermissions: () -> Unit = {},
   onResetSeedData: () -> Unit,
   onSyncCloud: () -> Unit = {},
   isSyncing: Boolean = false
@@ -547,6 +568,83 @@ private fun AdminOverviewTab(
         AdminStatCard("Live Qs Practiced", "$totalQuestionsAnswered", AcademicCobalt, Modifier.weight(1f))
         AdminStatCard("Active 1-Hr Passes", "$activePasses", AcademicGold, Modifier.weight(1f))
         AdminStatCard("Redeemed Passes", "$redeemedPasses", AcademicBluePrimary, Modifier.weight(1f))
+      }
+    }
+
+    item {
+      val ready = cloudDiagnostic?.hasWriteReadyAuth == true
+      Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+          containerColor = if (ready) {
+            SuccessGreen.copy(alpha = 0.08f)
+          } else {
+            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+          }
+        ),
+        border = BorderStroke(
+          1.dp,
+          if (ready) SuccessGreen.copy(alpha = 0.45f) else MaterialTheme.colorScheme.error.copy(alpha = 0.45f)
+        ),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text(
+              text = "Cloud Admin Write Permissions",
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+            )
+            Surface(
+              color = if (ready) SuccessGreen else MaterialTheme.colorScheme.error,
+              shape = RoundedCornerShape(6.dp)
+            ) {
+              Text(
+                text = if (ready) "VERIFIED" else "CHECK NEEDED",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                color = Color.White,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+              )
+            }
+          }
+
+          if (cloudDiagnostic != null) {
+            Text(
+              text = "Account: ${cloudDiagnostic.signedInEmail ?: "Not signed in"} (${if (cloudDiagnostic.isEmailVerified) "Verified Google Email" else "Unverified"})",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+              text = "Cloud Profile Role: ${cloudDiagnostic.userDocRole} • UID: ${cloudDiagnostic.signedInUid ?: "none"}",
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+              text = cloudDiagnostic.diagnosticMessage,
+              style = MaterialTheme.typography.bodySmall,
+              color = if (ready) SuccessGreen else MaterialTheme.colorScheme.error
+            )
+          } else {
+            Text(
+              text = "Checking live Firestore admin token and role status...",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+
+          OutlinedButton(
+            onClick = onRefreshPermissions,
+            enabled = !isSyncing,
+            modifier = Modifier.testTag("admin_refresh_permissions_button")
+          ) {
+            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Verify & Refresh Cloud Permissions")
+          }
+        }
       }
     }
 
@@ -677,9 +775,9 @@ private fun AdminCoursesTab(
   notes: List<NoteEntity> = emptyList(),
   topics: List<TopicEntity> = emptyList(),
   onAddNew: () -> Unit,
-  onSaveCourse: (CourseEntity, (Boolean) -> Unit) -> Unit = { _, _ -> },
+  onSaveCourse: (CourseEntity, (Boolean, String?) -> Unit) -> Unit = { _, cb -> cb(true, null) },
   onDelete: (String) -> Unit,
-  onSaveTopic: (TopicEntity) -> Unit = {},
+  onSaveTopic: (TopicEntity, (Boolean, String?) -> Unit) -> Unit = { _, cb -> cb(true, null) },
   onDeleteTopic: (String) -> Unit = {},
   onAddQuestionForCourse: (String) -> Unit,
   onAddNoteForCourse: (String) -> Unit,
@@ -855,9 +953,11 @@ private fun AdminCoursesTab(
     EditCourseDialog(
       course = courseToEdit!!,
       onDismiss = { courseToEdit = null },
-      onSave = { updatedCourse ->
-        onSaveCourse(updatedCourse) { _ -> }
-        courseToEdit = null
+      onSave = { updatedCourse, done ->
+        onSaveCourse(updatedCourse) { success, err ->
+          done(success, err)
+          if (success) courseToEdit = null
+        }
       }
     )
   }
@@ -907,8 +1007,8 @@ private fun AdminAddQuestionTab(
   topics: List<TopicEntity> = emptyList(),
   initialCourseId: String = "",
   onCourseSelected: (String) -> Unit = {},
-  onSaveQuestion: (QuestionEntity) -> Unit,
-  onSaveTopic: (TopicEntity) -> Unit = {}
+  onSaveQuestion: (QuestionEntity, (Boolean, String?) -> Unit) -> Unit,
+  onSaveTopic: (TopicEntity, (Boolean, String?) -> Unit) -> Unit = { _, cb -> cb(true, null) }
 ) {
   var selectedCourseId by remember {
     mutableStateOf(if (initialCourseId.isNotBlank()) initialCourseId else courses.firstOrNull()?.id ?: "")
@@ -921,13 +1021,9 @@ private fun AdminAddQuestionTab(
   }
 
   LaunchedEffect(courses) {
-    if (courses.isNotEmpty()) {
-      if (selectedCourseId.isBlank() || courses.none { it.id == selectedCourseId }) {
-        if (selectedCourseId.isBlank()) {
-          selectedCourseId = courses.first().id
-          onCourseSelected(selectedCourseId)
-        }
-      }
+    if (courses.isNotEmpty() && (selectedCourseId.isBlank() || courses.none { it.id == selectedCourseId })) {
+      selectedCourseId = courses.first().id
+      onCourseSelected(selectedCourseId)
     }
   }
 
@@ -954,6 +1050,7 @@ private fun AdminAddQuestionTab(
   var expB by remember { mutableStateOf("") }
   var expC by remember { mutableStateOf("") }
   var expD by remember { mutableStateOf("") }
+  var isSaving by remember { mutableStateOf(false) }
   var validationError by remember { mutableStateOf<String?>(null) }
 
   LazyColumn(
@@ -1054,6 +1151,7 @@ private fun AdminAddQuestionTab(
 
     item {
       Button(
+        enabled = !isSaving,
         onClick = {
           val resolvedCourseId = selectedCourseId.ifBlank { courses.firstOrNull()?.id ?: "" }
           when {
@@ -1062,6 +1160,7 @@ private fun AdminAddQuestionTab(
             optA.isBlank() || optB.isBlank() -> validationError = "Please provide at least Option A and Option B."
             else -> {
               validationError = null
+              isSaving = true
               val q = QuestionEntity(
                 id = "Q_" + UUID.randomUUID().toString().take(6),
                 courseId = resolvedCourseId,
@@ -1082,17 +1181,23 @@ private fun AdminAddQuestionTab(
                 isVerified = true,
                 isPublished = true
               )
-              onSaveQuestion(q)
-              questionText = ""
-              optA = ""
-              optB = ""
-              optC = ""
-              optD = ""
-              generalExplanation = ""
-              expA = ""
-              expB = ""
-              expC = ""
-              expD = ""
+              onSaveQuestion(q) { success, errMsg ->
+                isSaving = false
+                if (success) {
+                  questionText = ""
+                  optA = ""
+                  optB = ""
+                  optC = ""
+                  optD = ""
+                  generalExplanation = ""
+                  expA = ""
+                  expB = ""
+                  expC = ""
+                  expD = ""
+                } else {
+                  validationError = errMsg ?: "Failed to save question to cloud. Check admin permissions."
+                }
+              }
             }
           }
         },
@@ -1101,7 +1206,7 @@ private fun AdminAddQuestionTab(
       ) {
         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(6.dp))
-        Text("Save & Publish Question to Selected Course", fontWeight = FontWeight.Bold)
+        Text(if (isSaving) "Publishing Question..." else "Save & Publish Question to Selected Course", fontWeight = FontWeight.Bold)
       }
     }
   }
@@ -1111,10 +1216,14 @@ private fun AdminAddQuestionTab(
       courseId = selectedCourseId,
       existingCount = courseTopics.size,
       onDismiss = { showAddSectionDialog = false },
-      onSave = { newSection ->
-        onSaveTopic(newSection)
-        selectedTopicId = newSection.id
-        showAddSectionDialog = false
+      onSave = { newSection, done ->
+        onSaveTopic(newSection) { success, errMsg ->
+          done(success, errMsg)
+          if (success) {
+            selectedTopicId = newSection.id
+            showAddSectionDialog = false
+          }
+        }
       }
     )
   }
@@ -1127,8 +1236,8 @@ private fun AdminAddNoteTab(
   notes: List<NoteEntity> = emptyList(),
   initialCourseId: String = "",
   onCourseSelected: (String) -> Unit = {},
-  onSaveNote: (NoteEntity) -> Unit,
-  onSaveTopic: (TopicEntity) -> Unit = {}
+  onSaveNote: (NoteEntity, (Boolean, String?) -> Unit) -> Unit,
+  onSaveTopic: (TopicEntity, (Boolean, String?) -> Unit) -> Unit = { _, cb -> cb(true, null) }
 ) {
   var selectedCourseId by remember {
     mutableStateOf(if (initialCourseId.isNotBlank()) initialCourseId else courses.firstOrNull()?.id ?: "")
@@ -1141,13 +1250,9 @@ private fun AdminAddNoteTab(
   }
 
   LaunchedEffect(courses) {
-    if (courses.isNotEmpty()) {
-      if (selectedCourseId.isBlank() || courses.none { it.id == selectedCourseId }) {
-        if (selectedCourseId.isBlank()) {
-          selectedCourseId = courses.first().id
-          onCourseSelected(selectedCourseId)
-        }
-      }
+    if (courses.isNotEmpty() && (selectedCourseId.isBlank() || courses.none { it.id == selectedCourseId })) {
+      selectedCourseId = courses.first().id
+      onCourseSelected(selectedCourseId)
     }
   }
 
@@ -1177,6 +1282,7 @@ private fun AdminAddNoteTab(
   var summary by remember { mutableStateOf("") }
   var formulas by remember { mutableStateOf("") }
   var markdownContent by remember { mutableStateOf("") }
+  var isSaving by remember { mutableStateOf(false) }
   var validationError by remember { mutableStateOf<String?>(null) }
 
   LazyColumn(
@@ -1321,6 +1427,7 @@ private fun AdminAddNoteTab(
 
     item {
       Button(
+        enabled = !isSaving,
         onClick = {
           val resolvedCourseId = selectedCourseId.ifBlank { courses.firstOrNull()?.id ?: "" }
           when {
@@ -1328,6 +1435,7 @@ private fun AdminAddNoteTab(
             title.isBlank() -> validationError = "Please enter a note title."
             else -> {
               validationError = null
+              isSaving = true
               val note = NoteEntity(
                 id = "NOTE_" + UUID.randomUUID().toString().take(6),
                 courseId = resolvedCourseId,
@@ -1340,11 +1448,17 @@ private fun AdminAddNoteTab(
                 readTimeMinutes = 5,
                 isPublished = true
               )
-              onSaveNote(note)
-              title = ""
-              summary = ""
-              formulas = ""
-              markdownContent = ""
+              onSaveNote(note) { success, errMsg ->
+                isSaving = false
+                if (success) {
+                  title = ""
+                  summary = ""
+                  formulas = ""
+                  markdownContent = ""
+                } else {
+                  validationError = errMsg ?: "Failed to save note to cloud. Check admin permissions."
+                }
+              }
             }
           }
         },
@@ -1353,7 +1467,10 @@ private fun AdminAddNoteTab(
       ) {
         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(6.dp))
-        Text("Save Chapter $chapterNumber Revision Note", fontWeight = FontWeight.Bold)
+        Text(
+          text = if (isSaving) "Publishing Note..." else "Save Chapter $chapterNumber Revision Note",
+          fontWeight = FontWeight.Bold
+        )
       }
     }
   }
@@ -1363,10 +1480,14 @@ private fun AdminAddNoteTab(
       courseId = selectedCourseId,
       existingCount = courseTopics.size,
       onDismiss = { showAddSectionDialog = false },
-      onSave = { newSection ->
-        onSaveTopic(newSection)
-        selectedTopicId = newSection.id
-        showAddSectionDialog = false
+      onSave = { newSection, done ->
+        onSaveTopic(newSection) { success, errMsg ->
+          done(success, errMsg)
+          if (success) {
+            selectedTopicId = newSection.id
+            showAddSectionDialog = false
+          }
+        }
       }
     )
   }
