@@ -130,7 +130,9 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
   val allCourses by viewModel.allCourses.collectAsStateWithLifecycle()
   val allPublishedNotes by viewModel.allPublishedNotes.collectAsStateWithLifecycle()
   val allPastExams by viewModel.allPastExams.collectAsStateWithLifecycle()
+  val allAdminPastExams by viewModel.allAdminPastExams.collectAsStateWithLifecycle()
   val announcements by viewModel.announcements.collectAsStateWithLifecycle()
+  val allAdminAnnouncements by viewModel.allAdminAnnouncements.collectAsStateWithLifecycle()
   val unreadAnnouncementsCount by viewModel.unreadAnnouncementsCount.collectAsStateWithLifecycle()
 
   val selectedCourse by viewModel.selectedCourse.collectAsStateWithLifecycle()
@@ -656,12 +658,12 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
             AdminPortalScreen(
               courses = allCourses,
               allUsers = allUsers,
-              announcements = announcements,
+              announcements = allAdminAnnouncements,
               accessCodes = allAccessCodes,
               questions = allQuestions,
               notes = allNotes,
               topics = allTopics,
-              pastExams = allPastExams,
+              pastExams = allAdminPastExams,
               cloudDiagnostic = cloudAdminDiagnostic,
               onRefreshPermissions = { viewModel.refreshAdminSession(showStatus = true) },
               onBackClick = { viewModel.navigateBack() },

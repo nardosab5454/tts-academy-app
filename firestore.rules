@@ -41,14 +41,16 @@ service cloud.firestore {
         (isSignedIn() &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
          'role' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN');
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role is string &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.upper() == 'ADMIN');
     }
 
     function isValidId(id) {
       return id is string &&
         id.size() > 0 &&
         id.size() <= 128 &&
-        id.matches('^[a-zA-Z0-9_\\-]+$');
+        !id.matches('.*[/\\\\].*') &&
+        id.matches('^\\S(.*\\S)?$');
     }
 
     function isValidEmailDocId(id) {
@@ -66,11 +68,16 @@ service cloud.firestore {
       return resource.data;
     }
 
-    function isImmutableCreatedAt() {
-      return !('createdAt' in existing()) ||
-        existing().createdAt == null ||
-        !(existing().createdAt is timestamp) ||
-        incoming().createdAt == existing().createdAt;
+    function isValidCreateTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isValidUpdateCreatedAt(data) {
+      return data.createdAt is timestamp && (
+        ('createdAt' in existing() && existing().createdAt is timestamp)
+          ? data.createdAt == existing().createdAt
+          : data.createdAt <= request.time
+      );
     }
 
     function isValidUserProfile(data, docId) {
@@ -92,7 +99,7 @@ service cloud.firestore {
         (!('questionsAnsweredCount' in data) || (data.questionsAnsweredCount is int && data.questionsAnsweredCount >= 0 && data.questionsAnsweredCount <= 1000000)) &&
         (!('correctAnswersCount' in data) || (data.correctAnswersCount is int && data.correctAnswersCount >= 0 && data.correctAnswersCount <= 1000000)) &&
         (!('enrolledCourses' in data) || (data.enrolledCourses is list && data.enrolledCourses.size() <= 100)) &&
-        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.createdAt is timestamp &&
         (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
@@ -102,7 +109,7 @@ service cloud.firestore {
         data.email is string && data.email.lower() == inviteEmail.lower() &&
         data.department is string && data.department.size() > 0 && data.department.size() <= 150 &&
         data.invitedBy is string && data.invitedBy.size() > 0 && data.invitedBy.size() <= 128 &&
-        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.createdAt is timestamp &&
         data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
@@ -117,7 +124,7 @@ service cloud.firestore {
         data.totalQuestions is int && data.totalQuestions > 0 && data.totalQuestions <= 500 &&
         data.score <= data.totalQuestions &&
         data.percentage is int && data.percentage >= 0 && data.percentage <= 100 &&
-        data.completedAt is timestamp && data.completedAt <= request.time;
+        data.completedAt is timestamp;
     }
 
     function isValidBookmark(data, bookmarkId, userId) {
@@ -128,7 +135,7 @@ service cloud.firestore {
         data.questionId is string && isValidId(data.questionId) &&
         data.courseId is string && isValidId(data.courseId) &&
         (!('topicId' in data) || (data.topicId is string && data.topicId.size() <= 128)) &&
-        data.savedAt is timestamp && data.savedAt <= request.time;
+        data.savedAt is timestamp;
     }
 
     function isValidUserStudyNote(data, noteId, userId) {
@@ -140,7 +147,7 @@ service cloud.firestore {
         data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
         data.content is string && data.content.size() > 0 && data.content.size() <= 20000 &&
         (!('tags' in data) || (data.tags is list && data.tags.size() <= 20)) &&
-        data.createdAt is timestamp && data.createdAt <= request.time;
+        data.createdAt is timestamp;
     }
 
     function isValidAnnouncement(data, docId) {
@@ -154,7 +161,7 @@ service cloud.firestore {
         (!('author' in data) || (data.author is string && data.author.size() <= 100)) &&
         data.isUrgent is bool &&
         data.isPublished is bool &&
-        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.createdAt is timestamp &&
         (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
@@ -175,7 +182,7 @@ service cloud.firestore {
         (!('totalNotes' in data) || (data.totalNotes is int && data.totalNotes >= 0 && data.totalNotes <= 100000)) &&
         data.isPublished is bool &&
         (!('orderIndex' in data) || (data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 10000)) &&
-        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.createdAt is timestamp &&
         (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
@@ -187,7 +194,7 @@ service cloud.firestore {
         data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
         (!('description' in data) || (data.description is string && data.description.size() <= 2000)) &&
         data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 10000 &&
-        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.createdAt is timestamp &&
         (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
@@ -220,7 +227,7 @@ service cloud.firestore {
         (!('examType' in data) || (data.examType is string && data.examType.size() <= 50)) &&
         (!('isVerified' in data) || data.isVerified is bool) &&
         (!('isPublished' in data) || data.isPublished is bool) &&
-        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.createdAt is timestamp &&
         (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
@@ -241,7 +248,7 @@ service cloud.firestore {
         data.contentMarkdown is string && data.contentMarkdown.size() <= 100000 &&
         (!('content' in data) || (data.content is string && data.content.size() <= 100000)) &&
         data.isPublished is bool &&
-        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.createdAt is timestamp &&
         (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
@@ -267,7 +274,7 @@ service cloud.firestore {
         (!('isVerified' in data) || data.isVerified is bool) &&
         (!('documentSummary' in data) || (data.documentSummary is string && data.documentSummary.size() <= 5000)) &&
         data.isPublished is bool &&
-        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.createdAt is timestamp &&
         (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
@@ -278,7 +285,7 @@ service cloud.firestore {
           'isRedeemed', 'redeemedByUserId', 'redeemedByEmail', 'redeemedAt', 'note'
         ]) &&
         data.code == codeId && isValidId(data.code) &&
-        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.createdAt is timestamp &&
         (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time)) &&
         data.expiresAt is timestamp &&
         data.createdByAdminId is string && isValidId(data.createdByAdminId) &&
@@ -295,7 +302,8 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow create: if isSignedIn() &&
         isValidId(userId) &&
-        isValidUserProfile(incoming(), userId) && (
+        isValidUserProfile(incoming(), userId) &&
+        isValidCreateTimestamp(incoming().createdAt) && (
           (isOwner(userId) &&
            incoming().role == 'STUDENT' &&
            incoming().isPremium == false &&
@@ -305,7 +313,7 @@ service cloud.firestore {
       allow update: if isSignedIn() &&
         isValidId(userId) &&
         isValidUserProfile(incoming(), userId) &&
-        isImmutableCreatedAt() && (
+        isValidUpdateCreatedAt(incoming()) && (
           (isOwner(userId) &&
            (!('userId' in existing()) || existing().userId == null || incoming().userId == existing().userId) &&
            (!('email' in existing()) || existing().email == null || existing().email == '' || incoming().email == existing().email) &&
@@ -334,7 +342,8 @@ service cloud.firestore {
         allow list: if isValidId(userId) && (isOwner(userId) || isAdmin());
         allow create: if isValidId(userId) && isValidId(attemptId) &&
           (isOwner(userId) || isAdmin()) &&
-          isValidQuizAttempt(incoming(), attemptId, userId);
+          isValidQuizAttempt(incoming(), attemptId, userId) &&
+          isValidCreateTimestamp(incoming().completedAt);
         allow update: if isValidId(userId) && isValidId(attemptId) &&
           (isOwner(userId) || isAdmin()) &&
           isValidQuizAttempt(incoming(), attemptId, userId) &&
@@ -348,7 +357,8 @@ service cloud.firestore {
         allow list: if isValidId(userId) && (isOwner(userId) || isAdmin());
         allow create: if isValidId(userId) && isValidId(bookmarkId) &&
           (isOwner(userId) || isAdmin()) &&
-          isValidBookmark(incoming(), bookmarkId, userId);
+          isValidBookmark(incoming(), bookmarkId, userId) &&
+          isValidCreateTimestamp(incoming().savedAt);
         allow update: if isValidId(userId) && isValidId(bookmarkId) &&
           (isOwner(userId) || isAdmin()) &&
           isValidBookmark(incoming(), bookmarkId, userId) &&
@@ -362,11 +372,12 @@ service cloud.firestore {
         allow list: if isValidId(userId) && (isOwner(userId) || isAdmin());
         allow create: if isValidId(userId) && isValidId(noteId) &&
           (isOwner(userId) || isAdmin()) &&
-          isValidUserStudyNote(incoming(), noteId, userId);
+          isValidUserStudyNote(incoming(), noteId, userId) &&
+          isValidCreateTimestamp(incoming().createdAt);
         allow update: if isValidId(userId) && isValidId(noteId) &&
           (isOwner(userId) || isAdmin()) &&
           isValidUserStudyNote(incoming(), noteId, userId) &&
-          isImmutableCreatedAt();
+          isValidUpdateCreatedAt(incoming());
         allow delete: if isValidId(userId) && isValidId(noteId) && (isOwner(userId) || isAdmin());
       }
     }
@@ -378,8 +389,8 @@ service cloud.firestore {
         isAdmin()
       );
       allow list: if isAdmin();
-      allow create: if isSignedIn() && isValidEmailDocId(inviteEmail) && isValidAdminInvite(incoming(), inviteEmail) && isAdmin();
-      allow update: if isSignedIn() && isValidEmailDocId(inviteEmail) && isValidAdminInvite(incoming(), inviteEmail) && isImmutableCreatedAt() && isAdmin();
+      allow create: if isSignedIn() && isValidEmailDocId(inviteEmail) && isValidAdminInvite(incoming(), inviteEmail) && isValidCreateTimestamp(incoming().createdAt) && isAdmin();
+      allow update: if isSignedIn() && isValidEmailDocId(inviteEmail) && isValidAdminInvite(incoming(), inviteEmail) && isValidUpdateCreatedAt(incoming()) && isAdmin();
       allow delete: if isSignedIn() && isValidEmailDocId(inviteEmail) && isAdmin();
     }
 
@@ -387,8 +398,8 @@ service cloud.firestore {
     match /announcements/{announcementId} {
       allow get: if isSignedIn() && isValidId(announcementId);
       allow list: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(announcementId) && isValidAnnouncement(incoming(), announcementId) && isAdmin();
-      allow update: if isSignedIn() && isValidId(announcementId) && isValidAnnouncement(incoming(), announcementId) && isImmutableCreatedAt() && isAdmin();
+      allow create: if isSignedIn() && isValidId(announcementId) && isValidAnnouncement(incoming(), announcementId) && isValidCreateTimestamp(incoming().createdAt) && isAdmin();
+      allow update: if isSignedIn() && isValidId(announcementId) && isValidAnnouncement(incoming(), announcementId) && isValidUpdateCreatedAt(incoming()) && isAdmin();
       allow delete: if isSignedIn() && isValidId(announcementId) && isAdmin();
     }
 
@@ -396,8 +407,8 @@ service cloud.firestore {
     match /courses/{courseId} {
       allow get: if isSignedIn() && isValidId(courseId);
       allow list: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(courseId) && isValidCourse(incoming(), courseId) && isAdmin();
-      allow update: if isSignedIn() && isValidId(courseId) && isValidCourse(incoming(), courseId) && isImmutableCreatedAt() && isAdmin();
+      allow create: if isSignedIn() && isValidId(courseId) && isValidCourse(incoming(), courseId) && isValidCreateTimestamp(incoming().createdAt) && isAdmin();
+      allow update: if isSignedIn() && isValidId(courseId) && isValidCourse(incoming(), courseId) && isValidUpdateCreatedAt(incoming()) && isAdmin();
       allow delete: if isSignedIn() && isValidId(courseId) && isAdmin();
     }
 
@@ -405,8 +416,8 @@ service cloud.firestore {
     match /topics/{topicId} {
       allow get: if isSignedIn() && isValidId(topicId);
       allow list: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(topicId) && isValidTopic(incoming(), topicId) && isAdmin();
-      allow update: if isSignedIn() && isValidId(topicId) && isValidTopic(incoming(), topicId) && isImmutableCreatedAt() && isAdmin();
+      allow create: if isSignedIn() && isValidId(topicId) && isValidTopic(incoming(), topicId) && isValidCreateTimestamp(incoming().createdAt) && isAdmin();
+      allow update: if isSignedIn() && isValidId(topicId) && isValidTopic(incoming(), topicId) && isValidUpdateCreatedAt(incoming()) && isAdmin();
       allow delete: if isSignedIn() && isValidId(topicId) && isAdmin();
     }
 
@@ -414,8 +425,8 @@ service cloud.firestore {
     match /questions/{questionId} {
       allow get: if isSignedIn() && isValidId(questionId);
       allow list: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(questionId) && isValidQuestion(incoming(), questionId) && isAdmin();
-      allow update: if isSignedIn() && isValidId(questionId) && isValidQuestion(incoming(), questionId) && isImmutableCreatedAt() && isAdmin();
+      allow create: if isSignedIn() && isValidId(questionId) && isValidQuestion(incoming(), questionId) && isValidCreateTimestamp(incoming().createdAt) && isAdmin();
+      allow update: if isSignedIn() && isValidId(questionId) && isValidQuestion(incoming(), questionId) && isValidUpdateCreatedAt(incoming()) && isAdmin();
       allow delete: if isSignedIn() && isValidId(questionId) && isAdmin();
     }
 
@@ -423,8 +434,8 @@ service cloud.firestore {
     match /notes/{noteId} {
       allow get: if isSignedIn() && isValidId(noteId);
       allow list: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(noteId) && isValidNote(incoming(), noteId) && isAdmin();
-      allow update: if isSignedIn() && isValidId(noteId) && isValidNote(incoming(), noteId) && isImmutableCreatedAt() && isAdmin();
+      allow create: if isSignedIn() && isValidId(noteId) && isValidNote(incoming(), noteId) && isValidCreateTimestamp(incoming().createdAt) && isAdmin();
+      allow update: if isSignedIn() && isValidId(noteId) && isValidNote(incoming(), noteId) && isValidUpdateCreatedAt(incoming()) && isAdmin();
       allow delete: if isSignedIn() && isValidId(noteId) && isAdmin();
     }
 
@@ -432,8 +443,8 @@ service cloud.firestore {
     match /past_exams/{examId} {
       allow get: if isSignedIn() && isValidId(examId);
       allow list: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(examId) && isValidPastExam(incoming(), examId) && isAdmin();
-      allow update: if isSignedIn() && isValidId(examId) && isValidPastExam(incoming(), examId) && isImmutableCreatedAt() && isAdmin();
+      allow create: if isSignedIn() && isValidId(examId) && isValidPastExam(incoming(), examId) && isValidCreateTimestamp(incoming().createdAt) && isAdmin();
+      allow update: if isSignedIn() && isValidId(examId) && isValidPastExam(incoming(), examId) && isValidUpdateCreatedAt(incoming()) && isAdmin();
       allow delete: if isSignedIn() && isValidId(examId) && isAdmin();
     }
 
@@ -441,11 +452,11 @@ service cloud.firestore {
     match /access_codes/{code} {
       allow get: if isSignedIn() && isValidId(code);
       allow list: if isAdmin();
-      allow create: if isSignedIn() && isValidId(code) && isValidAccessCode(incoming(), code) && isAdmin();
+      allow create: if isSignedIn() && isValidId(code) && isValidAccessCode(incoming(), code) && isValidCreateTimestamp(incoming().createdAt) && isAdmin();
       allow update: if isSignedIn() &&
         isValidId(code) &&
         isValidAccessCode(incoming(), code) &&
-        isImmutableCreatedAt() && (
+        isValidUpdateCreatedAt(incoming()) && (
           (existing().isRedeemed == false &&
            existing().expiresAt > request.time &&
            incoming().isRedeemed == true &&

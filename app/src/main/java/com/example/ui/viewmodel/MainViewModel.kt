@@ -173,13 +173,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             showMessage("Cloud sync warning: ${report.errors.first()}")
           }
         }.onFailure { err ->
+          val fallbackRole = if (repository.isSystemAdminEmail(email)) "ADMIN" else "STUDENT"
           val localUser = repository.syncFirebaseUser(
             uid = uid,
             email = email,
             name = name,
-            role = "STUDENT"
+            role = fallbackRole
           )
           loadUserData(localUser.id)
+          if (isOnline.value) {
+            repository.syncFromCloudNow()
+          }
           _cloudAdminDiagnostic.value = firestoreRepository.diagnoseAdminAccess()
           if (isOnline.value) {
             showMessage("Cloud profile sync failed: ${err.message}")
@@ -301,6 +305,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
   val announcements: StateFlow<List<AnnouncementEntity>> = repository.getPublishedAnnouncementsFlow()
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+  val allAdminAnnouncements: StateFlow<List<AnnouncementEntity>> = repository.getAllAnnouncementsFlow()
     .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
   private val _viewedAnnouncementIds = MutableStateFlow<Set<String>>(emptySet())
@@ -560,6 +567,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   fun signOut() {
     viewModelScope.launch {
       _cloudAdminDiagnostic.value = null
+      try {
+        androidx.credentials.CredentialManager.create(getApplication())
+          .clearCredentialState(androidx.credentials.ClearCredentialStateRequest())
+      } catch (_: Exception) {}
       try {
         FirebaseAuth.getInstance().signOut()
       } catch (_: Exception) {}
@@ -1423,13 +1434,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private fun hasFirebaseCloudSession(): Boolean = FirebaseAuth.getInstance().currentUser != null
 
   private fun validateAdminCloudSession(): String? {
-    if (currentUser.value?.role != "ADMIN") {
-      val msg = "Unauthorized: Administrator permissions required."
+    val fbUser = FirebaseAuth.getInstance().currentUser
+    if (fbUser == null) {
+      val msg = "Google Admin sign-in session expired or missing. Please sign out and sign in with Google."
       showMessage(msg)
       return msg
     }
-    if (!hasFirebaseCloudSession()) {
-      val msg = "Google Admin sign-in session expired or missing. Please sign out and sign in with Google."
+    val isAuthorizedAdmin = currentUser.value?.role == "ADMIN" ||
+      repository.isSystemAdminEmail(fbUser.email ?: "")
+    if (!isAuthorizedAdmin) {
+      val msg = "Unauthorized: Administrator permissions required."
       showMessage(msg)
       return msg
     }

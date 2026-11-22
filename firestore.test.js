@@ -681,4 +681,124 @@ test("Legacy student user doc with extra unknown fields, null fields, and numeri
   );
 });
 
+test("Legacy IDs with spaces/dots, lowercase 'admin' role doc, and preserved clock-skewed createdAt succeed while path-traversal and student writes fail", async () => {
+  const futureSkew = new Date(Date.now() + 60 * 1000);
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const rawDb = ctx.firestore();
+    await rawDb.collection("users").doc("lowercase_admin_uid").set({
+      userId: "lowercase_admin_uid",
+      email: "faculty@ttsacademy.edu",
+      name: "Faculty Admin",
+      role: "admin",
+      isPremium: true,
+      createdAt: new Date(Date.now() - 10000),
+    });
+    await rawDb.collection("courses").doc("MATH 101.v1").set({
+      id: "MATH 101.v1",
+      code: "MATH 101",
+      title: "Freshman Calculus",
+      category: "STEM",
+      isPublished: true,
+      createdAt: futureSkew,
+    });
+  });
+
+  const lowerAdminDb = testEnv.authenticatedContext("lowercase_admin_uid", {
+    email: "faculty@ttsacademy.edu",
+    email_verified: true,
+  }).firestore();
+  const abebeDb = verifiedAdminContext("abebe_uid", "abebewottee@gmail.com").firestore();
+  const studentDb = testEnv.authenticatedContext(ALICE_UID, {
+    email: "alice@ttsacademy.edu",
+    email_verified: true,
+  }).firestore();
+
+  // Lowercase 'admin' role user can update existing course with space/dot ID & preserved future-skewed createdAt
+  await assertSucceeds(
+    lowerAdminDb.collection("courses").doc("MATH 101.v1").set({
+      id: "MATH 101.v1",
+      code: "MATH 101",
+      title: "Freshman Calculus Updated",
+      description: "Limits and Derivatives",
+      category: "STEM",
+      iconName: "school",
+      totalQuestions: 1,
+      totalNotes: 1,
+      isPublished: true,
+      orderIndex: 1,
+      createdAt: futureSkew,
+      updatedAt: new Date(),
+    })
+  );
+
+  // Bootstrapped admin (abebewottee@gmail.com) adds topic, note, question, past_exam referencing legacy courseId
+  const now = new Date();
+  await assertSucceeds(
+    abebeDb.collection("topics").doc("T.1 Limits").set({
+      id: "T.1 Limits",
+      courseId: "MATH 101.v1",
+      title: "Limits and Continuity",
+      description: "Core limit theorems",
+      orderIndex: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertSucceeds(
+    abebeDb.collection("notes").doc("NOTE.1.1").set({
+      id: "NOTE.1.1",
+      courseId: "MATH 101.v1",
+      topicId: "T.1 Limits",
+      title: "Chapter 1: Limits",
+      chapterNumber: 1,
+      summary: "Epsilon-delta definition",
+      keyFormulas: "lim x->0 sin(x)/x = 1",
+      contentMarkdown: "# Limits\nComplete lecture notes",
+      content: "# Limits\nComplete lecture notes",
+      isPublished: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertSucceeds(
+    abebeDb.collection("questions").doc("Q.1.1").set({
+      id: "Q.1.1",
+      courseId: "MATH 101.v1",
+      topicId: "T.1 Limits",
+      questionText: "What is lim(x->0) sin(x)/x?",
+      optionA: "1",
+      optionB: "0",
+      optionC: "Infinity",
+      optionD: "-1",
+      correctAnswer: "A",
+      isPublished: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Student can immediately read the newly published legacy-ID course, topic, note, and question
+  await assertSucceeds(studentDb.collection("courses").doc("MATH 101.v1").get());
+  await assertSucceeds(studentDb.collection("topics").doc("T.1 Limits").get());
+  await assertSucceeds(studentDb.collection("notes").doc("NOTE.1.1").get());
+  await assertSucceeds(studentDb.collection("questions").doc("Q.1.1").get());
+
+  // Student still cannot write or delete
+  await assertFails(studentDb.collection("notes").doc("NOTE.1.1").delete());
+
+  // Leading/trailing whitespace IDs are still rejected
+  await assertFails(
+    abebeDb.collection("courses").doc(" BAD_ID ").set({
+      id: " BAD_ID ",
+      code: "BAD",
+      title: "Bad",
+      category: "STEM",
+      isPublished: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+});
+
+
 

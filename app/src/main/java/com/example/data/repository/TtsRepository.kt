@@ -18,14 +18,18 @@ import com.example.data.local.model.UserEntity
 import com.example.data.local.model.UserPreferenceEntity
 import com.example.util.NetworkConnectivityObserver
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -158,7 +162,8 @@ class TtsRepository(
       userDao.updateUser(existingAbebe.copy(role = "ADMIN", isPremium = true))
     }
 
-    val activeId = prefDao.getPreference("active_user_id")
+    val fbUid = FirebaseAuth.getInstance().currentUser?.uid
+    val activeId = fbUid ?: prefDao.getPreference("active_user_id")
     val user = if (!activeId.isNullOrBlank()) userDao.getUserById(activeId) else null
     val effectiveUser = if (user != null) {
       user.copy(isPremium = user.role == "ADMIN" || user.isPremium)
@@ -225,160 +230,151 @@ class TtsRepository(
     validCourseIds.forEach { courseDao.recalculateCounts(it) }
   }
 
+  private suspend fun <T> collectWithRetry(
+    tag: String,
+    flowProvider: () -> Flow<T>,
+    onEmit: suspend (T) -> Unit
+  ) {
+    var backoffMs = 2_000L
+    while (currentCoroutineContext().isActive && FirebaseAuth.getInstance().currentUser != null) {
+      try {
+        flowProvider().collect { value ->
+          backoffMs = 2_000L
+          onEmit(value)
+        }
+        delay(backoffMs)
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        Log.w("TtsRepository", "Realtime stream '$tag' interrupted; retrying in ${backoffMs}ms", e)
+        delay(backoffMs)
+        backoffMs = (backoffMs * 2).coerceAtMost(15_000L)
+      }
+    }
+  }
+
   fun startRealtimeCloudSync(scope: CoroutineScope) {
     val fs = firestoreRepository ?: return
     val auth = FirebaseAuth.getInstance()
 
-    // Attach Firestore snapshot listeners only while signed into Firebase Auth
+    // Attach auto-recovering Firestore snapshot listeners while signed into Firebase Auth
     scope.launch(Dispatchers.IO) {
       currentUser.collectLatest { user ->
         if (user != null && auth.currentUser != null) {
           coroutineScope {
             if (user.role == "ADMIN") {
               launch {
-                try {
-                  fs.observeAllUsers().collect { cloudUsers ->
-                    if (cloudUsers.isNotEmpty()) {
-                      cloudUsers.forEach { profile ->
-                        val cleanId = if (profile.userId.isNotBlank()) profile.userId else profile.id
-                        if (cleanId.isNotBlank()) {
-                          val existing = userDao.getUserById(cleanId)
-                          val isAdmin = profile.role.equals("ADMIN", ignoreCase = true)
-                          val isPrem = profile.isPremium || isAdmin
-                          val currentUid = _currentUser.value?.id
-                          if (existing == null) {
-                            val entity = profile.toEntity().copy(isPremium = isPrem, role = if (isAdmin) "ADMIN" else profile.role)
-                            userDao.insertUser(entity)
-                            if (currentUid == cleanId) {
-                              _currentUser.value = entity
-                            }
-                          } else {
-                            val updated = existing.copy(
-                              name = profile.name.ifBlank { existing.name },
-                              role = if (isAdmin) "ADMIN" else profile.role.ifBlank { existing.role },
-                              department = profile.department.ifBlank { existing.department },
-                              studentId = profile.studentId.ifBlank { existing.studentId },
-                              isPremium = existing.isPremium || isPrem
-                            )
-                            userDao.updateUser(updated)
-                            if (currentUid == cleanId) {
-                              _currentUser.value = updated
-                            }
+                collectWithRetry("users", { fs.observeAllUsers() }) { cloudUsers ->
+                  if (cloudUsers.isNotEmpty()) {
+                    cloudUsers.forEach { profile ->
+                      val cleanId = if (profile.userId.isNotBlank()) profile.userId else profile.id
+                      if (cleanId.isNotBlank()) {
+                        val existing = userDao.getUserById(cleanId)
+                        val isAdmin = profile.role.equals("ADMIN", ignoreCase = true)
+                        val isPrem = profile.isPremium || isAdmin
+                        val currentUid = _currentUser.value?.id
+                        if (existing == null) {
+                          val entity = profile.toEntity().copy(isPremium = isPrem, role = if (isAdmin) "ADMIN" else profile.role)
+                          userDao.insertUser(entity)
+                          if (currentUid == cleanId) {
+                            _currentUser.value = entity
+                          }
+                        } else {
+                          val updated = existing.copy(
+                            name = profile.name.ifBlank { existing.name },
+                            role = if (isAdmin) "ADMIN" else profile.role.ifBlank { existing.role },
+                            department = profile.department.ifBlank { existing.department },
+                            studentId = profile.studentId.ifBlank { existing.studentId },
+                            isPremium = existing.isPremium || isPrem
+                          )
+                          userDao.updateUser(updated)
+                          if (currentUid == cleanId) {
+                            _currentUser.value = updated
                           }
                         }
                       }
                     }
                   }
-                } catch (e: Exception) {
-                  Log.e("TtsRepository", "Cloud users stream error", e)
                 }
               }
               launch {
-                try {
-                  fs.observeAccessCodes().collect { cloudCodes ->
-                    if (cloudCodes.isNotEmpty()) {
-                      val entities = cloudCodes.map { it.toEntity() }
-                      accessCodeDao.insertAccessCodes(entities)
-                      accessCodeDao.deleteAccessCodesNotIn(entities.map { it.code })
-                    }
+                collectWithRetry("access_codes", { fs.observeAccessCodes() }) { cloudCodes ->
+                  if (cloudCodes.isNotEmpty()) {
+                    val entities = cloudCodes.map { it.toEntity() }
+                    accessCodeDao.insertAccessCodes(entities)
+                    accessCodeDao.deleteAccessCodesNotIn(entities.map { it.code })
                   }
-                } catch (e: Exception) {
-                  Log.e("TtsRepository", "Cloud access codes stream error", e)
                 }
               }
             }
 
             // Announcements stream
             launch {
-              try {
-                fs.observeAnnouncements().collect { cloudAnnouncements ->
-                  if (cloudAnnouncements.isNotEmpty()) {
-                    val entities = cloudAnnouncements.map { it.toEntity() }
-                    announcementDao.insertAnnouncements(entities)
-                    announcementDao.deleteAnnouncementsNotIn(entities.map { it.id })
-                  }
+              collectWithRetry("announcements", { fs.observeAnnouncements() }) { cloudAnnouncements ->
+                if (cloudAnnouncements.isNotEmpty()) {
+                  val entities = cloudAnnouncements.map { it.toEntity() }
+                  announcementDao.insertAnnouncements(entities)
+                  announcementDao.deleteAnnouncementsNotIn(entities.map { it.id })
                 }
-              } catch (e: Exception) {
-                Log.e("TtsRepository", "Cloud announcements stream error", e)
               }
             }
 
             // Courses stream
             launch {
-              try {
-                fs.observeCourses().collect { cloudCourses ->
-                  if (cloudCourses.isNotEmpty()) {
-                    reconcileCoursesFromCloud(cloudCourses.map { it.toEntity() })
-                  }
+              collectWithRetry("courses", { fs.observeCourses() }) { cloudCourses ->
+                if (cloudCourses.isNotEmpty()) {
+                  reconcileCoursesFromCloud(cloudCourses.map { it.toEntity() })
                 }
-              } catch (e: Exception) {
-                Log.e("TtsRepository", "Cloud courses stream error", e)
               }
             }
 
             // Topics stream
             launch {
-              try {
-                fs.observeTopics().collect { cloudTopics ->
-                  if (cloudTopics.isNotEmpty()) {
-                    val entities = cloudTopics.map { it.toEntity() }
-                    topicDao.insertTopics(entities)
-                    topicDao.deleteTopicsNotIn(entities.map { it.id })
-                  }
+              collectWithRetry("topics", { fs.observeTopics() }) { cloudTopics ->
+                if (cloudTopics.isNotEmpty()) {
+                  val entities = cloudTopics.map { it.toEntity() }
+                  topicDao.insertTopics(entities)
+                  topicDao.deleteTopicsNotIn(entities.map { it.id })
                 }
-              } catch (e: Exception) {
-                Log.e("TtsRepository", "Cloud topics stream error", e)
               }
             }
 
             // Questions stream
             launch {
-              try {
-                fs.observeQuestions().collect { cloudQuestions ->
-                  if (cloudQuestions.isNotEmpty()) {
-                    val entities = cloudQuestions.map { it.toEntity() }
-                    questionDao.insertQuestions(entities)
-                    questionDao.deleteQuestionsNotIn(entities.map { it.id })
-                    courseDao.getAllCourses().forEach { c ->
-                      courseDao.recalculateCounts(c.id)
-                    }
+              collectWithRetry("questions", { fs.observeQuestions() }) { cloudQuestions ->
+                if (cloudQuestions.isNotEmpty()) {
+                  val entities = cloudQuestions.map { it.toEntity() }
+                  questionDao.insertQuestions(entities)
+                  questionDao.deleteQuestionsNotIn(entities.map { it.id })
+                  courseDao.getAllCourses().forEach { c ->
+                    courseDao.recalculateCounts(c.id)
                   }
                 }
-              } catch (e: Exception) {
-                Log.e("TtsRepository", "Cloud questions stream error", e)
               }
             }
 
             // Notes stream
             launch {
-              try {
-                fs.observeNotes().collect { cloudNotes ->
-                  if (cloudNotes.isNotEmpty()) {
-                    val entities = cloudNotes.map { it.toEntity() }
-                    noteDao.insertNotes(entities)
-                    noteDao.deleteNotesNotIn(entities.map { it.id })
-                    courseDao.getAllCourses().forEach { c ->
-                      courseDao.recalculateCounts(c.id)
-                    }
+              collectWithRetry("notes", { fs.observeNotes() }) { cloudNotes ->
+                if (cloudNotes.isNotEmpty()) {
+                  val entities = cloudNotes.map { it.toEntity() }
+                  noteDao.insertNotes(entities)
+                  noteDao.deleteNotesNotIn(entities.map { it.id })
+                  courseDao.getAllCourses().forEach { c ->
+                    courseDao.recalculateCounts(c.id)
                   }
                 }
-              } catch (e: Exception) {
-                Log.e("TtsRepository", "Cloud notes stream error", e)
               }
             }
 
             // Past exams stream
             launch {
-              try {
-                fs.observePastExams().collect { cloudExams ->
-                  if (cloudExams.isNotEmpty()) {
-                    val entities = cloudExams.map { it.toEntity() }
-                    pastExamDao.insertPastExams(entities)
-                    pastExamDao.deletePastExamsNotIn(entities.map { it.id })
-                  }
+              collectWithRetry("past_exams", { fs.observePastExams() }) { cloudExams ->
+                if (cloudExams.isNotEmpty()) {
+                  val entities = cloudExams.map { it.toEntity() }
+                  pastExamDao.insertPastExams(entities)
+                  pastExamDao.deletePastExamsNotIn(entities.map { it.id })
                 }
-              } catch (e: Exception) {
-                Log.e("TtsRepository", "Cloud past exams stream error", e)
               }
             }
           }
@@ -960,8 +956,10 @@ class TtsRepository(
     if (FirebaseAuth.getInstance().currentUser == null) {
       throw IllegalStateException("Google Administrator sign-in required to save courses to cloud.")
     }
-    fs.saveCourse(course).getOrElse { throw it }
-    courseDao.insertCourse(course)
+    val cleanCourse = course.copy(id = course.id.trim())
+    fs.saveCourse(cleanCourse).getOrElse { throw it }
+    courseDao.insertCourse(cleanCourse)
+    courseDao.recalculateCounts(cleanCourse.id)
   }
 
   suspend fun deleteCourse(courseId: String) = withContext(Dispatchers.IO) {
@@ -1033,9 +1031,19 @@ class TtsRepository(
     if (FirebaseAuth.getInstance().currentUser == null) {
       throw IllegalStateException("Google Administrator sign-in required to save questions to cloud.")
     }
-    fs.saveQuestion(question).getOrElse { throw it }
-    questionDao.insertQuestion(question)
-    courseDao.recalculateCounts(question.courseId)
+    val cleanQuestion = question.copy(
+      id = question.id.trim(),
+      courseId = question.courseId.trim(),
+      topicId = question.topicId.trim().ifBlank { "T_GEN" }
+    )
+    fs.saveQuestion(cleanQuestion).getOrElse { throw it }
+    questionDao.insertQuestion(cleanQuestion)
+    courseDao.recalculateCounts(cleanQuestion.courseId)
+    courseDao.getCourseById(cleanQuestion.courseId)?.let { updatedCourse ->
+      try {
+        fs.updateCourseCounts(updatedCourse.id, updatedCourse.totalQuestions, updatedCourse.totalNotes)
+      } catch (_: Exception) {}
+    }
   }
 
   suspend fun deleteQuestion(questionId: String, courseId: String? = null) = withContext(Dispatchers.IO) {
@@ -1050,6 +1058,11 @@ class TtsRepository(
     questionDao.deleteQuestion(questionId)
     if (targetCourseId != null) {
       courseDao.recalculateCounts(targetCourseId)
+      courseDao.getCourseById(targetCourseId)?.let { updatedCourse ->
+        try {
+          fs.updateCourseCounts(updatedCourse.id, updatedCourse.totalQuestions, updatedCourse.totalNotes)
+        } catch (_: Exception) {}
+      }
     }
   }
 
@@ -1076,9 +1089,19 @@ class TtsRepository(
     if (FirebaseAuth.getInstance().currentUser == null) {
       throw IllegalStateException("Google Administrator sign-in required to save notes to cloud.")
     }
-    fs.saveNote(note).getOrElse { throw it }
-    noteDao.insertNote(note)
-    courseDao.recalculateCounts(note.courseId)
+    val cleanNote = note.copy(
+      id = note.id.trim(),
+      courseId = note.courseId.trim(),
+      topicId = note.topicId.trim().ifBlank { "T_GEN" }
+    )
+    fs.saveNote(cleanNote).getOrElse { throw it }
+    noteDao.insertNote(cleanNote)
+    courseDao.recalculateCounts(cleanNote.courseId)
+    courseDao.getCourseById(cleanNote.courseId)?.let { updatedCourse ->
+      try {
+        fs.updateCourseCounts(updatedCourse.id, updatedCourse.totalQuestions, updatedCourse.totalNotes)
+      } catch (_: Exception) {}
+    }
   }
 
   suspend fun deleteNote(noteId: String, courseId: String? = null) = withContext(Dispatchers.IO) {
@@ -1093,6 +1116,11 @@ class TtsRepository(
     noteDao.deleteNote(noteId)
     if (targetCourseId != null) {
       courseDao.recalculateCounts(targetCourseId)
+      courseDao.getCourseById(targetCourseId)?.let { updatedCourse ->
+        try {
+          fs.updateCourseCounts(updatedCourse.id, updatedCourse.totalQuestions, updatedCourse.totalNotes)
+        } catch (_: Exception) {}
+      }
     }
   }
 
@@ -1252,7 +1280,8 @@ class TtsRepository(
     val fbUser = FirebaseAuth.getInstance().currentUser
       ?: throw IllegalStateException("Please sign in with your Google Admin account to publish access codes.")
     val admin = _currentUser.value
-    if (admin?.role != "ADMIN") {
+    val isAuthorizedAdmin = admin?.role == "ADMIN" || isSystemAdminEmail(fbUser.email ?: "")
+    if (!isAuthorizedAdmin) {
       throw IllegalStateException("Unauthorized: Only system administrators can generate access codes.")
     }
 
