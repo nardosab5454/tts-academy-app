@@ -109,9 +109,7 @@ fun AppContent(viewModel: MainViewModel) {
     SignInScreen(
       isSyncingProfile = firebaseUser != null && (currentUser == null || isAuthenticating),
       onAuthSuccess = {
-        val user = FirebaseAuth.getInstance().currentUser
-        firebaseUser = user
-        user?.let { viewModel.syncWithFirebaseUser(it) }
+        firebaseUser = FirebaseAuth.getInstance().currentUser
       }
     )
   } else {

@@ -800,5 +800,196 @@ test("Legacy IDs with spaces/dots, lowercase 'admin' role doc, and preserved clo
   );
 });
 
+test("Exact Kotlin client payloads succeed across all admin collections for spikenarrd, abebewottee, and role-promoted ADMIN", async () => {
+  const spikeDb = verifiedAdminContext("spike_uid", "spikenarrd@gmail.com").firestore();
+  const abebeDb = verifiedAdminContext("abebe_uid", "abebewottee@gmail.com").firestore();
+  const createdAt = new Date(Date.now() - 2000);
+  const updatedAt = new Date();
+
+  // Promote a non-bootstrapped user via users/{uid}.role == 'ADMIN'
+  await assertSucceeds(
+    spikeDb.collection("users").doc("promoted_admin_uid").set({
+      userId: "promoted_admin_uid",
+      email: "dean@ttsacademy.edu",
+      name: "Faculty Dean",
+      role: "ADMIN",
+      department: "Science College",
+      studentId: "ADM-DEAN01",
+      isPremium: true,
+      activationCode: "",
+      questionsAnsweredCount: 0,
+      correctAnswersCount: 0,
+      enrolledCourses: ["MATH_101"],
+      createdAt,
+      updatedAt,
+    })
+  );
+
+  const promotedDb = verifiedAdminContext("promoted_admin_uid", "dean@ttsacademy.edu").firestore();
+
+  // Announcement (exact Kotlin saveAnnouncement payload)
+  await assertSucceeds(
+    abebeDb.collection("announcements").doc("ann_12345678").set({
+      id: "ann_12345678",
+      title: "Final Exam Schedule",
+      content: "All freshman final exams start next week.",
+      message: "All freshman final exams start next week.",
+      category: "EXAM",
+      isUrgent: true,
+      isPublished: true,
+      createdAt,
+      updatedAt,
+    })
+  );
+
+  // Course (exact Kotlin saveCourse payload)
+  await assertSucceeds(
+    spikeDb.collection("courses").doc("C_AB12CD").set({
+      id: "C_AB12CD",
+      code: "MATH 103",
+      title: "Linear Algebra",
+      description: "Matrices, vectors, and eigenvalues",
+      category: "STEM",
+      iconName: "school",
+      totalQuestions: 0,
+      totalNotes: 0,
+      isPublished: true,
+      orderIndex: 15,
+      createdAt,
+      updatedAt,
+    })
+  );
+
+  // Topic (exact Kotlin saveTopic payload)
+  await assertSucceeds(
+    promotedDb.collection("topics").doc("T_123456").set({
+      id: "T_123456",
+      courseId: "C_AB12CD",
+      title: "Vector Spaces",
+      description: "Basis and dimension",
+      orderIndex: 1,
+      createdAt,
+      updatedAt,
+    })
+  );
+
+  // Question (exact Kotlin saveQuestion payload with optional empty strings)
+  await assertSucceeds(
+    promotedDb.collection("questions").doc("Q_123456").set({
+      id: "Q_123456",
+      courseId: "C_AB12CD",
+      topicId: "T_123456",
+      questionText: "What is the determinant of the 2x2 identity matrix?",
+      optionA: "1",
+      optionB: "0",
+      optionC: "",
+      optionD: "",
+      correctAnswer: "A",
+      explanationGeneral: "",
+      explanationA: "",
+      explanationB: "",
+      explanationC: "",
+      explanationD: "",
+      difficulty: "MEDIUM",
+      isPastExam: false,
+      examYear: "",
+      examType: "",
+      isVerified: true,
+      isPublished: true,
+      createdAt,
+      updatedAt,
+    })
+  );
+
+  // Note (exact Kotlin saveNote payload)
+  await assertSucceeds(
+    abebeDb.collection("notes").doc("NOTE_123456").set({
+      id: "NOTE_123456",
+      courseId: "C_AB12CD",
+      topicId: "T_123456",
+      title: "Chapter 1: Matrices",
+      chapterNumber: 1,
+      summary: "",
+      keyFormulas: "",
+      contentMarkdown: "# Matrices\nDefinition and operations.",
+      content: "# Matrices\nDefinition and operations.",
+      isPublished: true,
+      createdAt,
+      updatedAt,
+    })
+  );
+
+  // Past Exam (exact Kotlin savePastExam payload)
+  await assertSucceeds(
+    spikeDb.collection("past_exams").doc("EXAM_C_AB12CD_2025").set({
+      id: "EXAM_C_AB12CD_2025",
+      courseId: "C_AB12CD",
+      university: "Addis Ababa University (AAU)",
+      academicYear: "2025",
+      semester: "Semester 1",
+      examType: "FINAL",
+      title: "Linear Algebra Final",
+      instructions: "",
+      totalQuestions: 20,
+      durationMinutes: 90,
+      isDigitized: true,
+      isVerified: true,
+      documentSummary: "",
+      isPublished: true,
+      createdAt,
+      updatedAt,
+    })
+  );
+
+  // Access Code (exact Kotlin saveAccessCode payload)
+  await assertSucceeds(
+    promotedDb.collection("access_codes").doc("987654").set({
+      code: "987654",
+      createdByAdminId: "promoted_admin_uid",
+      isRedeemed: false,
+      redeemedByUserId: "",
+      redeemedByEmail: "",
+      note: "Permanent Academic Access Pass",
+      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      createdAt,
+      updatedAt,
+    })
+  );
+
+  // Admin Invite (exact Kotlin saveAdminInvite payload)
+  await assertSucceeds(
+    abebeDb.collection("admin_invites").doc("newadmin@ttsacademy.edu").set({
+      email: "newadmin@ttsacademy.edu",
+      department: "Academic Directorate",
+      invitedBy: "abebe_uid",
+      createdAt,
+      updatedAt,
+    })
+  );
+
+  // Role-promoted admin can update announcement & course preserving createdAt
+  await assertSucceeds(
+    promotedDb.collection("announcements").doc("ann_12345678").set({
+      id: "ann_12345678",
+      title: "Final Exam Schedule (Updated)",
+      content: "Updated timetable posted.",
+      message: "Updated timetable posted.",
+      category: "EXAM",
+      isUrgent: false,
+      isPublished: true,
+      createdAt,
+      updatedAt: new Date(),
+    })
+  );
+  await assertSucceeds(
+    promotedDb.collection("courses").doc("C_AB12CD").update({
+      totalQuestions: 1,
+      totalNotes: 1,
+      updatedAt: new Date(),
+    })
+  );
+});
+
+
 
 

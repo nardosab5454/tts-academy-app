@@ -69,8 +69,10 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Co
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SignInScreen(
@@ -487,14 +489,16 @@ fun performSignOut(
   onSignOutComplete: () -> Unit,
   scope: CoroutineScope
 ) {
-  FirebaseAuth.getInstance().signOut()
   scope.launch {
-    try {
-      credentialManager.clearCredentialState(ClearCredentialStateRequest())
-    } catch (e: Exception) {
-      Log.e("Auth", "Failed to clear credential state", e)
-    } finally {
-      onSignOutComplete()
+    withContext(NonCancellable) {
+      try {
+        credentialManager.clearCredentialState(ClearCredentialStateRequest())
+      } catch (e: Exception) {
+        Log.e("Auth", "Failed to clear credential state", e)
+      } finally {
+        FirebaseAuth.getInstance().signOut()
+        onSignOutComplete()
+      }
     }
   }
 }

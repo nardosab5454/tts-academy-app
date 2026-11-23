@@ -35,8 +35,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 enum class Screen {
@@ -136,9 +138,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private val _cloudAdminDiagnostic = MutableStateFlow<CloudAdminDiagnostic?>(null)
   val cloudAdminDiagnostic: StateFlow<CloudAdminDiagnostic?> = _cloudAdminDiagnostic.asStateFlow()
 
+  private var syncAuthJob: Job? = null
+  private var syncingUid: String? = null
+
   fun syncWithFirebaseUser(firebaseUser: FirebaseUser?) {
     if (firebaseUser == null) return
-    viewModelScope.launch {
+    val targetUid = firebaseUser.uid
+    if (syncAuthJob?.isActive == true && syncingUid == targetUid) {
+      return
+    }
+    syncingUid = targetUid
+    syncAuthJob?.cancel()
+    syncAuthJob = viewModelScope.launch {
       _isAuthenticating.value = true
       try {
         initJob.join()
@@ -191,6 +202,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
       } finally {
         _isAuthenticating.value = false
+        if (syncingUid == targetUid) {
+          syncingUid = null
+        }
       }
     }
   }
@@ -566,17 +580,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun signOut() {
     viewModelScope.launch {
-      _cloudAdminDiagnostic.value = null
-      try {
-        androidx.credentials.CredentialManager.create(getApplication())
-          .clearCredentialState(androidx.credentials.ClearCredentialStateRequest())
-      } catch (_: Exception) {}
-      try {
-        FirebaseAuth.getInstance().signOut()
-      } catch (_: Exception) {}
-      repository.signOut()
-      _currentScreen.value = Screen.DASHBOARD
-      screenBackStack.clear()
+      withContext(NonCancellable) {
+        syncAuthJob?.cancel()
+        syncingUid = null
+        _cloudAdminDiagnostic.value = null
+        try {
+          androidx.credentials.CredentialManager.create(getApplication())
+            .clearCredentialState(androidx.credentials.ClearCredentialStateRequest())
+        } catch (_: Exception) {}
+        try {
+          FirebaseAuth.getInstance().signOut()
+        } catch (_: Exception) {}
+        repository.signOut()
+        _currentScreen.value = Screen.DASHBOARD
+        screenBackStack.clear()
+      }
     }
   }
 
@@ -1452,10 +1470,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   private fun requireAdminCloudSession(): Boolean = validateAdminCloudSession() == null
 
-  private suspend fun refreshDiagnosticIfPermissionError(e: Exception) {
-    if (e.message?.contains("permission", ignoreCase = true) == true) {
+  private suspend fun refreshDiagnosticOnAdminError() {
+    try {
       _cloudAdminDiagnostic.value = firestoreRepository.diagnoseAdminAccess()
-    }
+    } catch (e: CancellationException) {
+      throw e
+    } catch (_: Exception) {}
   }
 
   // --- Admin operations ---
@@ -1471,7 +1491,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onResult(true, null)
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         val msg = e.localizedMessage ?: e.message ?: "Failed to save course."
         showMessage("Failed to save course: $msg")
         onResult(false, msg)
@@ -1487,7 +1507,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showMessage("Course removed from central database.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         showMessage("Failed to delete course: ${e.message}")
       }
     }
@@ -1505,7 +1525,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onResult(true, null)
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         val msg = e.localizedMessage ?: e.message ?: "Failed to save section."
         showMessage("Failed to save section: $msg")
         onResult(false, msg)
@@ -1521,7 +1541,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showMessage("Section removed from central database.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         showMessage("Failed to delete section: ${e.message}")
       }
     }
@@ -1539,7 +1559,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onResult(true, null)
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         val msg = e.localizedMessage ?: e.message ?: "Failed to save question."
         showMessage("Failed to save question: $msg")
         onResult(false, msg)
@@ -1555,7 +1575,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showMessage("Question deleted from central database.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         showMessage("Failed to delete question: ${e.message}")
       }
     }
@@ -1573,7 +1593,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onResult(true, null)
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         val msg = e.localizedMessage ?: e.message ?: "Failed to save note."
         showMessage("Failed to save note: $msg")
         onResult(false, msg)
@@ -1589,7 +1609,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showMessage("Note deleted from central database.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         showMessage("Failed to delete note: ${e.message}")
       }
     }
@@ -1607,7 +1627,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onResult(true, null)
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         val msg = e.localizedMessage ?: e.message ?: "Failed to publish past exam."
         showMessage("Failed to publish past exam: $msg")
         onResult(false, msg)
@@ -1623,7 +1643,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showMessage("Past exam removed from central database.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         showMessage("Failed to delete past exam: ${e.message}")
       }
     }
@@ -1650,12 +1670,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           isUrgent = isUrgent
         )
         repository.saveAnnouncement(ann)
-        repository.syncFromCloudNow()
+        try {
+          repository.syncFromCloudNow()
+        } catch (syncEx: Exception) {
+          if (syncEx is CancellationException) throw syncEx
+        }
         showMessage("Announcement broadcasted to all students & central cloud.")
         onResult(true, null)
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         val msg = e.localizedMessage ?: e.message ?: "Failed to broadcast announcement."
         showMessage("Failed to broadcast announcement: $msg")
         onResult(false, msg)
@@ -1668,11 +1692,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deleteAnnouncement(id)
-        repository.syncFromCloudNow()
+        try {
+          repository.syncFromCloudNow()
+        } catch (syncEx: Exception) {
+          if (syncEx is CancellationException) throw syncEx
+        }
         showMessage("Announcement removed from central cloud database.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         showMessage("Failed to remove announcement: ${e.message}")
       }
     }
@@ -1687,7 +1715,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showMessage("Platform database re-seeded to factory standard curriculum.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
-        refreshDiagnosticIfPermissionError(e)
+        refreshDiagnosticOnAdminError()
         showMessage("Failed to re-seed database: ${e.message}")
       }
     }

@@ -116,12 +116,16 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
       fbUser.reload().await()
     } catch (e: CancellationException) {
       throw e
-    } catch (_: Exception) {}
+    } catch (e: Exception) {
+      Log.w("FirestoreRepo", "fbUser.reload() failed during admin refresh: ${e.message}")
+    }
     try {
       fbUser.getIdToken(true).await()
     } catch (e: CancellationException) {
       throw e
-    } catch (_: Exception) {}
+    } catch (e: Exception) {
+      Log.w("FirestoreRepo", "fbUser.getIdToken(true) failed during admin refresh: ${e.message}")
+    }
     val email = fbUser.email?.trim().orEmpty()
     val name = fbUser.displayName?.trim().orEmpty().ifBlank { "TTS Admin" }
     if (email.isNotBlank()) {
@@ -131,10 +135,14 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
           email = email,
           name = name,
           role = if (isBootstrappedAdminEmail(email)) "ADMIN" else "STUDENT"
-        )
+        ).onFailure { err ->
+          Log.w("FirestoreRepo", "Admin profile repair failed during refresh: ${err.message}")
+        }
       } catch (e: CancellationException) {
         throw e
-      } catch (_: Exception) {}
+      } catch (e: Exception) {
+        Log.w("FirestoreRepo", "Unexpected error repairing admin profile: ${e.message}")
+      }
     }
   }
 
@@ -148,12 +156,13 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      val isAuthOrPermError = e is FirebaseFirestoreException && (
-        e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED ||
-        e.code == FirebaseFirestoreException.Code.UNAUTHENTICATED
+      val firestoreEx = findFirestoreException(e)
+      val isAuthOrPermError = firestoreEx != null && (
+        firestoreEx.code == FirebaseFirestoreException.Code.PERMISSION_DENIED ||
+        firestoreEx.code == FirebaseFirestoreException.Code.UNAUTHENTICATED
       )
       if (isAuthOrPermError && auth.currentUser != null) {
-        Log.w("FirestoreRepo", "Retrying ${operationType.value} on $path after refreshing Firebase Auth token & admin profile")
+        Log.w("FirestoreRepo", "Retrying ${operationType.value} on $path after refreshing Firebase Auth token & admin profile (initial=${firestoreEx?.code})")
         refreshAdminAuthAndProfile()
         try {
           return@withContext Result.success(block())
@@ -190,18 +199,39 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     path: String
   ): Exception {
     handleFirestoreError(e, operationType, path)
-    if (e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
-      val fbUser = auth.currentUser
-      val email = fbUser?.email ?: "not signed in"
-      val verified = fbUser?.isEmailVerified == true
-      val reason = when {
-        fbUser == null -> "Firebase session is missing. Please sign out and sign in with Google."
-        !verified -> "Google account ($email) email is not verified in auth profile (tap Refresh Permissions)."
-        else -> "Firestore rejected ${operationType.value} on '$path' for $email (uid=${fbUser.uid}, verified=$verified, db=$configuredDatabaseId). Tap Refresh Permissions or ensure this email has ADMIN role in cloud."
+    val firestoreEx = findFirestoreException(e)
+    val fbUser = auth.currentUser
+    val email = fbUser?.email ?: "not signed in"
+    val uid = fbUser?.uid ?: "none"
+    val verified = fbUser?.isEmailVerified == true
+
+    if (firestoreEx != null) {
+      val codeName = firestoreEx.code.name
+      val serverDetail = firestoreEx.message?.take(220) ?: "no server detail"
+      val reason = when (firestoreEx.code) {
+        FirebaseFirestoreException.Code.PERMISSION_DENIED -> when {
+          fbUser == null -> "Firebase session is missing. Sign out and sign in with your Google Admin account."
+          !verified -> "Google account ($email) email is not marked verified in auth profile. Tap Refresh Permissions."
+          else -> "Firestore [$codeName] on ${operationType.value} '$path' for $email (uid=$uid, verified=$verified, db=$configuredDatabaseId): $serverDetail"
+        }
+        FirebaseFirestoreException.Code.UNAUTHENTICATED ->
+          "Auth token rejected [$codeName] on '$path' for $email (db=$configuredDatabaseId): $serverDetail. Sign out and sign in again."
+        FirebaseFirestoreException.Code.UNAVAILABLE ->
+          "Cloud Firestore temporarily unreachable [$codeName] on '$path' (db=$configuredDatabaseId). Check internet connection and retry."
+        else ->
+          "Firestore error [$codeName] on ${operationType.value} '$path' (email=$email, db=$configuredDatabaseId): $serverDetail"
       }
-      return IllegalStateException("Missing or insufficient permissions: $reason", e)
+      val prefix = if (firestoreEx.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+        "Missing or insufficient permissions: "
+      } else {
+        "Cloud write failed: "
+      }
+      return IllegalStateException("$prefix$reason", e)
     }
-    return e
+    return IllegalStateException(
+      "Cloud ${operationType.value} failed on '$path' (email=$email, db=$configuredDatabaseId): ${e.message ?: e::class.java.simpleName}",
+      e
+    )
   }
 
   private suspend fun fetchServerFirstSnapshot(
@@ -231,9 +261,25 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
 
   private suspend fun prepareTimestamps(
     docRef: com.google.firebase.firestore.DocumentReference,
-    payload: MutableMap<String, Any>
+    payload: MutableMap<String, Any>,
+    isNewDocument: Boolean = false
   ): DocumentSnapshot? {
-    val snapshot = fetchServerFirstSnapshot(docRef)
+    val snapshot = if (isNewDocument) {
+      null
+    } else {
+      try {
+        docRef.get(Source.SERVER).await()
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        Log.w("FirestoreRepo", "Pre-write timestamp lookup skipped for ${docRef.path}: ${e.message}")
+        try {
+          docRef.get(Source.DEFAULT).await()
+        } catch (_: Exception) {
+          null
+        }
+      }
+    }
     val existingCreatedAt = if (snapshot != null && snapshot.exists()) {
       snapshot.get("createdAt") as? Timestamp
     } else {
@@ -337,14 +383,22 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
       )
     }
     val uid = fbUser.uid
-    val email = fbUser.email?.trim() ?: ""
-    val verified = isCurrentUserEmailVerified(fbUser)
+    val tokenClaims = try {
+      fbUser.getIdToken(false).await().claims
+    } catch (_: Exception) {
+      emptyMap<String, Any>()
+    }
+    val tokenEmail = (tokenClaims["email"] as? String)?.trim().orEmpty()
+    val email = tokenEmail.ifBlank { fbUser.email?.trim() ?: "" }
+    val tokenVerified = tokenClaims["email_verified"] as? Boolean
+    val verified = tokenVerified == true || isCurrentUserEmailVerified(fbUser)
     val bootstrapped = isBootstrappedAdminEmail(email)
     val invited = if (!bootstrapped && email.isNotBlank()) isEmailInvitedAdmin(email) else false
 
     var userDocExists = false
     var userDocRole = "NONE"
     var canReadCourses = false
+    var canPassAdminRule = false
     var serverProbeError: String? = null
 
     try {
@@ -352,21 +406,32 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
       userDocExists = userSnap.exists()
       userDocRole = userSnap.getString("role") ?: if (userDocExists) "MISSING_ROLE" else "NONE"
     } catch (e: Exception) {
-      serverProbeError = e.message
+      val code = findFirestoreException(e)?.code?.name ?: "ERR"
+      serverProbeError = "[$code] users/$uid: ${e.message}"
     }
 
     try {
       db.collection("courses").limit(1).get(Source.SERVER).await()
       canReadCourses = true
     } catch (e: Exception) {
-      if (serverProbeError == null) serverProbeError = e.message
+      val code = findFirestoreException(e)?.code?.name ?: "ERR"
+      if (serverProbeError == null) serverProbeError = "[$code] courses: ${e.message}"
     }
 
-    val writeReady = verified && (bootstrapped || invited || userDocRole.equals("ADMIN", ignoreCase = true))
+    // Live server-side isAdmin() probe (users collection list requires isAdmin() in firestore.rules)
+    try {
+      db.collection("users").limit(1).get(Source.SERVER).await()
+      canPassAdminRule = true
+    } catch (e: Exception) {
+      val code = findFirestoreException(e)?.code?.name ?: "ERR"
+      serverProbeError = "[$code] admin probe failed: ${e.message}"
+    }
+
+    val writeReady = canPassAdminRule && verified
     val msg = when {
-      serverProbeError != null && !canReadCourses -> "Server check failed: $serverProbeError"
-      !verified -> "Google email ($email) is not verified in token."
-      writeReady -> "Cloud admin verified ($email • DB role=$userDocRole${if (bootstrapped) " • Bootstrapped" else if (invited) " • Invited" else ""})."
+      canPassAdminRule && verified -> "Cloud admin verified ($email • DB role=$userDocRole${if (bootstrapped) " • Bootstrapped" else if (invited) " • Invited" else ""})."
+      !verified -> "Google email ($email) is not verified in Firebase token (claim=$tokenVerified)."
+      serverProbeError != null -> "Cloud admin check failed ($email, db=$configuredDatabaseId): $serverProbeError"
       else -> "Signed in as $email, but cloud role is '$userDocRole' (not ADMIN)."
     }
 

@@ -2,6 +2,7 @@ package com.example.data.firestore
 
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestoreException
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -14,9 +15,16 @@ enum class OperationType(val value: String) {
   WRITE("write"),
 }
 
-fun handleFirestoreError(exception: Exception, operationType: OperationType, path: String?): String {
+fun findFirestoreException(throwable: Throwable?): FirebaseFirestoreException? {
+  return generateSequence(throwable) { it.cause }
+    .filterIsInstance<FirebaseFirestoreException>()
+    .firstOrNull()
+}
+
+fun handleFirestoreError(exception: Throwable, operationType: OperationType, path: String?): String {
   val auth = FirebaseAuth.getInstance()
   val currentUser = auth.currentUser
+  val firestoreEx = findFirestoreException(exception)
 
   val providerInfoList = currentUser?.providerData?.map { provider ->
     JSONObject().apply {
@@ -34,13 +42,14 @@ fun handleFirestoreError(exception: Exception, operationType: OperationType, pat
   }
 
   val errorInfoJson = JSONObject().apply {
-    put("error", exception.message ?: exception.toString())
+    put("code", firestoreEx?.code?.name ?: "NON_FIRESTORE")
+    put("error", firestoreEx?.message ?: exception.message ?: exception.toString())
     put("operationType", operationType.value)
     put("path", path)
     put("authInfo", authInfoJson)
   }
 
   val jsonString = errorInfoJson.toString()
-  Log.e("FirestoreError", "Firestore Error: $jsonString")
+  Log.e("FirestoreError", "Firestore Error: $jsonString", exception)
   return jsonString
 }

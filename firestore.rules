@@ -35,22 +35,28 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/admin_invites/$(request.auth.token.email.lower()));
     }
 
+    function hasAdminRole(userDoc) {
+      return userDoc != null &&
+        userDoc.data != null &&
+        'role' in userDoc.data &&
+        userDoc.data.role is string &&
+        userDoc.data.role.upper() == 'ADMIN';
+    }
+
     function isAdmin() {
       return isBootstrappedAdmin() ||
         isInvitedAdmin() ||
         (isSignedIn() &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         'role' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role is string &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role.upper() == 'ADMIN');
+         hasAdminRole(get(/databases/$(database)/documents/users/$(request.auth.uid))));
     }
 
     function isValidId(id) {
       return id is string &&
         id.size() > 0 &&
         id.size() <= 128 &&
-        !id.matches('.*[/\\\\].*') &&
-        id.matches('^\\S(.*\\S)?$');
+        id.trim() == id &&
+        !id.matches('.*[/\\\\].*');
     }
 
     function isValidEmailDocId(id) {

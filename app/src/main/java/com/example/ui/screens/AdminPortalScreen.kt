@@ -177,6 +177,50 @@ fun AdminPortalScreen(
       }
     }
 
+    if (cloudDiagnostic != null && !cloudDiagnostic.hasWriteReadyAuth) {
+      Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier
+          .fillMaxWidth()
+          .testTag("admin_cloud_permission_banner")
+      ) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+              text = "Cloud Admin Write Attention Needed (${cloudDiagnostic.signedInEmail ?: "Not signed in"})",
+              style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+              color = MaterialTheme.colorScheme.onErrorContainer,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+            Text(
+              text = cloudDiagnostic.diagnosticMessage,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onErrorContainer,
+              maxLines = 3,
+              overflow = TextOverflow.Ellipsis
+            )
+          }
+          OutlinedButton(
+            onClick = onRefreshPermissions,
+            enabled = !isSyncing,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.testTag("admin_banner_refresh_permissions_button")
+          ) {
+            Icon(Icons.Default.Refresh, contentDescription = "Refresh permissions", modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Refresh", style = MaterialTheme.typography.labelSmall)
+          }
+        }
+      }
+    }
+
     when (selectedTab) {
       0 -> AdminOverviewTab(
         courses = courses,

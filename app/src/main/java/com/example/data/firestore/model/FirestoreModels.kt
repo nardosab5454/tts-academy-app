@@ -8,11 +8,12 @@ import com.example.data.local.model.PastExamEntity
 import com.example.data.local.model.QuestionEntity
 import com.example.data.local.model.TopicEntity
 import com.example.data.local.model.UserEntity
+import androidx.annotation.Keep
 import com.google.firebase.Timestamp
-import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.ServerTimestamp
 
+@Keep
 @IgnoreExtraProperties
 data class FirestoreUserProfile(
   val id: String = "",
@@ -50,6 +51,7 @@ data class FirestoreUserProfile(
   }
 }
 
+@Keep
 @IgnoreExtraProperties
 data class FirestoreAnnouncement(
   val id: String = "",
@@ -74,6 +76,7 @@ data class FirestoreAnnouncement(
   }
 }
 
+@Keep
 @IgnoreExtraProperties
 data class FirestoreCourse(
   val id: String = "",
@@ -105,6 +108,7 @@ data class FirestoreCourse(
   }
 }
 
+@Keep
 @IgnoreExtraProperties
 data class FirestoreTopic(
   val id: String = "",
@@ -136,6 +140,7 @@ fun TopicEntity.toFirestore(): FirestoreTopic {
   )
 }
 
+@Keep
 @IgnoreExtraProperties
 data class FirestoreQuestion(
   val id: String = "",
@@ -186,6 +191,7 @@ data class FirestoreQuestion(
   }
 }
 
+@Keep
 @IgnoreExtraProperties
 data class FirestoreNote(
   val id: String = "",
@@ -216,6 +222,7 @@ data class FirestoreNote(
   }
 }
 
+@Keep
 @IgnoreExtraProperties
 data class FirestorePastExam(
   val id: String = "",
@@ -254,6 +261,7 @@ data class FirestorePastExam(
   }
 }
 
+@Keep
 @IgnoreExtraProperties
 data class FirestoreAccessCode(
   val code: String = "",
@@ -279,6 +287,7 @@ data class FirestoreAccessCode(
   }
 }
 
+@Keep
 @IgnoreExtraProperties
 data class FirestoreQuizAttempt(
   val id: String = "",
@@ -291,6 +300,7 @@ data class FirestoreQuizAttempt(
   @ServerTimestamp val completedAt: Timestamp? = null
 )
 
+@Keep
 @IgnoreExtraProperties
 data class FirestoreBookmark(
   val id: String = "",
@@ -301,6 +311,7 @@ data class FirestoreBookmark(
   @ServerTimestamp val savedAt: Timestamp? = null
 )
 
+@Keep
 @IgnoreExtraProperties
 data class FirestoreStudyNote(
   val id: String = "",
