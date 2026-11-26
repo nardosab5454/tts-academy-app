@@ -138,6 +138,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   private val _cloudAdminDiagnostic = MutableStateFlow<CloudAdminDiagnostic?>(null)
   val cloudAdminDiagnostic: StateFlow<CloudAdminDiagnostic?> = _cloudAdminDiagnostic.asStateFlow()
 
+  private val _lastAdminError = MutableStateFlow<String?>(null)
+  val lastAdminError: StateFlow<String?> = _lastAdminError.asStateFlow()
+
+  private val _isTestingCloudWrite = MutableStateFlow(false)
+  val isTestingCloudWrite: StateFlow<Boolean> = _isTestingCloudWrite.asStateFlow()
+
+  fun clearLastAdminError() {
+    _lastAdminError.value = null
+  }
+
   private var syncAuthJob: Job? = null
   private var syncingUid: String? = null
 
@@ -273,9 +283,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
+  fun runLiveAdminWriteTest() {
+    viewModelScope.launch {
+      _isTestingCloudWrite.value = true
+      try {
+        initJob.join()
+        val result = firestoreRepository.runAdminWriteSelfTest()
+        _cloudAdminDiagnostic.value = result
+        if (result.writeTestPassed) {
+          _lastAdminError.value = null
+          showMessage("Live Cloud Write Test PASSED for ${result.signedInEmail}. Admin posting is ready.")
+        } else {
+          val err = result.writeTestError ?: result.diagnosticMessage
+          _lastAdminError.value = err
+          showMessage("Live Cloud Write Test FAILED: $err")
+        }
+      } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        val msg = e.localizedMessage ?: e.message ?: "Live cloud write test failed."
+        _lastAdminError.value = msg
+        showMessage("Live Cloud Write Test FAILED: $msg")
+      } finally {
+        _isTestingCloudWrite.value = false
+      }
+    }
+  }
+
   fun clearSessionOnFirebaseSignOut() {
     viewModelScope.launch {
       _cloudAdminDiagnostic.value = null
+      _lastAdminError.value = null
       repository.signOut()
       _currentScreen.value = Screen.DASHBOARD
       screenBackStack.clear()
@@ -600,15 +637,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun updateUserRole(userId: String, newRole: String) {
     if (currentUser.value?.role != "ADMIN" || !hasFirebaseCloudSession()) {
-      showMessage("Google Administrator session required to update user roles.")
+      val msg = "Google Administrator session required to update user roles."
+      _lastAdminError.value = msg
+      showMessage(msg)
       return
     }
     viewModelScope.launch {
       val res = repository.setUserRole(userId, newRole)
       res.onSuccess {
+        _lastAdminError.value = null
         showMessage("User role updated to $newRole.")
       }.onFailure { err ->
-        showMessage("Failed to update user role: ${err.message}")
+        refreshDiagnosticOnAdminError()
+        val msg = err.message ?: "Failed to update user role."
+        _lastAdminError.value = msg
+        showMessage("Failed to update user role: $msg")
       }
     }
   }
@@ -625,30 +668,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun createAdmin(name: String, email: String, password: String, department: String) {
     if (currentUser.value?.role != "ADMIN" || !hasFirebaseCloudSession()) {
-      showMessage("Google Administrator session required to add administrators.")
+      val msg = "Google Administrator session required to add administrators."
+      _lastAdminError.value = msg
+      showMessage(msg)
       return
     }
     viewModelScope.launch {
       val res = repository.createAdminAccount(name, email, password, department)
       res.onSuccess { admin ->
+        _lastAdminError.value = null
         showMessage("Admin privileges granted for ${admin.email}.")
       }.onFailure { err ->
-        showMessage("Failed to add administrator: ${err.message}")
+        refreshDiagnosticOnAdminError()
+        val msg = err.message ?: "Failed to add administrator."
+        _lastAdminError.value = msg
+        showMessage("Failed to add administrator: $msg")
       }
     }
   }
 
   fun promoteUserByEmail(email: String) {
     if (currentUser.value?.role != "ADMIN" || !hasFirebaseCloudSession()) {
-      showMessage("Google Administrator session required to promote users.")
+      val msg = "Google Administrator session required to promote users."
+      _lastAdminError.value = msg
+      showMessage(msg)
       return
     }
     viewModelScope.launch {
       val res = repository.promoteUserByEmail(email)
       res.onSuccess { user ->
+        _lastAdminError.value = null
         showMessage("Granted full administrator privileges to ${user.name} (${user.email}).")
       }.onFailure { err ->
-        showMessage("Could not promote user: ${err.message}")
+        refreshDiagnosticOnAdminError()
+        val msg = err.message ?: "Could not promote user."
+        _lastAdminError.value = msg
+        showMessage("Could not promote user: $msg")
       }
     }
   }
@@ -937,10 +992,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         val newCode = repository.generateAccessCode(adminId, note, format, customCode)
+        _lastAdminError.value = null
         showMessage("Generated Access Code: ${newCode.code}")
         onResult(newCode.code)
       } catch (e: Exception) {
-        showMessage("Failed to generate access code: ${e.message}")
+        if (e is CancellationException) throw e
+        refreshDiagnosticOnAdminError()
+        val msg = e.localizedMessage ?: e.message ?: "Failed to generate access code."
+        _lastAdminError.value = msg
+        showMessage("Failed to generate access code: $msg")
         onResult("")
       }
     }
@@ -952,10 +1012,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         val newCode = repository.generateAccessCode(adminId, "Permanent Academic Pass", "NUMERIC", null)
+        _lastAdminError.value = null
         showMessage("Generated Access Code: ${newCode.code}")
         onResult(newCode)
       } catch (e: Exception) {
-        showMessage("Failed to generate access code: ${e.message}")
+        if (e is CancellationException) throw e
+        refreshDiagnosticOnAdminError()
+        val msg = e.localizedMessage ?: e.message ?: "Failed to generate access code."
+        _lastAdminError.value = msg
+        showMessage("Failed to generate access code: $msg")
         onResult(null)
       }
     }
@@ -963,15 +1028,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   fun deleteAccessCode(code: String) {
     if (currentUser.value?.role != "ADMIN" || !hasFirebaseCloudSession()) {
-      showMessage("Google Administrator session required to delete access codes.")
+      val msg = "Google Administrator session required to delete access codes."
+      _lastAdminError.value = msg
+      showMessage(msg)
       return
     }
     viewModelScope.launch {
       try {
         repository.deleteAccessCode(code)
+        _lastAdminError.value = null
         showMessage("Removed access code $code.")
       } catch (e: Exception) {
-        showMessage("Failed to remove access code: ${e.message}")
+        if (e is CancellationException) throw e
+        refreshDiagnosticOnAdminError()
+        val msg = e.localizedMessage ?: e.message ?: "Failed to remove access code."
+        _lastAdminError.value = msg
+        showMessage("Failed to remove access code: $msg")
       }
     }
   }
@@ -1481,18 +1553,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   // --- Admin operations ---
   fun adminSaveCourse(course: CourseEntity, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
     validateAdminCloudSession()?.let { err ->
+      _lastAdminError.value = err
       onResult(false, err)
       return
     }
     viewModelScope.launch {
       try {
         repository.saveCourse(course)
+        _lastAdminError.value = null
         showMessage("Course '${course.title}' published to central cloud database.")
         onResult(true, null)
       } catch (e: Exception) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
         val msg = e.localizedMessage ?: e.message ?: "Failed to save course."
+        _lastAdminError.value = msg
         showMessage("Failed to save course: $msg")
         onResult(false, msg)
       }
@@ -1504,29 +1579,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deleteCourse(courseId)
+        _lastAdminError.value = null
         showMessage("Course removed from central database.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
-        showMessage("Failed to delete course: ${e.message}")
+        val msg = e.localizedMessage ?: e.message ?: "Failed to delete course."
+        _lastAdminError.value = msg
+        showMessage("Failed to delete course: $msg")
       }
     }
   }
 
   fun adminSaveTopic(topic: TopicEntity, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
     validateAdminCloudSession()?.let { err ->
+      _lastAdminError.value = err
       onResult(false, err)
       return
     }
     viewModelScope.launch {
       try {
         repository.saveTopic(topic)
+        _lastAdminError.value = null
         showMessage("Section '${topic.title}' published to central cloud database.")
         onResult(true, null)
       } catch (e: Exception) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
         val msg = e.localizedMessage ?: e.message ?: "Failed to save section."
+        _lastAdminError.value = msg
         showMessage("Failed to save section: $msg")
         onResult(false, msg)
       }
@@ -1538,29 +1619,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deleteTopic(topicId)
+        _lastAdminError.value = null
         showMessage("Section removed from central database.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
-        showMessage("Failed to delete section: ${e.message}")
+        val msg = e.localizedMessage ?: e.message ?: "Failed to delete section."
+        _lastAdminError.value = msg
+        showMessage("Failed to delete section: $msg")
       }
     }
   }
 
   fun adminSaveQuestion(question: QuestionEntity, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
     validateAdminCloudSession()?.let { err ->
+      _lastAdminError.value = err
       onResult(false, err)
       return
     }
     viewModelScope.launch {
       try {
         repository.saveQuestion(question)
+        _lastAdminError.value = null
         showMessage("Question published to central cloud database & synced.")
         onResult(true, null)
       } catch (e: Exception) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
         val msg = e.localizedMessage ?: e.message ?: "Failed to save question."
+        _lastAdminError.value = msg
         showMessage("Failed to save question: $msg")
         onResult(false, msg)
       }
@@ -1572,29 +1659,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deleteQuestion(questionId)
+        _lastAdminError.value = null
         showMessage("Question deleted from central database.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
-        showMessage("Failed to delete question: ${e.message}")
+        val msg = e.localizedMessage ?: e.message ?: "Failed to delete question."
+        _lastAdminError.value = msg
+        showMessage("Failed to delete question: $msg")
       }
     }
   }
 
   fun adminSaveNote(note: NoteEntity, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
     validateAdminCloudSession()?.let { err ->
+      _lastAdminError.value = err
       onResult(false, err)
       return
     }
     viewModelScope.launch {
       try {
         repository.saveNote(note)
+        _lastAdminError.value = null
         showMessage("Revision note '${note.title}' published to central cloud database.")
         onResult(true, null)
       } catch (e: Exception) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
         val msg = e.localizedMessage ?: e.message ?: "Failed to save note."
+        _lastAdminError.value = msg
         showMessage("Failed to save note: $msg")
         onResult(false, msg)
       }
@@ -1606,29 +1699,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deleteNote(noteId)
+        _lastAdminError.value = null
         showMessage("Note deleted from central database.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
-        showMessage("Failed to delete note: ${e.message}")
+        val msg = e.localizedMessage ?: e.message ?: "Failed to delete note."
+        _lastAdminError.value = msg
+        showMessage("Failed to delete note: $msg")
       }
     }
   }
 
   fun adminSavePastExam(exam: PastExamEntity, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
     validateAdminCloudSession()?.let { err ->
+      _lastAdminError.value = err
       onResult(false, err)
       return
     }
     viewModelScope.launch {
       try {
         repository.savePastExam(exam)
+        _lastAdminError.value = null
         showMessage("Past exam '${exam.title}' published to central cloud database.")
         onResult(true, null)
       } catch (e: Exception) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
         val msg = e.localizedMessage ?: e.message ?: "Failed to publish past exam."
+        _lastAdminError.value = msg
         showMessage("Failed to publish past exam: $msg")
         onResult(false, msg)
       }
@@ -1640,11 +1739,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deletePastExam(examId)
+        _lastAdminError.value = null
         showMessage("Past exam removed from central database.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
-        showMessage("Failed to delete past exam: ${e.message}")
+        val msg = e.localizedMessage ?: e.message ?: "Failed to delete past exam."
+        _lastAdminError.value = msg
+        showMessage("Failed to delete past exam: $msg")
       }
     }
   }
@@ -1657,6 +1759,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     onResult: (Boolean, String?) -> Unit = { _, _ -> }
   ) {
     validateAdminCloudSession()?.let { err ->
+      _lastAdminError.value = err
       onResult(false, err)
       return
     }
@@ -1669,7 +1772,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           category = category,
           isUrgent = isUrgent
         )
-        repository.saveAnnouncement(ann)
+        repository.saveAnnouncement(ann, isNewDocument = true)
+        _lastAdminError.value = null
         try {
           repository.syncFromCloudNow()
         } catch (syncEx: Exception) {
@@ -1681,6 +1785,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
         val msg = e.localizedMessage ?: e.message ?: "Failed to broadcast announcement."
+        _lastAdminError.value = msg
         showMessage("Failed to broadcast announcement: $msg")
         onResult(false, msg)
       }
@@ -1692,6 +1797,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       try {
         repository.deleteAnnouncement(id)
+        _lastAdminError.value = null
         try {
           repository.syncFromCloudNow()
         } catch (syncEx: Exception) {
@@ -1701,7 +1807,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       } catch (e: Exception) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
-        showMessage("Failed to remove announcement: ${e.message}")
+        val msg = e.localizedMessage ?: e.message ?: "Failed to remove announcement."
+        _lastAdminError.value = msg
+        showMessage("Failed to remove announcement: $msg")
       }
     }
   }
@@ -1712,11 +1820,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       try {
         repository.resetDatabase()
         loadUserData()
-        showMessage("Platform database re-seeded to factory standard curriculum.")
+        _lastAdminError.value = null
+        showMessage("Curriculum verified and synced from central cloud database without overwriting existing courses.")
       } catch (e: Exception) {
         if (e is CancellationException) throw e
         refreshDiagnosticOnAdminError()
-        showMessage("Failed to re-seed database: ${e.message}")
+        val msg = e.localizedMessage ?: e.message ?: "Failed to verify curriculum database."
+        _lastAdminError.value = msg
+        showMessage("Failed to verify curriculum: $msg")
       }
     }
   }

@@ -25,14 +25,25 @@ service cloud.firestore {
         request.auth.token.email.size() <= 150;
     }
 
+    // Verifies server-signed Firebase Auth custom claims for an 'admin' role
+    function hasAdminRoleClaim() {
+      return isSignedIn() && (
+        ('role' in request.auth.token &&
+         request.auth.token.role is string &&
+         request.auth.token.role.trim().lower() in ['admin', 'super_admin']) ||
+        ('admin' in request.auth.token &&
+         request.auth.token.admin == true)
+      );
+    }
+
     function isBootstrappedAdmin() {
       return hasVerifiedEmail() &&
-        request.auth.token.email.lower() in ['spikenarrd@gmail.com', 'abebewottee@gmail.com'];
+        request.auth.token.email.trim().lower() in ['spikenarrd@gmail.com', 'abebewottee@gmail.com'];
     }
 
     function isInvitedAdmin() {
       return hasVerifiedEmail() &&
-        exists(/databases/$(database)/documents/admin_invites/$(request.auth.token.email.lower()));
+        exists(/databases/$(database)/documents/admin_invites/$(request.auth.token.email.trim().lower()));
     }
 
     function hasAdminRole(userDoc) {
@@ -40,11 +51,12 @@ service cloud.firestore {
         userDoc.data != null &&
         'role' in userDoc.data &&
         userDoc.data.role is string &&
-        userDoc.data.role.upper() == 'ADMIN';
+        userDoc.data.role.trim().upper() in ['ADMIN', 'SUPER_ADMIN'];
     }
 
     function isAdmin() {
-      return isBootstrappedAdmin() ||
+      return hasAdminRoleClaim() ||
+        isBootstrappedAdmin() ||
         isInvitedAdmin() ||
         (isSignedIn() &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
@@ -97,22 +109,22 @@ service cloud.firestore {
         data.userId is string && isValidId(data.userId) &&
         data.email is string && data.email.size() > 3 && data.email.size() <= 150 &&
         data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
-        data.role is string && data.role in ['STUDENT', 'ADMIN'] &&
+        data.role is string && data.role in ['STUDENT', 'ADMIN', 'SUPER_ADMIN'] &&
         data.isPremium is bool &&
-        (!('department' in data) || (data.department is string && data.department.size() <= 150)) &&
-        (!('studentId' in data) || (data.studentId is string && data.studentId.size() <= 50)) &&
-        (!('activationCode' in data) || (data.activationCode is string && data.activationCode.size() <= 20)) &&
-        (!('questionsAnsweredCount' in data) || (data.questionsAnsweredCount is int && data.questionsAnsweredCount >= 0 && data.questionsAnsweredCount <= 1000000)) &&
-        (!('correctAnswersCount' in data) || (data.correctAnswersCount is int && data.correctAnswersCount >= 0 && data.correctAnswersCount <= 1000000)) &&
-        (!('enrolledCourses' in data) || (data.enrolledCourses is list && data.enrolledCourses.size() <= 100)) &&
+        (!('department' in data) || data.department == null || (data.department is string && data.department.size() <= 150)) &&
+        (!('studentId' in data) || data.studentId == null || (data.studentId is string && data.studentId.size() <= 50)) &&
+        (!('activationCode' in data) || data.activationCode == null || (data.activationCode is string && data.activationCode.size() <= 20)) &&
+        (!('questionsAnsweredCount' in data) || data.questionsAnsweredCount == null || (data.questionsAnsweredCount is int && data.questionsAnsweredCount >= 0 && data.questionsAnsweredCount <= 1000000)) &&
+        (!('correctAnswersCount' in data) || data.correctAnswersCount == null || (data.correctAnswersCount is int && data.correctAnswersCount >= 0 && data.correctAnswersCount <= 1000000)) &&
+        (!('enrolledCourses' in data) || data.enrolledCourses == null || (data.enrolledCourses is list && data.enrolledCourses.size() <= 100)) &&
         data.createdAt is timestamp &&
-        (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+        (!('updatedAt' in data) || data.updatedAt == null || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
     function isValidAdminInvite(data, inviteEmail) {
       return data.keys().hasAll(['email', 'department', 'invitedBy', 'createdAt', 'updatedAt']) &&
         data.keys().hasOnly(['email', 'department', 'invitedBy', 'createdAt', 'updatedAt']) &&
-        data.email is string && data.email.lower() == inviteEmail.lower() &&
+        data.email is string && data.email.trim().lower() == inviteEmail.trim().lower() &&
         data.department is string && data.department.size() > 0 && data.department.size() <= 150 &&
         data.invitedBy is string && data.invitedBy.size() > 0 && data.invitedBy.size() <= 128 &&
         data.createdAt is timestamp &&
@@ -125,7 +137,7 @@ service cloud.firestore {
         data.id == attemptId && isValidId(data.id) &&
         data.userId == userId &&
         data.courseId is string && isValidId(data.courseId) &&
-        (!('topicId' in data) || (data.topicId is string && data.topicId.size() <= 128)) &&
+        (!('topicId' in data) || data.topicId == null || (data.topicId is string && data.topicId.size() <= 128)) &&
         data.score is int && data.score >= 0 &&
         data.totalQuestions is int && data.totalQuestions > 0 && data.totalQuestions <= 500 &&
         data.score <= data.totalQuestions &&
@@ -140,7 +152,7 @@ service cloud.firestore {
         data.userId == userId &&
         data.questionId is string && isValidId(data.questionId) &&
         data.courseId is string && isValidId(data.courseId) &&
-        (!('topicId' in data) || (data.topicId is string && data.topicId.size() <= 128)) &&
+        (!('topicId' in data) || data.topicId == null || (data.topicId is string && data.topicId.size() <= 128)) &&
         data.savedAt is timestamp;
     }
 
@@ -152,7 +164,7 @@ service cloud.firestore {
         data.courseId is string && isValidId(data.courseId) &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
         data.content is string && data.content.size() > 0 && data.content.size() <= 20000 &&
-        (!('tags' in data) || (data.tags is list && data.tags.size() <= 20)) &&
+        (!('tags' in data) || data.tags == null || (data.tags is list && data.tags.size() <= 20)) &&
         data.createdAt is timestamp;
     }
 
@@ -162,13 +174,13 @@ service cloud.firestore {
         data.id == docId && isValidId(data.id) &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
         data.content is string && data.content.size() > 0 && data.content.size() <= 5000 &&
-        (!('message' in data) || (data.message is string && data.message.size() <= 5000)) &&
-        (!('category' in data) || (data.category is string && data.category.size() <= 50)) &&
-        (!('author' in data) || (data.author is string && data.author.size() <= 100)) &&
+        (!('message' in data) || data.message == null || (data.message is string && data.message.size() <= 5000)) &&
+        (!('category' in data) || data.category == null || (data.category is string && data.category.size() <= 50)) &&
+        (!('author' in data) || data.author == null || (data.author is string && data.author.size() <= 100)) &&
         data.isUrgent is bool &&
         data.isPublished is bool &&
         data.createdAt is timestamp &&
-        (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+        (!('updatedAt' in data) || data.updatedAt == null || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
     function isValidCourse(data, docId) {
@@ -181,15 +193,15 @@ service cloud.firestore {
         data.id == docId && isValidId(data.id) &&
         data.code is string && data.code.size() > 0 && data.code.size() <= 50 &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
-        (!('description' in data) || (data.description is string && data.description.size() <= 2000)) &&
+        (!('description' in data) || data.description == null || (data.description is string && data.description.size() <= 2000)) &&
         data.category is string && data.category.size() > 0 && data.category.size() <= 100 &&
-        (!('iconName' in data) || (data.iconName is string && data.iconName.size() <= 60)) &&
-        (!('totalQuestions' in data) || (data.totalQuestions is int && data.totalQuestions >= 0 && data.totalQuestions <= 100000)) &&
-        (!('totalNotes' in data) || (data.totalNotes is int && data.totalNotes >= 0 && data.totalNotes <= 100000)) &&
+        (!('iconName' in data) || data.iconName == null || (data.iconName is string && data.iconName.size() <= 60)) &&
+        (!('totalQuestions' in data) || data.totalQuestions == null || (data.totalQuestions is int && data.totalQuestions >= 0 && data.totalQuestions <= 100000)) &&
+        (!('totalNotes' in data) || data.totalNotes == null || (data.totalNotes is int && data.totalNotes >= 0 && data.totalNotes <= 100000)) &&
         data.isPublished is bool &&
-        (!('orderIndex' in data) || (data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 10000)) &&
+        (!('orderIndex' in data) || data.orderIndex == null || (data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 10000)) &&
         data.createdAt is timestamp &&
-        (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+        (!('updatedAt' in data) || data.updatedAt == null || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
     function isValidTopic(data, docId) {
@@ -198,10 +210,10 @@ service cloud.firestore {
         data.id == docId && isValidId(data.id) &&
         data.courseId is string && isValidId(data.courseId) &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
-        (!('description' in data) || (data.description is string && data.description.size() <= 2000)) &&
+        (!('description' in data) || data.description == null || (data.description is string && data.description.size() <= 2000)) &&
         data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 10000 &&
         data.createdAt is timestamp &&
-        (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+        (!('updatedAt' in data) || data.updatedAt == null || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
     function isValidQuestion(data, docId) {
@@ -219,22 +231,22 @@ service cloud.firestore {
         data.questionText is string && data.questionText.size() > 0 && data.questionText.size() <= 5000 &&
         data.optionA is string && data.optionA.size() > 0 && data.optionA.size() <= 1000 &&
         data.optionB is string && data.optionB.size() > 0 && data.optionB.size() <= 1000 &&
-        (!('optionC' in data) || (data.optionC is string && data.optionC.size() <= 1000)) &&
-        (!('optionD' in data) || (data.optionD is string && data.optionD.size() <= 1000)) &&
+        (!('optionC' in data) || data.optionC == null || (data.optionC is string && data.optionC.size() <= 1000)) &&
+        (!('optionD' in data) || data.optionD == null || (data.optionD is string && data.optionD.size() <= 1000)) &&
         data.correctAnswer is string && data.correctAnswer in ['A', 'B', 'C', 'D'] &&
-        (!('explanationGeneral' in data) || (data.explanationGeneral is string && data.explanationGeneral.size() <= 5000)) &&
-        (!('explanationA' in data) || (data.explanationA is string && data.explanationA.size() <= 2000)) &&
-        (!('explanationB' in data) || (data.explanationB is string && data.explanationB.size() <= 2000)) &&
-        (!('explanationC' in data) || (data.explanationC is string && data.explanationC.size() <= 2000)) &&
-        (!('explanationD' in data) || (data.explanationD is string && data.explanationD.size() <= 2000)) &&
-        (!('difficulty' in data) || (data.difficulty is string && data.difficulty.size() <= 30)) &&
-        (!('isPastExam' in data) || data.isPastExam is bool) &&
-        (!('examYear' in data) || (data.examYear is string && data.examYear.size() <= 50)) &&
-        (!('examType' in data) || (data.examType is string && data.examType.size() <= 50)) &&
-        (!('isVerified' in data) || data.isVerified is bool) &&
-        (!('isPublished' in data) || data.isPublished is bool) &&
+        (!('explanationGeneral' in data) || data.explanationGeneral == null || (data.explanationGeneral is string && data.explanationGeneral.size() <= 5000)) &&
+        (!('explanationA' in data) || data.explanationA == null || (data.explanationA is string && data.explanationA.size() <= 2000)) &&
+        (!('explanationB' in data) || data.explanationB == null || (data.explanationB is string && data.explanationB.size() <= 2000)) &&
+        (!('explanationC' in data) || data.explanationC == null || (data.explanationC is string && data.explanationC.size() <= 2000)) &&
+        (!('explanationD' in data) || data.explanationD == null || (data.explanationD is string && data.explanationD.size() <= 2000)) &&
+        (!('difficulty' in data) || data.difficulty == null || (data.difficulty is string && data.difficulty.size() <= 30)) &&
+        (!('isPastExam' in data) || data.isPastExam == null || data.isPastExam is bool) &&
+        (!('examYear' in data) || data.examYear == null || (data.examYear is string && data.examYear.size() <= 50)) &&
+        (!('examType' in data) || data.examType == null || (data.examType is string && data.examType.size() <= 50)) &&
+        (!('isVerified' in data) || data.isVerified == null || data.isVerified is bool) &&
+        (!('isPublished' in data) || data.isPublished == null || data.isPublished is bool) &&
         data.createdAt is timestamp &&
-        (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+        (!('updatedAt' in data) || data.updatedAt == null || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
     function isValidNote(data, docId) {
@@ -249,13 +261,13 @@ service cloud.firestore {
         data.topicId is string && isValidId(data.topicId) &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
         data.chapterNumber is int && data.chapterNumber >= 1 && data.chapterNumber <= 500 &&
-        (!('summary' in data) || (data.summary is string && data.summary.size() <= 5000)) &&
-        (!('keyFormulas' in data) || (data.keyFormulas is string && data.keyFormulas.size() <= 10000)) &&
+        (!('summary' in data) || data.summary == null || (data.summary is string && data.summary.size() <= 5000)) &&
+        (!('keyFormulas' in data) || data.keyFormulas == null || (data.keyFormulas is string && data.keyFormulas.size() <= 10000)) &&
         data.contentMarkdown is string && data.contentMarkdown.size() <= 100000 &&
-        (!('content' in data) || (data.content is string && data.content.size() <= 100000)) &&
+        (!('content' in data) || data.content == null || (data.content is string && data.content.size() <= 100000)) &&
         data.isPublished is bool &&
         data.createdAt is timestamp &&
-        (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+        (!('updatedAt' in data) || data.updatedAt == null || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
     function isValidPastExam(data, docId) {
@@ -270,18 +282,18 @@ service cloud.firestore {
         data.courseId is string && isValidId(data.courseId) &&
         data.university is string && data.university.size() > 0 && data.university.size() <= 150 &&
         data.academicYear is string && data.academicYear.size() > 0 && data.academicYear.size() <= 50 &&
-        (!('semester' in data) || (data.semester is string && data.semester.size() <= 50)) &&
+        (!('semester' in data) || data.semester == null || (data.semester is string && data.semester.size() <= 50)) &&
         data.examType is string && data.examType.size() > 0 && data.examType.size() <= 50 &&
         data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
-        (!('instructions' in data) || (data.instructions is string && data.instructions.size() <= 5000)) &&
-        (!('totalQuestions' in data) || (data.totalQuestions is int && data.totalQuestions >= 0 && data.totalQuestions <= 1000)) &&
-        (!('durationMinutes' in data) || (data.durationMinutes is int && data.durationMinutes > 0 && data.durationMinutes <= 600)) &&
-        (!('isDigitized' in data) || data.isDigitized is bool) &&
-        (!('isVerified' in data) || data.isVerified is bool) &&
-        (!('documentSummary' in data) || (data.documentSummary is string && data.documentSummary.size() <= 5000)) &&
+        (!('instructions' in data) || data.instructions == null || (data.instructions is string && data.instructions.size() <= 5000)) &&
+        (!('totalQuestions' in data) || data.totalQuestions == null || (data.totalQuestions is int && data.totalQuestions >= 0 && data.totalQuestions <= 1000)) &&
+        (!('durationMinutes' in data) || data.durationMinutes == null || (data.durationMinutes is int && data.durationMinutes > 0 && data.durationMinutes <= 600)) &&
+        (!('isDigitized' in data) || data.isDigitized == null || data.isDigitized is bool) &&
+        (!('isVerified' in data) || data.isVerified == null || data.isVerified is bool) &&
+        (!('documentSummary' in data) || data.documentSummary == null || (data.documentSummary is string && data.documentSummary.size() <= 5000)) &&
         data.isPublished is bool &&
         data.createdAt is timestamp &&
-        (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+        (!('updatedAt' in data) || data.updatedAt == null || (data.updatedAt is timestamp && data.updatedAt <= request.time));
     }
 
     function isValidAccessCode(data, codeId) {
@@ -292,13 +304,13 @@ service cloud.firestore {
         ]) &&
         data.code == codeId && isValidId(data.code) &&
         data.createdAt is timestamp &&
-        (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time)) &&
+        (!('updatedAt' in data) || data.updatedAt == null || (data.updatedAt is timestamp && data.updatedAt <= request.time)) &&
         data.expiresAt is timestamp &&
         data.createdByAdminId is string && isValidId(data.createdByAdminId) &&
         data.isRedeemed is bool &&
-        (!('redeemedByUserId' in data) || (data.redeemedByUserId is string && data.redeemedByUserId.size() <= 128)) &&
-        (!('redeemedByEmail' in data) || (data.redeemedByEmail is string && data.redeemedByEmail.size() <= 150)) &&
-        (!('redeemedAt' in data) || (data.redeemedAt is timestamp && data.redeemedAt <= request.time)) &&
+        (!('redeemedByUserId' in data) || data.redeemedByUserId == null || (data.redeemedByUserId is string && data.redeemedByUserId.size() <= 128)) &&
+        (!('redeemedByEmail' in data) || data.redeemedByEmail == null || (data.redeemedByEmail is string && data.redeemedByEmail.size() <= 150)) &&
+        (!('redeemedAt' in data) || data.redeemedAt == null || (data.redeemedAt is timestamp && data.redeemedAt <= request.time)) &&
         data.note is string && data.note.size() <= 300;
     }
 
@@ -323,10 +335,10 @@ service cloud.firestore {
           (isOwner(userId) &&
            (!('userId' in existing()) || existing().userId == null || incoming().userId == existing().userId) &&
            (!('email' in existing()) || existing().email == null || existing().email == '' || incoming().email == existing().email) &&
-           (('role' in existing() && existing().role in ['STUDENT', 'ADMIN']) ? incoming().role == existing().role : incoming().role == 'STUDENT') && (
+           (('role' in existing() && existing().role in ['STUDENT', 'ADMIN', 'SUPER_ADMIN']) ? incoming().role == existing().role : incoming().role == 'STUDENT') && (
              // Case 1: Normal profile/stats update without escalating premium status
              ((('isPremium' in existing() && existing().isPremium is bool) ? incoming().isPremium == existing().isPremium : incoming().isPremium == false) &&
-              (((!('activationCode' in existing()) || existing().activationCode == null) && (!('activationCode' in incoming()) || incoming().activationCode == '')) ||
+              (((!('activationCode' in existing()) || existing().activationCode == null) && (!('activationCode' in incoming()) || incoming().activationCode == null || incoming().activationCode == '')) ||
                ('activationCode' in existing() && existing().activationCode is string && 'activationCode' in incoming() && incoming().activationCode == existing().activationCode))) ||
              // Case 2: Atomic access-code redemption transaction (verifies code doc transitions from unredeemed -> redeemed by caller)
              (incoming().isPremium == true &&
@@ -391,7 +403,7 @@ service cloud.firestore {
     // Admin invites for email promotion
     match /admin_invites/{inviteEmail} {
       allow get: if isSignedIn() && isValidEmailDocId(inviteEmail) && (
-        (hasVerifiedEmail() && request.auth.token.email.lower() == inviteEmail.lower()) ||
+        (hasVerifiedEmail() && request.auth.token.email.trim().lower() == inviteEmail.trim().lower()) ||
         isAdmin()
       );
       allow list: if isAdmin();

@@ -990,6 +990,198 @@ test("Exact Kotlin client payloads succeed across all admin collections for spik
   );
 });
 
+test("Explicit null optional fields on partial updates, SUPER_ADMIN role, trimmed/mixed-case email, and diag_* write self-test probe succeed", async () => {
+  const createdAt = new Date(Date.now() - 5000);
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const rawDb = ctx.firestore();
+    // Legacy course document with explicit null optional fields
+    await rawDb.collection("courses").doc("C_NULL_OPTS").set({
+      id: "C_NULL_OPTS",
+      code: "CHEM 101",
+      title: "General Chemistry",
+      description: null,
+      category: "STEM",
+      iconName: null,
+      totalQuestions: 0,
+      totalNotes: 0,
+      isPublished: true,
+      orderIndex: 5,
+      createdAt,
+    });
+    // SUPER_ADMIN user document with explicit null optional fields
+    await rawDb.collection("users").doc("super_admin_uid").set({
+      userId: "super_admin_uid",
+      email: "director@ttsacademy.edu",
+      name: "Academic Director",
+      role: "SUPER_ADMIN",
+      department: null,
+      studentId: null,
+      isPremium: true,
+      activationCode: null,
+      createdAt,
+    });
+  });
+
+  const superAdminDb = testEnv.authenticatedContext("super_admin_uid", {
+    email: "director@ttsacademy.edu",
+    email_verified: true,
+  }).firestore();
+  const mixedCaseBootstrappedDb = verifiedAdminContext("abebe_trim_uid", "  AbebeWottee@Gmail.com ").firestore();
+  const studentDb = testEnv.authenticatedContext(ALICE_UID, {
+    email: "alice@ttsacademy.edu",
+    email_verified: true,
+  }).firestore();
+
+  // Partial update on course with null optional fields succeeds for SUPER_ADMIN
+  await assertSucceeds(
+    superAdminDb.collection("courses").doc("C_NULL_OPTS").update({
+      totalQuestions: 12,
+      totalNotes: 4,
+      updatedAt: new Date(),
+    })
+  );
+
+  // Partial update on user doc with null optional fields succeeds for owner
+  await assertSucceeds(
+    superAdminDb.collection("users").doc("super_admin_uid").update({
+      questionsAnsweredCount: 5,
+      correctAnswersCount: 4,
+      updatedAt: new Date(),
+    })
+  );
+
+  // Live write self-test probe (CREATE -> READ -> DELETE) on announcements/diag_* succeeds for trimmed/mixed-case bootstrapped admin
+  const probeRef = mixedCaseBootstrappedDb.collection("announcements").doc("diag_abebe_trim_uid");
+  await assertSucceeds(
+    probeRef.set({
+      id: "diag_abebe_trim_uid",
+      title: "Admin Write Check",
+      content: "Temporary write verification probe",
+      message: "Temporary write verification probe",
+      category: "GENERAL",
+      isUrgent: false,
+      isPublished: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+  );
+  await assertSucceeds(probeRef.get());
+  await assertSucceeds(probeRef.delete());
+
+  // Student is strictly denied from running the admin write self-test probe
+  await assertFails(
+    studentDb.collection("announcements").doc("diag_alice_student").set({
+      id: "diag_alice_student",
+      title: "Student Probe",
+      content: "Should fail",
+      message: "Should fail",
+      category: "GENERAL",
+      isUrgent: false,
+      isPublished: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+  );
+});
+
+test("Custom claim 'admin' role (role: 'admin' and admin: true) explicitly grants admin write access; non-admin claims denied", async () => {
+  const claimRoleAdminDb = testEnv.authenticatedContext("claim_admin_1", {
+    email: "customclaim1@ttsacademy.edu",
+    role: "admin",
+  }).firestore();
+  const claimBoolAdminDb = testEnv.authenticatedContext("claim_admin_2", {
+    email: "customclaim2@ttsacademy.edu",
+    admin: true,
+  }).firestore();
+  const studentClaimDb = testEnv.authenticatedContext("claim_student_1", {
+    email: "studentclaim@ttsacademy.edu",
+    role: "student",
+    admin: false,
+  }).firestore();
+  const spoofedClaimDb = testEnv.authenticatedContext("claim_spoof_1", {
+    email: "spoofclaim@ttsacademy.edu",
+    role: "administrator",
+    admin: "true",
+  }).firestore();
+
+  const createdAt = new Date(Date.now() - 2000);
+
+  // User with custom claim role == 'admin' (no bootstrapped email, no invite, no users/{uid} doc) can CRUD courses & announcements
+  await assertSucceeds(
+    claimRoleAdminDb.collection("courses").doc("C_CLAIM_101").set({
+      id: "C_CLAIM_101",
+      code: "CS 105",
+      title: "Discrete Mathematics",
+      description: "Logic, sets, and graph theory",
+      category: "STEM",
+      iconName: "school",
+      totalQuestions: 0,
+      totalNotes: 0,
+      isPublished: true,
+      orderIndex: 20,
+      createdAt,
+      updatedAt: new Date(),
+    })
+  );
+  await assertSucceeds(
+    claimRoleAdminDb.collection("courses").doc("C_CLAIM_101").update({
+      title: "Discrete Mathematics I",
+      updatedAt: new Date(),
+    })
+  );
+  await assertSucceeds(
+    claimRoleAdminDb.collection("announcements").doc("ANN_CLAIM_1").set({
+      id: "ANN_CLAIM_1",
+      title: "Claim Admin Announcement",
+      content: "Published using custom claim role='admin'.",
+      message: "Published using custom claim role='admin'.",
+      category: "GENERAL",
+      isUrgent: false,
+      isPublished: true,
+      createdAt,
+      updatedAt: new Date(),
+    })
+  );
+
+  // User with custom claim admin == true can also update & delete
+  await assertSucceeds(
+    claimBoolAdminDb.collection("announcements").doc("ANN_CLAIM_1").update({
+      isUrgent: true,
+      updatedAt: new Date(),
+    })
+  );
+  await assertSucceeds(
+    claimBoolAdminDb.collection("courses").doc("C_CLAIM_101").delete()
+  );
+
+  // Non-admin and invalid-typed custom claims are strictly denied
+  await assertFails(
+    studentClaimDb.collection("announcements").doc("ANN_DENIED_1").set({
+      id: "ANN_DENIED_1",
+      title: "Unauthorized",
+      content: "Student claim should fail",
+      isUrgent: false,
+      isPublished: true,
+      createdAt,
+      updatedAt: new Date(),
+    })
+  );
+  await assertFails(
+    spoofedClaimDb.collection("announcements").doc("ANN_DENIED_2").set({
+      id: "ANN_DENIED_2",
+      title: "Unauthorized",
+      content: "Spoofed claim should fail",
+      isUrgent: false,
+      isPublished: true,
+      createdAt,
+      updatedAt: new Date(),
+    })
+  );
+  await assertFails(
+    spoofedClaimDb.collection("announcements").doc("ANN_CLAIM_1").delete()
+  );
+});
+
 
 
 

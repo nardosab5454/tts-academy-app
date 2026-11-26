@@ -58,6 +58,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import com.example.ui.components.AdminClaimGuard
+import com.example.ui.components.AdminClaimGuardMode
+import com.example.ui.components.rememberAdminClaimState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
@@ -167,6 +170,8 @@ fun ProfileScreen(
   var isCodeCopied by remember { mutableStateOf(false) }
   var isGeneratingCode by remember { mutableStateOf(false) }
   var showAllAdminCodes by remember { mutableStateOf(false) }
+  val adminClaimState = rememberAdminClaimState()
+  val hasAdminAccess = adminClaimState.hasAdminClaim || user?.role == "ADMIN"
 
   LazyColumn(
     modifier = modifier
@@ -736,9 +741,9 @@ fun ProfileScreen(
     }
 
     // 4. Premium Pass & 6-Digit Code Redemption (Admin Key Dispatcher)
-    if (user?.role == "ADMIN") {
+    if (hasAdminAccess) {
       item {
-        val isAdmin = true
+        val isAdmin = hasAdminAccess
         val isPremium = true
         val activeCodes = accessCodes.filter { !it.isRedeemed && System.currentTimeMillis() <= it.expiresAt }
 
@@ -1187,9 +1192,12 @@ fun ProfileScreen(
 
 
 
-    // 7. Academic System Console (Visible to authenticated administrators)
-    if (user?.role == "ADMIN") {
-      item {
+    // 7. Academic System Console (Visible to administrators verified by 'admin' custom claim or fallback admin role)
+    item {
+      AdminClaimGuard(
+        mode = AdminClaimGuardMode.HIDE_CONTROLS,
+        allowFallbackAdminAccess = user?.role == "ADMIN"
+      ) {
         Card(
           modifier = Modifier
             .fillMaxWidth()

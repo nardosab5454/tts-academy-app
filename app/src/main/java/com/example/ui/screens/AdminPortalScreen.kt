@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -77,6 +80,8 @@ import com.example.data.local.model.QuestionEntity
 import com.example.data.local.model.TopicEntity
 import com.example.data.local.model.UserEntity
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import com.example.ui.components.AdminClaimGuard
+import com.example.ui.components.AdminClaimGuardMode
 import com.example.ui.components.DetailTopBar
 import com.example.ui.theme.AcademicBlueDark
 import com.example.ui.theme.AcademicBluePrimary
@@ -97,7 +102,11 @@ fun AdminPortalScreen(
   pastExams: List<PastExamEntity> = emptyList(),
   topics: List<TopicEntity> = emptyList(),
   cloudDiagnostic: CloudAdminDiagnostic? = null,
+  lastAdminError: String? = null,
+  isTestingCloudWrite: Boolean = false,
   onRefreshPermissions: () -> Unit = {},
+  onRunWriteTest: () -> Unit = {},
+  onClearAdminError: () -> Unit = {},
   onBackClick: () -> Unit,
   onSaveCourse: (CourseEntity, (Boolean, String?) -> Unit) -> Unit,
   onDeleteCourse: (String) -> Unit,
@@ -164,6 +173,15 @@ fun AdminPortalScreen(
       isRefreshing = isSyncing
     )
 
+    AdminClaimGuard(
+      mode = AdminClaimGuardMode.WARN_AND_GATE,
+      allowFallbackAdminAccess = cloudDiagnostic == null || cloudDiagnostic.hasWriteReadyAuth,
+      onClaimRefreshed = onRefreshPermissions,
+      modifier = Modifier
+        .fillMaxWidth()
+        .weight(1f)
+    ) {
+      Column(modifier = Modifier.fillMaxSize()) {
     ScrollableTabRow(
       selectedTabIndex = selectedTab,
       edgePadding = 16.dp
@@ -177,7 +195,79 @@ fun AdminPortalScreen(
       }
     }
 
-    if (cloudDiagnostic != null && !cloudDiagnostic.hasWriteReadyAuth) {
+    val clipboardManager = LocalClipboardManager.current
+
+    if (!lastAdminError.isNullOrBlank()) {
+      Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier
+          .fillMaxWidth()
+          .testTag("admin_last_error_banner")
+      ) {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+          verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+          ) {
+            Text(
+              text = "Last Cloud Write Error",
+              style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+              color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            IconButton(
+              onClick = onClearAdminError,
+              modifier = Modifier.size(32.dp)
+            ) {
+              Icon(
+                Icons.Default.Close,
+                contentDescription = "Dismiss error",
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(18.dp)
+              )
+            }
+          }
+          Text(
+            text = lastAdminError,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onErrorContainer
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+              onClick = {
+                val report = buildString {
+                  appendLine("Last Error: $lastAdminError")
+                  if (cloudDiagnostic != null) {
+                    appendLine()
+                    append(cloudDiagnostic.toCopyableReport())
+                  }
+                }
+                clipboardManager.setText(AnnotatedString(report))
+              },
+              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+              modifier = Modifier.testTag("admin_copy_error_button")
+            ) {
+              Icon(Icons.Default.ContentCopy, contentDescription = "Copy error", modifier = Modifier.size(14.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Copy Error", style = MaterialTheme.typography.labelSmall)
+            }
+            OutlinedButton(
+              onClick = onRunWriteTest,
+              enabled = !isTestingCloudWrite && !isSyncing,
+              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+              modifier = Modifier.testTag("admin_error_banner_test_write_button")
+            ) {
+              Text(if (isTestingCloudWrite) "Testing..." else "Test Cloud Write", style = MaterialTheme.typography.labelSmall)
+            }
+          }
+        }
+      }
+    } else if (cloudDiagnostic != null && !cloudDiagnostic.hasWriteReadyAuth) {
       Surface(
         color = MaterialTheme.colorScheme.errorContainer,
         modifier = Modifier
@@ -203,13 +293,13 @@ fun AdminPortalScreen(
               text = cloudDiagnostic.diagnosticMessage,
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onErrorContainer,
-              maxLines = 3,
+              maxLines = 4,
               overflow = TextOverflow.Ellipsis
             )
           }
           OutlinedButton(
             onClick = onRefreshPermissions,
-            enabled = !isSyncing,
+            enabled = !isSyncing && !isTestingCloudWrite,
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
             modifier = Modifier.testTag("admin_banner_refresh_permissions_button")
           ) {
@@ -228,7 +318,9 @@ fun AdminPortalScreen(
         announcements = announcements,
         accessCodes = accessCodes,
         cloudDiagnostic = cloudDiagnostic,
+        isTestingCloudWrite = isTestingCloudWrite,
         onRefreshPermissions = onRefreshPermissions,
+        onRunWriteTest = onRunWriteTest,
         onResetSeedData = onResetSeedData,
         onSyncCloud = onSyncCloud,
         isSyncing = isSyncing
@@ -306,7 +398,9 @@ fun AdminPortalScreen(
       )
       6 -> AdminAnnouncementsTab(announcements, { showNewAnnouncementDialog = true }, onDeleteAnnouncement)
       7 -> AdminStudentsTab(allUsers, { showNewAdminDialog = true }, onUpdateUserRole, onPromoteEmail)
-      8 -> AdminAccessCodesTab(accessCodes, onGenerateCode, onDeleteCode)
+      8 -> AdminAccessCodesTab(accessCodes, lastAdminError, onGenerateCode, onDeleteCode)
+    }
+      }
     }
   }
 
@@ -366,7 +460,10 @@ fun AdminPortalScreen(
       onDismissRequest = { if (!isSaving) showNewCourseDialog = false },
       title = { Text("Create New Course") },
       text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+          modifier = Modifier.verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
           OutlinedTextField(
             value = code,
             onValueChange = { code = it; validationError = null },
@@ -396,11 +493,18 @@ fun AdminPortalScreen(
             enabled = !isSaving
           )
           if (!validationError.isNullOrBlank()) {
-            Text(
-              text = validationError!!,
-              color = MaterialTheme.colorScheme.error,
-              style = MaterialTheme.typography.bodySmall
-            )
+            Surface(
+              color = MaterialTheme.colorScheme.errorContainer,
+              shape = RoundedCornerShape(8.dp),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Text(
+                text = validationError!!,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(10.dp)
+              )
+            }
           }
         }
       },
@@ -467,7 +571,10 @@ fun AdminPortalScreen(
       onDismissRequest = { if (!isSaving) showNewAnnouncementDialog = false },
       title = { Text("Publish Announcement") },
       text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+          modifier = Modifier.verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
           OutlinedTextField(value = title, onValueChange = { title = it; validationError = null }, label = { Text("Title") }, singleLine = true, enabled = !isSaving)
           OutlinedTextField(value = message, onValueChange = { message = it; validationError = null }, label = { Text("Message Body") }, maxLines = 4, enabled = !isSaving)
           Row(
@@ -477,11 +584,18 @@ fun AdminPortalScreen(
             Text("Mark as Urgent / Alert Notice: ${if (isUrgent) "YES" else "NO"}", fontWeight = FontWeight.Bold)
           }
           if (!validationError.isNullOrBlank()) {
-            Text(
-              text = validationError!!,
-              color = MaterialTheme.colorScheme.error,
-              style = MaterialTheme.typography.bodySmall
-            )
+            Surface(
+              color = MaterialTheme.colorScheme.errorContainer,
+              shape = RoundedCornerShape(8.dp),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Text(
+                text = validationError!!,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(10.dp)
+              )
+            }
           }
         }
       },
@@ -576,12 +690,15 @@ private fun AdminOverviewTab(
   announcements: List<AnnouncementEntity>,
   accessCodes: List<AccessCodeEntity> = emptyList(),
   cloudDiagnostic: CloudAdminDiagnostic? = null,
+  isTestingCloudWrite: Boolean = false,
   onRefreshPermissions: () -> Unit = {},
+  onRunWriteTest: () -> Unit = {},
   onResetSeedData: () -> Unit,
   onSyncCloud: () -> Unit = {},
   isSyncing: Boolean = false
 ) {
-  var showResetConfirm by remember { mutableStateOf(false) }
+  val clipboardManager = LocalClipboardManager.current
+  var copiedReport by remember { mutableStateOf(false) }
   val studentUsers = users.filter { it.role == "STUDENT" }
   val totalQuestionsAnswered = users.sumOf { it.questionsAnsweredCount }
   val activePasses = accessCodes.count { !it.isRedeemed && System.currentTimeMillis() <= it.expiresAt }
@@ -610,7 +727,7 @@ private fun AdminOverviewTab(
     item {
       Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         AdminStatCard("Live Qs Practiced", "$totalQuestionsAnswered", AcademicCobalt, Modifier.weight(1f))
-        AdminStatCard("Active 1-Hr Passes", "$activePasses", AcademicGold, Modifier.weight(1f))
+        AdminStatCard("Active Passes", "$activePasses", AcademicGold, Modifier.weight(1f))
         AdminStatCard("Redeemed Passes", "$redeemedPasses", AcademicBluePrimary, Modifier.weight(1f))
       }
     }
@@ -647,7 +764,11 @@ private fun AdminOverviewTab(
               shape = RoundedCornerShape(6.dp)
             ) {
               Text(
-                text = if (ready) "VERIFIED" else "CHECK NEEDED",
+                text = when {
+                  cloudDiagnostic?.writeTestAttempted == true && cloudDiagnostic.writeTestPassed -> "WRITE VERIFIED"
+                  ready -> "READY"
+                  else -> "CHECK NEEDED"
+                },
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                 color = Color.White,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -662,9 +783,16 @@ private fun AdminOverviewTab(
               color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-              text = "Cloud Profile Role: ${cloudDiagnostic.userDocRole} • UID: ${cloudDiagnostic.signedInUid ?: "none"}",
+              text = "Cloud Role: ${cloudDiagnostic.userDocRole} • UID: ${cloudDiagnostic.signedInUid ?: "none"}",
               style = MaterialTheme.typography.labelSmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+              text = "DB: ${cloudDiagnostic.databaseId}",
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
             )
             Text(
               text = cloudDiagnostic.diagnosticMessage,
@@ -679,14 +807,61 @@ private fun AdminOverviewTab(
             )
           }
 
-          OutlinedButton(
-            onClick = onRefreshPermissions,
-            enabled = !isSyncing,
-            modifier = Modifier.testTag("admin_refresh_permissions_button")
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
           ) {
-            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Verify & Refresh Cloud Permissions")
+            Button(
+              onClick = onRunWriteTest,
+              enabled = !isTestingCloudWrite && !isSyncing,
+              modifier = Modifier
+                .weight(1f)
+                .testTag("admin_test_write_button")
+            ) {
+              if (isTestingCloudWrite) {
+                CircularProgressIndicator(
+                  modifier = Modifier.size(16.dp),
+                  strokeWidth = 2.dp,
+                  color = MaterialTheme.colorScheme.onPrimary
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Testing...", style = MaterialTheme.typography.labelMedium)
+              } else {
+                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Test Cloud Write", style = MaterialTheme.typography.labelMedium)
+              }
+            }
+
+            OutlinedButton(
+              onClick = onRefreshPermissions,
+              enabled = !isSyncing && !isTestingCloudWrite,
+              modifier = Modifier.testTag("admin_refresh_permissions_button")
+            ) {
+              Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Refresh", style = MaterialTheme.typography.labelMedium)
+            }
+          }
+
+          if (cloudDiagnostic != null) {
+            OutlinedButton(
+              onClick = {
+                clipboardManager.setText(AnnotatedString(cloudDiagnostic.toCopyableReport()))
+                copiedReport = true
+              },
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("admin_copy_diagnostic_button")
+            ) {
+              Icon(
+                if (copiedReport) Icons.Default.Check else Icons.Default.ContentCopy,
+                contentDescription = "Copy diagnostic report",
+                modifier = Modifier.size(16.dp)
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(if (copiedReport) "Diagnostic Report Copied" else "Copy Full Cloud Diagnostic Report")
+            }
           }
         }
       }
@@ -716,7 +891,7 @@ private fun AdminOverviewTab(
           }
           Spacer(modifier = Modifier.height(8.dp))
           Text(
-            text = "Changes made here (new courses, questions, notes, and past exams) persist directly to Firestore cloud database and sync in real time across all user devices (PC, Android phones, and tablets).",
+            text = "Changes made here (new courses, questions, notes, announcements, and past exams) persist directly to Firestore cloud database and sync in real time across all devices.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
@@ -752,47 +927,26 @@ private fun AdminOverviewTab(
         modifier = Modifier.fillMaxWidth()
       ) {
         Column(modifier = Modifier.padding(18.dp)) {
-          Text("Academic Factory Data Management", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+          Text("Curriculum Cloud Integrity", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
           Spacer(modifier = Modifier.height(8.dp))
           Text(
-            text = "The TTS Academy factory curriculum contains 12 freshman university courses, pre-seeded past exams, and question banks. Resetting re-populates the cloud and local databases with fresh baseline data.",
+            text = "Safely verifies your local device cache against the live central cloud curriculum without overwriting any custom courses or notes.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
           Spacer(modifier = Modifier.height(14.dp))
           OutlinedButton(
-            onClick = { showResetConfirm = true },
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            onClick = onResetSeedData,
+            enabled = !isSyncing,
+            modifier = Modifier.testTag("admin_verify_curriculum_button")
           ) {
             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(6.dp))
-            Text("Re-seed Factory Curriculum")
+            Text("Verify & Refresh Cloud Curriculum")
           }
         }
       }
     }
-  }
-
-  if (showResetConfirm) {
-    AlertDialog(
-      onDismissRequest = { showResetConfirm = false },
-      title = { Text("Reset to Factory Data?") },
-      text = { Text("This will re-populate all 12 university courses, standard questions, notes, and past exams.") },
-      confirmButton = {
-        Button(
-          onClick = {
-            showResetConfirm = false
-            onResetSeedData()
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-        ) {
-          Text("Reset Now")
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
-      }
-    )
   }
 }
 
@@ -1767,6 +1921,7 @@ private fun AdminStudentsTab(
 @Composable
 private fun AdminAccessCodesTab(
   accessCodes: List<AccessCodeEntity>,
+  lastAdminError: String?,
   onGenerateCode: (note: String, format: String, customCode: String?, onResult: (String) -> Unit) -> Unit,
   onDeleteCode: (String) -> Unit
 ) {
@@ -1920,7 +2075,7 @@ private fun AdminAccessCodesTab(
                 if (clean != null) {
                   customCodeInput = ""
                 } else {
-                  validationError = "Unable to generate access code. Check connection and admin access."
+                  validationError = lastAdminError ?: "Unable to generate access code. Check connection and admin access."
                 }
               }
             },

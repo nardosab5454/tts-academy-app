@@ -47,10 +47,33 @@ data class CloudAdminDiagnostic(
   val userDocRole: String = "UNKNOWN",
   val isBootstrappedEmail: Boolean = false,
   val isInvitedEmail: Boolean = false,
+  val hasAdminClaim: Boolean = false,
   val canReadCoursesFromServer: Boolean = false,
+  val canPassAdminReadProbe: Boolean = false,
   val hasWriteReadyAuth: Boolean = false,
+  val writeTestAttempted: Boolean = false,
+  val writeTestPassed: Boolean = false,
+  val writeTestError: String? = null,
   val diagnosticMessage: String = ""
-)
+) {
+  fun toCopyableReport(): String = buildString {
+    appendLine("TTS Academy Cloud Admin Diagnostic")
+    appendLine("Email: ${signedInEmail ?: "Not signed in"}")
+    appendLine("Email Verified: $isEmailVerified")
+    appendLine("Firebase UID: ${signedInUid ?: "none"}")
+    appendLine("Database ID: $databaseId")
+    appendLine("User Doc Exists: $userDocExists | Role: $userDocRole")
+    appendLine("Admin Claim: $hasAdminClaim | Bootstrapped Admin: $isBootstrappedEmail | Invited Admin: $isInvitedEmail")
+    appendLine("Server Read Courses: $canReadCoursesFromServer | Admin Probe: $canPassAdminReadProbe")
+    if (writeTestAttempted) {
+      appendLine("Live Write Test: ${if (writeTestPassed) "PASSED (Create + Server Read + Delete)" else "FAILED"}")
+      if (!writeTestError.isNullOrBlank()) {
+        appendLine("Write Test Error: $writeTestError")
+      }
+    }
+    appendLine("Summary: $diagnosticMessage")
+  }
+}
 
 class FirestoreRepository(private val db: FirebaseFirestore) {
 
@@ -82,6 +105,12 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
   private fun isBootstrappedAdminEmail(email: String): Boolean {
     val clean = email.trim().lowercase()
     return clean == "spikenarrd@gmail.com" || clean == "abebewottee@gmail.com"
+  }
+
+  private fun hasAdminCustomClaim(claims: Map<String, Any>): Boolean {
+    val roleClaim = (claims["role"] as? String)?.trim()?.lowercase()
+    val adminFlag = claims["admin"] as? Boolean
+    return roleClaim == "admin" || roleClaim == "super_admin" || adminFlag == true
   }
 
   private fun normalizeDocId(rawId: String, fallbackPrefix: String): String {
@@ -207,17 +236,18 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
 
     if (firestoreEx != null) {
       val codeName = firestoreEx.code.name
-      val serverDetail = firestoreEx.message?.take(220) ?: "no server detail"
+      val serverDetail = firestoreEx.message?.take(360) ?: "no server detail"
       val reason = when (firestoreEx.code) {
         FirebaseFirestoreException.Code.PERMISSION_DENIED -> when {
           fbUser == null -> "Firebase session is missing. Sign out and sign in with your Google Admin account."
-          !verified -> "Google account ($email) email is not marked verified in auth profile. Tap Refresh Permissions."
           else -> "Firestore [$codeName] on ${operationType.value} '$path' for $email (uid=$uid, verified=$verified, db=$configuredDatabaseId): $serverDetail"
         }
         FirebaseFirestoreException.Code.UNAUTHENTICATED ->
           "Auth token rejected [$codeName] on '$path' for $email (db=$configuredDatabaseId): $serverDetail. Sign out and sign in again."
         FirebaseFirestoreException.Code.UNAVAILABLE ->
           "Cloud Firestore temporarily unreachable [$codeName] on '$path' (db=$configuredDatabaseId). Check internet connection and retry."
+        FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED ->
+          "Firestore quota or write limit exceeded [$codeName] on '$path' (db=$configuredDatabaseId): $serverDetail"
         else ->
           "Firestore error [$codeName] on ${operationType.value} '$path' (email=$email, db=$configuredDatabaseId): $serverDetail"
       }
@@ -392,6 +422,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     val email = tokenEmail.ifBlank { fbUser.email?.trim() ?: "" }
     val tokenVerified = tokenClaims["email_verified"] as? Boolean
     val verified = tokenVerified == true || isCurrentUserEmailVerified(fbUser)
+    val hasClaimAdmin = hasAdminCustomClaim(tokenClaims)
     val bootstrapped = isBootstrappedAdminEmail(email)
     val invited = if (!bootstrapped && email.isNotBlank()) isEmailInvitedAdmin(email) else false
 
@@ -427,10 +458,10 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
       serverProbeError = "[$code] admin probe failed: ${e.message}"
     }
 
-    val writeReady = canPassAdminRule && verified
+    val writeReady = canPassAdminRule
     val msg = when {
-      canPassAdminRule && verified -> "Cloud admin verified ($email • DB role=$userDocRole${if (bootstrapped) " • Bootstrapped" else if (invited) " • Invited" else ""})."
-      !verified -> "Google email ($email) is not verified in Firebase token (claim=$tokenVerified)."
+      canPassAdminRule -> "Cloud admin verified ($email • DB role=$userDocRole${if (hasClaimAdmin) " • Admin Claim" else ""}${if (bootstrapped) " • Bootstrapped" else if (invited) " • Invited" else ""}${if (!verified) " • email_verified=false" else ""})."
+      !verified && (bootstrapped || invited) -> "Google email ($email) is not verified in Firebase token (claim=$tokenVerified). Tap Refresh Permissions or re-sign in with Google."
       serverProbeError != null -> "Cloud admin check failed ($email, db=$configuredDatabaseId): $serverProbeError"
       else -> "Signed in as $email, but cloud role is '$userDocRole' (not ADMIN)."
     }
@@ -444,10 +475,64 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
       userDocRole = userDocRole,
       isBootstrappedEmail = bootstrapped,
       isInvitedEmail = invited,
+      hasAdminClaim = hasClaimAdmin,
       canReadCoursesFromServer = canReadCourses,
+      canPassAdminReadProbe = canPassAdminRule,
       hasWriteReadyAuth = writeReady,
       diagnosticMessage = msg
     )
+  }
+
+  suspend fun runAdminWriteSelfTest(): CloudAdminDiagnostic = withContext(Dispatchers.IO) {
+    refreshAdminAuthAndProfile()
+    val base = diagnoseAdminAccess()
+    val fbUser = auth.currentUser ?: return@withContext base.copy(
+      writeTestAttempted = true,
+      writeTestPassed = false,
+      writeTestError = "Not signed into Firebase Auth."
+    )
+
+    val probeId = "diag_${normalizeDocId(fbUser.uid.take(16), "admin")}"
+    val docRef = db.collection("announcements").document(probeId)
+    val writeResult = executeAdminWrite(OperationType.CREATE, docRef.path) {
+      val payload = hashMapOf<String, Any>(
+        "id" to probeId,
+        "title" to "Admin Cloud Write Diagnostic",
+        "content" to "Temporary self-test probe verified and removed automatically.",
+        "message" to "Temporary self-test probe verified and removed automatically.",
+        "category" to "SYSTEM",
+        "isUrgent" to false,
+        "isPublished" to false,
+        "createdAt" to FieldValue.serverTimestamp(),
+        "updatedAt" to FieldValue.serverTimestamp()
+      )
+      docRef.set(payload).await()
+      val verifiedSnap = docRef.get(Source.SERVER).await()
+      if (!verifiedSnap.exists()) {
+        throw IllegalStateException("Write succeeded locally but document was not readable from Firestore server.")
+      }
+      docRef.delete().await()
+      Unit
+    }
+
+    if (writeResult.isSuccess) {
+      base.copy(
+        hasWriteReadyAuth = true,
+        writeTestAttempted = true,
+        writeTestPassed = true,
+        writeTestError = null,
+        diagnosticMessage = "Live Cloud Write Test PASSED for ${base.signedInEmail} (Create + Server Read + Delete verified on ${base.databaseId})."
+      )
+    } else {
+      val errText = writeResult.exceptionOrNull()?.message ?: "Unknown cloud write test failure."
+      base.copy(
+        hasWriteReadyAuth = false,
+        writeTestAttempted = true,
+        writeTestPassed = false,
+        writeTestError = errText,
+        diagnosticMessage = "Live Cloud Write Test FAILED: $errText"
+      )
+    }
   }
 
   // --- Users & Profiles ---
@@ -476,10 +561,16 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         docRef.get(Source.DEFAULT).await()
       }
 
+      val tokenClaims = try {
+        currentFbUser?.getIdToken(false)?.await()?.claims ?: emptyMap()
+      } catch (_: Exception) {
+        emptyMap()
+      }
+      val hasClaimAdmin = hasAdminCustomClaim(tokenClaims)
       val isEmailVerified = isCurrentUserEmailVerified(currentFbUser)
       val isVerifiedBootstrapped = isBootstrappedAdminEmail(cleanEmail) && (currentFbUser == null || isEmailVerified)
-      val isInvited = if (!isVerifiedBootstrapped) isEmailInvitedAdmin(cleanEmail) else false
-      val shouldBeAdmin = isVerifiedBootstrapped || isInvited || role.equals("ADMIN", ignoreCase = true)
+      val isInvited = if (!isVerifiedBootstrapped && !hasClaimAdmin) isEmailInvitedAdmin(cleanEmail) else false
+      val shouldBeAdmin = hasClaimAdmin || isVerifiedBootstrapped || isInvited || role.equals("ADMIN", ignoreCase = true)
 
       if (snapshot.exists()) {
         val existingProfile = snapshot.toFirestoreUserProfile()
@@ -750,10 +841,10 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
     awaitClose { registration.remove() }
   }
 
-  suspend fun saveAnnouncement(announcement: AnnouncementEntity): Result<Unit> {
+  suspend fun saveAnnouncement(announcement: AnnouncementEntity, isNewDocument: Boolean = false): Result<Unit> {
     val docId = normalizeDocId(announcement.id, "ann")
     val docRef = db.collection("announcements").document(docId)
-    return executeAdminWrite(OperationType.WRITE, docRef.path) {
+    return executeAdminWrite(if (isNewDocument) OperationType.CREATE else OperationType.WRITE, docRef.path) {
       val safeBody = announcement.message.trim().ifBlank { announcement.title.trim() }.ifBlank { "Notice" }.take(5000)
       val payload = hashMapOf<String, Any>(
         "id" to docId,
@@ -764,7 +855,7 @@ class FirestoreRepository(private val db: FirebaseFirestore) {
         "isUrgent" to announcement.isUrgent,
         "isPublished" to announcement.isPublished
       )
-      prepareTimestamps(docRef, payload)
+      prepareTimestamps(docRef, payload, isNewDocument = isNewDocument)
       docRef.set(payload).await()
       Unit
     }

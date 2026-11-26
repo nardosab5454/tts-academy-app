@@ -20,7 +20,7 @@
         },
         "role": {
           "type": "string",
-          "enum": ["STUDENT", "ADMIN"],
+          "enum": ["STUDENT", "ADMIN", "SUPER_ADMIN"],
           "description": "User access role"
         },
         "department": {

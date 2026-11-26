@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -24,9 +25,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.layout.Column
 import com.example.data.local.model.CourseEntity
+import com.example.ui.components.AdminClaimGuard
+import com.example.ui.components.AdminClaimGuardMode
 import com.example.ui.components.AppBottomNavigation
 import com.example.ui.components.AppHeader
+import com.example.ui.components.DetailTopBar
+import com.example.ui.components.rememberAdminClaimState
 import com.example.ui.screens.AdminPortalScreen
 import com.example.ui.screens.AiTutorScreen
 import com.example.ui.screens.AnnouncementsScreen
@@ -163,6 +169,8 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
   val isDownloading by viewModel.isDownloading.collectAsStateWithLifecycle()
   val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
   val cloudAdminDiagnostic by viewModel.cloudAdminDiagnostic.collectAsStateWithLifecycle()
+  val lastAdminError by viewModel.lastAdminError.collectAsStateWithLifecycle()
+  val isTestingCloudWrite by viewModel.isTestingCloudWrite.collectAsStateWithLifecycle()
 
   val context = LocalContext.current
   val snackbarHostState = remember { SnackbarHostState() }
@@ -218,8 +226,14 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
 
   // Handle Toast/Snackbar feedback
   LaunchedEffect(message) {
-    message?.let {
-      snackbarHostState.showSnackbar(it)
+    message?.let { msg ->
+      val isError = msg.contains("failed", ignoreCase = true) ||
+        msg.contains("permission", ignoreCase = true) ||
+        msg.contains("error", ignoreCase = true)
+      snackbarHostState.showSnackbar(
+        message = msg,
+        duration = if (isError) SnackbarDuration.Long else SnackbarDuration.Short
+      )
       viewModel.clearMessage()
     }
   }
@@ -647,7 +661,8 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
         }
 
         Screen.ADMIN_PORTAL -> {
-          if (currentUser?.role == "ADMIN") {
+          val adminClaimState = rememberAdminClaimState()
+          if (adminClaimState.hasAdminClaim || currentUser?.role == "ADMIN") {
             LaunchedEffect(Unit) {
               if (cloudAdminDiagnostic == null) {
                 viewModel.refreshAdminSession(showStatus = false)
@@ -663,7 +678,11 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               topics = allTopics,
               pastExams = allAdminPastExams,
               cloudDiagnostic = cloudAdminDiagnostic,
+              lastAdminError = lastAdminError,
+              isTestingCloudWrite = isTestingCloudWrite,
               onRefreshPermissions = { viewModel.refreshAdminSession(showStatus = true) },
+              onRunWriteTest = { viewModel.runLiveAdminWriteTest() },
+              onClearAdminError = { viewModel.clearLastAdminError() },
               onBackClick = { viewModel.navigateBack() },
               onSaveCourse = { course, onResult -> viewModel.adminSaveCourse(course, onResult) },
               onDeleteCourse = { viewModel.adminDeleteCourse(it) },
@@ -691,9 +710,17 @@ fun TtsAcademyApp(viewModel: MainViewModel) {
               isSyncing = isSyncing
             )
           } else {
-            LaunchedEffect(Unit) {
-              viewModel.showMessage("Access denied: Administrator privileges required.")
-              viewModel.navigateTo(Screen.DASHBOARD)
+            Column(modifier = Modifier.fillMaxSize()) {
+              DetailTopBar(
+                title = "Administrator Portal",
+                subtitle = "Restricted Access",
+                onBackClick = { viewModel.navigateBack() }
+              )
+              AdminClaimGuard(
+                mode = AdminClaimGuardMode.WARN_AND_GATE,
+                allowFallbackAdminAccess = false,
+                onClaimRefreshed = { viewModel.refreshAdminSession(showStatus = true) }
+              ) {}
             }
           }
         }

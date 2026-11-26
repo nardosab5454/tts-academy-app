@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">TTS Academy</string>
+    <string name="admin_claim_checking_message">Verifying administrator custom claim…</string>
+    <string name="admin_claim_missing_title">Admin Custom Claim Missing</string>
+    <string name="admin_claim_missing_blocked_body">Your Firebase Auth token does not include an \u2018admin\u2019 custom claim. Admin-only controls are hidden until an administrator claim is granted and your token is refreshed.</string>
+    <string name="admin_claim_missing_fallback_body">Your Firebase Auth token does not carry an \u2018admin\u2019 custom claim yet. Fallback cloud admin access is currently active, or you can refresh your token after the claim is assigned.</string>
+    <string name="admin_claim_refresh_button">Refresh Token</string>
+    <string name="admin_claim_refreshing_button">Checking…</string>
+    <string name="admin_claim_warning_icon_desc">Administrator claim warning</string>
+    <string name="admin_claim_refresh_icon_desc">Refresh Firebase Auth token claims</string>
 </resources>

@@ -62,6 +62,8 @@ import com.example.data.local.model.QuizAttemptEntity
 import com.example.data.local.model.UserEntity
 import com.example.ui.theme.AcademicGold
 import com.example.ui.theme.BrandBlueBright
+import com.example.ui.components.AdminClaimGuard
+import com.example.ui.components.AdminClaimGuardMode
 import com.example.ui.theme.BrandBlueDark
 import com.example.ui.theme.BrandBluePrimary
 import com.example.ui.theme.BrandBlueSecondary
@@ -315,9 +317,12 @@ fun DashboardScreen(
       }
     }
 
-    // Administrator Portal Quick Action Banner (if admin)
-    if (user?.role == "ADMIN") {
-      item {
+    // Administrator Portal Quick Action Banner (verified via 'admin' custom claim or fallback admin role)
+    item {
+      AdminClaimGuard(
+        mode = AdminClaimGuardMode.HIDE_CONTROLS,
+        allowFallbackAdminAccess = user?.role == "ADMIN"
+      ) {
         Card(
           shape = RoundedCornerShape(18.dp),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)),

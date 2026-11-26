@@ -163,8 +163,7 @@ class TtsRepository(
     }
 
     val fbUid = FirebaseAuth.getInstance().currentUser?.uid
-    val activeId = fbUid ?: prefDao.getPreference("active_user_id")
-    val user = if (!activeId.isNullOrBlank()) userDao.getUserById(activeId) else null
+    val user = if (!fbUid.isNullOrBlank()) userDao.getUserById(fbUid) else null
     val effectiveUser = if (user != null) {
       user.copy(isPremium = user.role == "ADMIN" || user.isPremium)
     } else {
@@ -1245,13 +1244,13 @@ class TtsRepository(
   fun getPublishedAnnouncementsFlow(): Flow<List<AnnouncementEntity>> = announcementDao.getPublishedAnnouncementsFlow()
   fun getAllAnnouncementsFlow(): Flow<List<AnnouncementEntity>> = announcementDao.getAllAnnouncementsFlow()
 
-  suspend fun saveAnnouncement(announcement: AnnouncementEntity) = withContext(Dispatchers.IO) {
+  suspend fun saveAnnouncement(announcement: AnnouncementEntity, isNewDocument: Boolean = false) = withContext(Dispatchers.IO) {
     val fs = firestoreRepository
       ?: throw IllegalStateException("Cloud database repository unavailable.")
     if (FirebaseAuth.getInstance().currentUser == null) {
       throw IllegalStateException("Google Administrator sign-in required to broadcast announcements to cloud.")
     }
-    fs.saveAnnouncement(announcement).getOrElse { throw it }
+    fs.saveAnnouncement(announcement, isNewDocument = isNewDocument).getOrElse { throw it }
     announcementDao.insertAnnouncement(announcement)
   }
 
@@ -1274,9 +1273,6 @@ class TtsRepository(
     format: String = "NUMERIC",
     customCode: String? = null
   ): AccessCodeEntity = withContext(Dispatchers.IO) {
-    if (!isNetworkConnected()) {
-      throw IllegalStateException("Active internet connection required to generate access codes.")
-    }
     val fbUser = FirebaseAuth.getInstance().currentUser
       ?: throw IllegalStateException("Please sign in with your Google Admin account to publish access codes.")
     val admin = _currentUser.value
@@ -1532,11 +1528,23 @@ class TtsRepository(
     Result.success(true)
   }
 
-  // --- Reset to Factory Seed ---
+  // --- Safe Cloud-First Curriculum Verification (NEVER overwrites existing cloud courses) ---
   suspend fun resetDatabase() = withContext(Dispatchers.IO) {
-    AppDatabase.populateDatabase(database)
-    initialize()
-    firestoreRepository?.let { seedDatabaseToCloud(it) }
+    val fs = firestoreRepository
+    if (fs != null && FirebaseAuth.getInstance().currentUser != null) {
+      val cloudIsEmpty = fs.isCloudDatabaseEmpty()
+      if (cloudIsEmpty) {
+        AppDatabase.populateDatabase(database)
+        initialize()
+        seedDatabaseToCloud(fs)
+      } else {
+        // Cloud already holds curriculum data (e.g., admin's courses & notes): sync instead of overwriting!
+        syncFromCloudNow()
+      }
+    } else {
+      AppDatabase.populateDatabase(database)
+      initialize()
+    }
   }
 
   // --- Offline Persistence & Cache Diagnostics ---
